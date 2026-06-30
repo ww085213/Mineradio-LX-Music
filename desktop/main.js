@@ -94,11 +94,26 @@ const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['force_high_performance_gpu'],
   ['use-angle', 'd3d11'],
 ];
+const CLEAN_USER_SIMULATION = process.argv.includes('--simulate-clean-user');
+if (CLEAN_USER_SIMULATION) {
+  const baseDir = process.env.MINERADIO_SIMULATE_USER_DIR || path.join(app.getPath('temp'), 'MineradioCleanUserSimulation');
+  const appDataDir = path.join(baseDir, 'AppData');
+  const userDataDir = path.join(baseDir, 'UserData');
+  try {
+    fs.mkdirSync(appDataDir, { recursive: true });
+    fs.mkdirSync(userDataDir, { recursive: true });
+    app.setPath('appData', appDataDir);
+    app.setPath('userData', userDataDir);
+    app.setName(`${APP_NAME} Clean User`);
+  } catch (err) {
+    console.warn('[CleanUserSimulation] failed to isolate user data:', err && err.message);
+  }
+}
 for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
   if (value == null) app.commandLine.appendSwitch(name);
   else app.commandLine.appendSwitch(name, value);
 }
-const gotSingleInstanceLock = app.requestSingleInstanceLock();
+const gotSingleInstanceLock = CLEAN_USER_SIMULATION || app.requestSingleInstanceLock();
 
 function findOpenPort(startPort) {
   return new Promise((resolve, reject) => {
@@ -549,7 +564,7 @@ function refreshTrayMenu() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: '显示 Mineradio', click: focusMainWindow },
     {
-      label: '关闭按钮最小化到托盘',
+      label: '最小化 / 关闭到托盘',
       type: 'checkbox',
       checked: closeToTrayEnabled,
       click: (item) => {
@@ -591,6 +606,18 @@ function createTray() {
   tray.on('click', focusMainWindow);
   tray.on('double-click', focusMainWindow);
   refreshTrayMenu();
+}
+
+function minimizeWindowToTray(win) {
+  if (!win || win.isDestroyed()) return;
+  if (win !== mainWindow || !closeToTrayEnabled) {
+    win.minimize();
+    return;
+  }
+  createTray();
+  if (win.isFullScreen()) win.setFullScreen(false);
+  win.hide();
+  sendWindowState(win);
 }
 
 function getUpdateDownloadDir() {
@@ -1118,7 +1145,7 @@ function closeOverlayWindows() {
 }
 
 ipcMain.handle('desktop-window-minimize', (event) => {
-  getSenderWindow(event)?.minimize();
+  minimizeWindowToTray(getSenderWindow(event));
 });
 
 ipcMain.handle('desktop-window-toggle-maximize', (event) => {
@@ -1474,7 +1501,14 @@ async function createWindow() {
 
   mainWindow.on('maximize', () => sendWindowState(mainWindow));
   mainWindow.on('unmaximize', () => sendWindowState(mainWindow));
-  mainWindow.on('minimize', () => sendWindowState(mainWindow));
+  mainWindow.on('minimize', (event) => {
+    if (!appQuitting && closeToTrayEnabled) {
+      event.preventDefault();
+      minimizeWindowToTray(mainWindow);
+      return;
+    }
+    sendWindowState(mainWindow);
+  });
   mainWindow.on('restore', () => sendWindowState(mainWindow));
   mainWindow.on('show', () => sendWindowState(mainWindow));
   mainWindow.on('hide', () => sendWindowState(mainWindow));
