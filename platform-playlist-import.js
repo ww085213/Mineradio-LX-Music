@@ -111,6 +111,32 @@ function uniqueBy(items, getKey) {
   });
 }
 
+function parseAssignedJson(html, marker) {
+  const markerIndex = String(html || '').indexOf(marker);
+  if (markerIndex < 0) return null;
+  const start = html.indexOf('[', markerIndex + marker.length);
+  if (start < 0) return null;
+  let depth = 0;
+  let quoted = false;
+  let escaped = false;
+  for (let index = start; index < html.length; index += 1) {
+    const char = html[index];
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') quoted = false;
+      continue;
+    }
+    if (char === '"') quoted = true;
+    else if (char === '[' || char === '{') depth += 1;
+    else if (char === ']' || char === '}') {
+      depth -= 1;
+      if (depth === 0) return JSON.parse(html.slice(start, index + 1));
+    }
+  }
+  return null;
+}
+
 const SOURCE_ALIASES = {
   tx:'tx', qq:'tx', '小秋':'tx',
   wy:'wy', '163':'wy', netease:'wy', '小芸':'wy',
@@ -274,29 +300,49 @@ async function importKW(id) {
 
 async function importKG(id, originalInput) {
   let legacyId = id;
+  let sharedInfo = null;
   if (!/^\d+$/.test(legacyId)) {
     const sharedUrl = String(originalInput || '').match(/https?:\/\/[^\s<>"']+/i)?.[0];
     const html = await fetchText(sharedUrl || `https://m.kugou.com/songlist/gcid_${encodeURIComponent(legacyId)}/`, {
       headers:{ Referer:'https://www.kugou.com/' },
     });
+    const outputMatch = html.match(/window\.\$output\s*=\s*(\{[\s\S]*?\});\s*<\/script>/i);
+    if (outputMatch) {
+      try { sharedInfo = JSON.parse(outputMatch[1])?.info || null; } catch (_error) {}
+    }
     const match = html.match(/["']?specialid["']?\s*[:=]\s*["']?(\d+)/i)
       || html.match(/\/special\/single\/(\d+)/i);
     if (!match) throw new Error('酷狗新式歌单链接暂时无法换取歌单 ID，请确认歌单已设为公开');
     legacyId = match[1];
   }
-  const data = await fetchJson(`https://m.kugou.com/plist/list/${legacyId}?json=true`);
-  const info = data?.info || data?.data?.info;
-  const rows = data?.list?.list?.info || data?.data?.songs || [];
+  const detailHtml = await fetchText(`https://www.kugou.com/yy/special/single/${legacyId}.html`, {
+    headers:{ Referer:'https://www.kugou.com/' },
+  });
+  const detailRows = parseAssignedJson(detailHtml, 'var data=') || [];
+  const rows = uniqueBy([...(sharedInfo?.songs || []), ...detailRows], item =>
+    item.audio_id || item.audioid || item.rp_id || item.album_audio_id || item.id || item.hash || item.HASH
+  );
+  const info = sharedInfo?.listinfo || {};
   if (!rows.length) throw new Error('小狗歌单读取失败');
   return {
-    name:info?.specialname || `小狗歌单 ${id}`, cover:info?.imgurl || '',
-    songs:rows.map(item => ({
-      id:item.audio_id || item.audioid || item.id, songmid:item.audio_id || item.audioid || item.id,
-      name:item.songname || String(item.filename || '').split(' - ').slice(1).join(' - '),
-      singer:item.singername || String(item.filename || '').split(' - ')[0] || '',
-      albumName:item.album_name || '', albumId:item.album_id || '', hash:item.hash || item.audio_info?.hash || '',
-      interval:durationText(item.duration), source:'kg', types:['flac','320k','128k'],
-    })),
+    name:info.name || detailHtml.match(/<title>([^<]+)/i)?.[1]?.replace(/_酷狗音乐.*$/i, '') || `小狗歌单 ${id}`,
+    cover:String(info.pic || '').replace('{size}', '400'),
+    songs:rows.map(item => {
+      const singer = item.singername || singerText(item.singerinfo || item.authors)
+        || String(item.filename || '').split(' - ')[0] || '';
+      let name = item.songname || item.name || String(item.filename || '').split(' - ').slice(1).join(' - ');
+      if (singer && name.startsWith(`${singer} - `)) name = name.slice(singer.length + 3);
+      return {
+        id:item.audio_id || item.audioid || item.rp_id || item.album_audio_id || item.id,
+        songmid:item.audio_id || item.audioid || item.rp_id || item.album_audio_id || item.id,
+        name, singer,
+        albumName:item.album_name || item.albuminfo?.name || '', albumId:item.album_id || item.albuminfo?.id || '',
+        hash:item.hash || item.HASH || item.audio_info?.hash || '',
+        picUrl:String(item.img || item.cover || item.trans_param?.union_cover || '').replace('{size}', '400'),
+        interval:durationText((item.timelength || item.timelen || 0) / 1000),
+        source:'kg', types:['flac','320k','128k'],
+      };
+    }),
   };
 }
 
