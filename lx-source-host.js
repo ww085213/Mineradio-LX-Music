@@ -19,10 +19,13 @@ const EVENT_NAMES = Object.freeze({
   updateAlert: 'updateAlert',
 });
 
-const LX_DATA_DIR = path.join(process.env.APPDATA || '', 'lx-music-desktop', 'LxDatas');
-const USER_API_FILE = path.join(LX_DATA_DIR, 'user_api.json');
-const CONFIG_FILE = path.join(LX_DATA_DIR, 'config_v2.json');
-const MR_SOURCE_DIR = path.join(process.env.APPDATA || '', 'Mineradio', 'sources');
+const APPDATA_DIR = process.env.APPDATA || '';
+const LOCALAPPDATA_DIR = process.env.LOCALAPPDATA || '';
+const LX_DATA_DIRS = [
+  APPDATA_DIR && path.join(APPDATA_DIR, 'lx-music-desktop', 'LxDatas'),
+  LOCALAPPDATA_DIR && path.join(LOCALAPPDATA_DIR, 'Programs', 'lx-music-desktop', 'portable', 'LxDatas'),
+].filter(Boolean);
+const MR_SOURCE_DIR = path.join(APPDATA_DIR || LOCALAPPDATA_DIR || process.cwd(), 'Mineradio', 'sources');
 const MR_SOURCE_FILE = path.join(MR_SOURCE_DIR, 'active-source.json');
 const ALLOWED_SOURCES = new Set(['kw', 'kg', 'tx', 'wy', 'mg', 'xm', 'local']);
 const ALLOWED_ACTIONS = new Set(['musicUrl', 'lyric', 'pic']);
@@ -45,34 +48,60 @@ function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
+function readJsonIfExists(file) {
+  try {
+    if (!file || !fs.existsSync(file)) return null;
+    return readJson(file);
+  } catch (_err) {
+    return null;
+  }
+}
+
+function lxDataFileCandidates(fileName) {
+  return LX_DATA_DIRS.map(dir => path.join(dir, fileName));
+}
+
+function readFirstLxJson(fileName) {
+  for (const file of lxDataFileCandidates(fileName)) {
+    const value = readJsonIfExists(file);
+    if (value != null) return value;
+  }
+  return null;
+}
+
+function saveMigratedSource(record) {
+  if (!record || typeof record.script !== 'string' || !record.script.trim()) return;
+  try {
+    fs.mkdirSync(MR_SOURCE_DIR, { recursive: true });
+    fs.writeFileSync(MR_SOURCE_FILE, JSON.stringify(record), 'utf8');
+  } catch (_err) {}
+}
+
 function activeScriptRecord() {
-  try {
-    const imported = readJson(MR_SOURCE_FILE);
-    if (imported && typeof imported.script === 'string' && imported.script.trim()) return imported;
-  } catch (_err) {}
-  const saved = readJson(USER_API_FILE);
-  const records = Array.isArray(saved) ? saved : saved.userApis;
-  if (!Array.isArray(records) || !records.length) throw new Error('LX_SOURCE_NOT_FOUND');
+  const imported = readJsonIfExists(MR_SOURCE_FILE);
+  if (imported && typeof imported.script === 'string' && imported.script.trim()) return imported;
+
+  const saved = readFirstLxJson('user_api.json');
+  const records = saved && (Array.isArray(saved) ? saved : saved.userApis);
+  if (!Array.isArray(records) || !records.length) throw new Error('LX_SOURCE_NOT_CONFIGURED');
+
   let selectedId = '';
-  try {
-    const config = readJson(CONFIG_FILE);
-    selectedId = String(config?.setting?.common?.apiSource || '');
-  } catch (_err) {}
-  return records.find(item => item && item.id === selectedId) ||
-    records.slice().reverse().find(item => item && typeof item.script === 'string');
+  const config = readFirstLxJson('config_v2.json');
+  if (config) selectedId = String(config?.setting?.common?.apiSource || '');
+  const selected = records.find(item => item && item.id === selectedId) ||
+    records.slice().reverse().find(item => item && typeof item.script === 'string' && item.script.trim());
+  if (!selected) throw new Error('LX_SOURCE_NOT_CONFIGURED');
+  saveMigratedSource(selected);
+  return selected;
 }
 
 function allScriptRecords() {
   const records = [];
-  try {
-    const imported = readJson(MR_SOURCE_FILE);
-    if (imported && typeof imported.script === 'string') records.push(imported);
-  } catch (_err) {}
-  try {
-    const saved = readJson(USER_API_FILE);
-    const userApis = Array.isArray(saved) ? saved : saved.userApis;
-    if (Array.isArray(userApis)) records.push(...userApis.filter(item => item && typeof item.script === 'string'));
-  } catch (_err) {}
+  const imported = readJsonIfExists(MR_SOURCE_FILE);
+  if (imported && typeof imported.script === 'string') records.push(imported);
+  const saved = readFirstLxJson('user_api.json');
+  const userApis = saved && (Array.isArray(saved) ? saved : saved.userApis);
+  if (Array.isArray(userApis)) records.push(...userApis.filter(item => item && typeof item.script === 'string'));
   const seen = new Set();
   return records.filter(record => {
     const fingerprint = crypto.createHash('sha1').update(record.script).digest('hex');

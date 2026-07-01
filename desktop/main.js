@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, screen, globalShortcut, dialog, Tray, Menu, desktopCapturer, session } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, globalShortcut, dialog, Tray, Menu, nativeImage, desktopCapturer, session } = require('electron');
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
@@ -39,6 +39,7 @@ let lxPlaybackLinked = false;
 let lxPauseBeforeQuitDone = false;
 const registeredGlobalHotkeys = new Map();
 const authorizedLocalMusicRoots = new Set();
+const mainWindowResizeStates = new Map();
 
 async function pauseLinkedLxPlayback() {
   if (!lxPlaybackLinked) return true;
@@ -65,7 +66,9 @@ const MIN_WINDOWED_WIDTH = 960;
 const MIN_WINDOWED_HEIGHT = 540;
 const APP_NAME = 'Mineradio';
 const APP_USER_MODEL_ID = 'com.mineradio.desktop';
+const APP_TRAY_GUID = '7e6162ca-f43f-4d0a-b5bb-8b8fcd17a865';
 const APP_ICON_ICO = path.join(__dirname, '..', 'build', 'icon.ico');
+const APP_TRAY_ICON_PNG = path.join(__dirname, '..', 'public', 'tray-icon.png');
 const LOCAL_FILE_TOKEN = crypto.randomBytes(16).toString('hex');
 const DESKTOP_SHELL_SETTINGS_FILE = 'desktop-shell-settings.json';
 const DESKTOP_UI_STATE_FILE = 'desktop-ui-state.json';
@@ -145,6 +148,9 @@ const LOCAL_LIBRARY_EXTS = new Set(['.mp3', '.flac', '.wav', '.ogg', '.m4a', '.l
 const LOCAL_LIBRARY_MIME = {
   '.mp3': 'audio/mpeg',
   '.flac': 'audio/flac',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4',
   '.lrc': 'text/plain',
   '.txt': 'text/plain',
   '.jpg': 'image/jpeg',
@@ -181,6 +187,34 @@ function localLibraryRelativePath(root, relPath) {
 function localFileProxyUrl(filePath) {
   if (!mainServerPort) return pathToFileURL(filePath).href;
   return `http://127.0.0.1:${mainServerPort}/api/local-file?token=${encodeURIComponent(LOCAL_FILE_TOKEN)}&path=${encodeURIComponent(filePath)}`;
+}
+
+async function localMusicEntryFromPath(filePath, relativeRoot) {
+  const abs = path.resolve(String(filePath || ''));
+  const ext = path.extname(abs).toLowerCase();
+  if (!LOCAL_LIBRARY_EXTS.has(ext)) return null;
+  let stat;
+  try {
+    stat = await fs.promises.stat(abs);
+  } catch (_e) {
+    return null;
+  }
+  if (!stat.isFile()) return null;
+  const root = relativeRoot ? path.resolve(relativeRoot) : path.dirname(abs);
+  rememberLocalMusicRoot(root);
+  const rel = path.relative(root, abs) || path.basename(abs);
+  const webkitRelativePath = localLibraryRelativePath(root, rel);
+  return {
+    fullPath: abs,
+    filePath: abs,
+    url: localFileProxyUrl(abs),
+    name: path.basename(abs),
+    relativePath: webkitRelativePath,
+    webkitRelativePath,
+    size: stat.size,
+    lastModified: Math.round(stat.mtimeMs),
+    type: LOCAL_LIBRARY_MIME[ext] || '',
+  };
 }
 
 async function scanLocalMusicFolder(folderPath) {
@@ -438,11 +472,31 @@ function getSenderWindow(event) {
 
 function focusMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
+  // Windows 隐藏到托盘时会同时从任务栏移除，恢复时必须显式加回来。
+  // 托盘的 click 事件在部分 Windows 隐藏图标面板中可能重复触发，
+  // 因此恢复操作必须保持幂等：无论触发一次还是多次，都只显示和置前窗口。
+  mainWindow.setSkipTaskbar(false);
   if (mainWindow.isMinimized()) mainWindow.restore();
   if (!mainWindow.isVisible()) mainWindow.show();
+  if (typeof mainWindow.moveTop === 'function') mainWindow.moveTop();
   mainWindow.focus();
   sendWindowState(mainWindow);
   return true;
+}
+
+function hideMainWindowToTray({ pauseLinked = false } = {}) {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  if (pauseLinked) pauseLinkedLxPlayback();
+  mainWindow.setSkipTaskbar(true);
+  mainWindow.hide();
+  sendWindowState(mainWindow);
+  return true;
+}
+
+function toggleMainWindowFromTray() {
+  // 左键托盘图标只恢复窗口，不再执行显示/隐藏切换。
+  // 隐藏仍由关闭按钮或托盘右键菜单完成，避免重复 click 导致刚显示又隐藏。
+  return focusMainWindow();
 }
 
 /**
@@ -578,8 +632,9 @@ function refreshTrayMenu() {
     },
     { type: 'separator' },
     { label: '显示 Mineradio', click: focusMainWindow },
+    { label: '隐藏到托盘', click: hideMainWindowToTray },
     {
-      label: '关闭按钮最小化到托盘',
+      label: '关闭按钮隐藏到托盘',
       type: 'checkbox',
       checked: closeToTrayEnabled,
       click: (item) => {
@@ -615,11 +670,19 @@ function refreshTrayMenu() {
  */
 function createTray() {
   if (tray || process.platform !== 'win32') return;
-  const icon = fs.existsSync(APP_ICON_ICO) ? APP_ICON_ICO : process.execPath;
-  tray = new Tray(icon);
-  tray.setToolTip(APP_NAME);
+  const iconPath = fs.existsSync(APP_ICON_ICO)
+    ? APP_ICON_ICO
+    : (fs.existsSync(APP_TRAY_ICON_PNG) ? APP_TRAY_ICON_PNG : process.execPath);
+  let icon = nativeImage.createFromPath(iconPath);
+  if (icon.isEmpty() && iconPath !== process.execPath) icon = nativeImage.createFromPath(process.execPath);
+  if (!icon.isEmpty()) icon = icon.resize({ width: 16, height: 16, quality: 'best' });
+  tray = new Tray(icon.isEmpty() ? process.execPath : icon, APP_TRAY_GUID);
+  tray.setToolTip(`${APP_NAME}（单击显示窗口）`);
   tray.on('click', focusMainWindow);
   tray.on('double-click', focusMainWindow);
+  tray.on('right-click', () => {
+    if (tray) tray.popUpContextMenu();
+  });
   refreshTrayMenu();
 }
 
@@ -1280,7 +1343,11 @@ function closeOverlayWindows() {
 }
 
 ipcMain.handle('desktop-window-minimize', (event) => {
-  getSenderWindow(event)?.minimize();
+  const win = getSenderWindow(event);
+  if (!win || win.isDestroyed()) return;
+  // 最小化始终保留在 Windows 任务栏；只有关闭按钮才隐藏到托盘。
+  win.setSkipTaskbar(false);
+  win.minimize();
 });
 
 ipcMain.handle('desktop-window-toggle-maximize', (event) => {
@@ -1307,6 +1374,52 @@ ipcMain.handle('desktop-window-drag-state', (_event, active) => {
   if (active) suspendDesktopLyricsForMainWindowMove();
   else restoreDesktopLyricsAfterMainWindowMove(80);
   return { ok:true, active:!!active };
+});
+
+ipcMain.on('desktop-window-resize-start', (event, payload = {}) => {
+  const win = getSenderWindow(event);
+  if (!win || win.isDestroyed() || win.isFullScreen() || win.isMaximized()) return;
+  const direction = String(payload.direction || '');
+  if (!/^(n|s|e|w|ne|nw|se|sw)$/.test(direction)) return;
+  mainWindowResizeStates.set(event.sender.id, {
+    win,
+    direction,
+    startX:Number(payload.screenX) || 0,
+    startY:Number(payload.screenY) || 0,
+    bounds:win.getBounds(),
+  });
+  suspendDesktopLyricsForMainWindowMove();
+});
+
+ipcMain.on('desktop-window-resize-update', (event, payload = {}) => {
+  const state = mainWindowResizeStates.get(event.sender.id);
+  if (!state || !state.win || state.win.isDestroyed()) return;
+  const dx = (Number(payload.screenX) || 0) - state.startX;
+  const dy = (Number(payload.screenY) || 0) - state.startY;
+  const start = state.bounds;
+  const direction = state.direction;
+  let x = start.x;
+  let y = start.y;
+  let width = start.width;
+  let height = start.height;
+  if (direction.includes('e')) width = start.width + dx;
+  if (direction.includes('s')) height = start.height + dy;
+  if (direction.includes('w')) { x = start.x + dx; width = start.width - dx; }
+  if (direction.includes('n')) { y = start.y + dy; height = start.height - dy; }
+  if (width < MIN_WINDOWED_WIDTH) {
+    if (direction.includes('w')) x = start.x + start.width - MIN_WINDOWED_WIDTH;
+    width = MIN_WINDOWED_WIDTH;
+  }
+  if (height < MIN_WINDOWED_HEIGHT) {
+    if (direction.includes('n')) y = start.y + start.height - MIN_WINDOWED_HEIGHT;
+    height = MIN_WINDOWED_HEIGHT;
+  }
+  state.win.setBounds({ x:Math.round(x), y:Math.round(y), width:Math.round(width), height:Math.round(height) }, false);
+});
+
+ipcMain.on('desktop-window-resize-end', (event) => {
+  mainWindowResizeStates.delete(event.sender.id);
+  restoreDesktopLyricsAfterMainWindowMove(80);
 });
 
 ipcMain.handle('mineradio-lx-set-linked', (_event, linked) => {
@@ -1391,6 +1504,25 @@ ipcMain.handle('mineradio-ui-state-write', async (_event, patch) => {
     return { ok: true, updatedAt: state.updatedAt };
   } catch (e) {
     return { ok: false, error: e.message || 'UI_STATE_WRITE_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-local-music-choose-files', async (event) => {
+  try {
+    const owner = getSenderWindow(event);
+    const result = await dialog.showOpenDialog(owner, {
+      title: '选择本地音乐、歌词或封面文件',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: '音乐与配套文件', extensions: ['mp3', 'flac', 'wav', 'ogg', 'm4a', 'lrc', 'txt', 'jpg', 'jpeg', 'png', 'webp'] },
+        { name: '所有文件', extensions: ['*'] },
+      ],
+    });
+    if (result.canceled || !result.filePaths || !result.filePaths.length) return { ok:false, canceled:true, files:[] };
+    const files = (await Promise.all(result.filePaths.map(filePath => localMusicEntryFromPath(filePath)))).filter(Boolean);
+    return { ok:true, canceled:false, files };
+  } catch (e) {
+    return { ok:false, canceled:false, files:[], error:e.message || 'LOCAL_FILES_CHOOSE_FAILED' };
   }
 });
 
@@ -1616,6 +1748,9 @@ async function createWindow() {
     ...initialBounds,
     minWidth: 960,
     minHeight: 540,
+    resizable: true,
+    maximizable: true,
+    thickFrame: true,
     show: false,
     frame: false,
     fullscreen: false,
@@ -1651,13 +1786,18 @@ async function createWindow() {
   });
 
   mainWindow.once('ready-to-show', () => {
+    mainWindow.setSkipTaskbar(false);
     mainWindow.show();
     sendWindowState(mainWindow);
   });
 
   mainWindow.on('maximize', () => sendWindowState(mainWindow));
   mainWindow.on('unmaximize', () => sendWindowState(mainWindow));
-  mainWindow.on('minimize', () => sendWindowState(mainWindow));
+  mainWindow.on('minimize', () => {
+    // 最小化是正常缩到任务栏，不受“关闭到托盘”设置影响。
+    mainWindow.setSkipTaskbar(false);
+    sendWindowState(mainWindow);
+  });
   mainWindow.on('restore', () => sendWindowState(mainWindow));
   mainWindow.on('show', () => sendWindowState(mainWindow));
   mainWindow.on('hide', () => sendWindowState(mainWindow));
@@ -1685,9 +1825,7 @@ async function createWindow() {
   mainWindow.on('close', (event) => {
     if (!appQuitting && closeToTrayEnabled) {
       event.preventDefault();
-      pauseLinkedLxPlayback();
-      mainWindow.hide();
-      sendWindowState(mainWindow);
+      hideMainWindowToTray({ pauseLinked: true });
     }
   });
   mainWindow.on('closed', () => {
@@ -1696,6 +1834,7 @@ async function createWindow() {
       mainWindowStateTimer = null;
     }
     closeOverlayWindows();
+    mainWindowResizeStates.clear();
     mainWindow = null;
   });
   mainWindow.on('enter-full-screen', () => {
@@ -1759,8 +1898,9 @@ if (!gotSingleInstanceLock) {
     });
     screen.on('display-added', () => scheduleWindowStateSend(mainWindow));
     screen.on('display-removed', () => scheduleWindowStateSend(mainWindow));
-    await createWindow();
     createTray();
+    await createWindow();
+    refreshTrayMenu();
   });
 
   app.on('activate', () => {

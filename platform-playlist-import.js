@@ -2,6 +2,7 @@
 
 const http = require('http');
 const https = require('https');
+const crypto = require('crypto');
 let networkFetch = globalThis.fetch;
 function setFetchImplementation(fn) {
   if (typeof fn === 'function') networkFetch = fn;
@@ -22,12 +23,16 @@ async function fetchJson(url, options = {}) {
         },
       });
     } catch (error) {
-      // Electron net may classify some official music API hosts as blocked clients.
-      // A native Node HTTPS request avoids that Chromium filtering path.
-      if (/BLOCKED_BY_CLIENT|fetch failed|ERR_FAILED/i.test(String(error && (error.message || error)))) {
-        return await fetchJsonNative(url, options.headers || {});
+      // Node/Electron fetch can fail differently on different Windows machines
+      // (AbortError, DNS, proxy, certificate, ERR_FAILED, blocked client, etc.).
+      // Always retry JSON API calls with the native http/https stack before
+      // giving up, instead of only handling a small set of error messages.
+      try {
+        return await fetchJsonNative(url, options);
+      } catch (nativeError) {
+        nativeError.cause = nativeError.cause || error;
+        throw nativeError;
       }
-      throw error;
     }
     if (!response.ok) throw new Error(`HTTP_${response.status}`);
     return await response.json();
@@ -36,7 +41,7 @@ async function fetchJson(url, options = {}) {
   }
 }
 
-function fetchJsonNative(url, headers = {}, redirects = 0) {
+function fetchJsonNative(url, options = {}, redirects = 0) {
   return new Promise((resolve, reject) => {
     if (redirects > 5) {
       reject(new Error('TOO_MANY_REDIRECTS'));
@@ -44,15 +49,30 @@ function fetchJsonNative(url, headers = {}, redirects = 0) {
     }
     const target = new URL(url);
     const transport = target.protocol === 'http:' ? http : https;
-    const request = transport.get(target, {
-      headers:{
-        'user-agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        ...headers,
-      },
-    }, (response) => {
+    const method = String(options.method || 'GET').toUpperCase();
+    let body = options.body == null ? null : options.body;
+    if (body != null && !Buffer.isBuffer(body)) body = Buffer.from(String(body));
+    const headers = {
+      'user-agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      ...(options.headers || {}),
+    };
+    if (body && !Object.keys(headers).some(key => key.toLowerCase() === 'content-length')) {
+      headers['content-length'] = String(body.length);
+    }
+    const request = transport.request(target, { method, headers }, (response) => {
       if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
         response.resume();
-        resolve(fetchJsonNative(new URL(response.headers.location, target).href, headers, redirects + 1));
+        const nextUrl = new URL(response.headers.location, target).href;
+        const switchToGet = response.statusCode === 303 || ((response.statusCode === 301 || response.statusCode === 302) && method === 'POST');
+        const nextOptions = switchToGet
+          ? { ...options, method:'GET', body:undefined, headers:{ ...(options.headers || {}) } }
+          : options;
+        if (switchToGet && nextOptions.headers) {
+          for (const key of Object.keys(nextOptions.headers)) {
+            if (['content-length', 'content-type'].includes(key.toLowerCase())) delete nextOptions.headers[key];
+          }
+        }
+        resolve(fetchJsonNative(nextUrl, nextOptions, redirects + 1));
         return;
       }
       const chunks = [];
@@ -71,23 +91,28 @@ function fetchJsonNative(url, headers = {}, redirects = 0) {
     });
     request.setTimeout(18000, () => request.destroy(new Error('REQUEST_TIMEOUT')));
     request.on('error', reject);
+    if (body) request.write(body);
+    request.end();
   });
 }
 
 async function fetchText(url, options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 18000);
+  const headers = {
+    'user-agent':'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Mobile Safari/537.36',
+    ...(options.headers || {}),
+  };
   try {
-    const response = await networkFetch(url, {
-      ...options,
-      signal:controller.signal,
-      headers:{
-        'user-agent':'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Mobile Safari/537.36',
-        ...(options.headers || {}),
-      },
-    });
-    if (!response.ok) throw new Error(`HTTP_${response.status}`);
-    return await response.text();
+    try {
+      const response = await networkFetch(url, { ...options, signal:controller.signal, headers });
+      if (!response.ok) throw new Error(`HTTP_${response.status}`);
+      return await response.text();
+    } catch (error) {
+      const native = await requestShareStepNative(url, String(options.method || 'GET').toUpperCase(), headers);
+      if (native.status < 200 || native.status >= 400) throw error;
+      return native.body;
+    }
   } finally {
     clearTimeout(timer);
   }
@@ -98,8 +123,13 @@ function durationText(seconds) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 function singerText(value) {
-  return Array.isArray(value) ? value.map(item => item?.name || item?.singerName).filter(Boolean).join('、') : String(value || '');
+  if (Array.isArray(value)) {
+    return value.map(item => typeof item === 'string' ? item : (item?.name || item?.singerName || item?.artistName || item?.singer)).filter(Boolean).join('、');
+  }
+  if (value && typeof value === 'object') return String(value.name || value.singerName || value.artistName || value.singer || '');
+  return String(value || '');
 }
+
 
 function uniqueBy(items, getKey) {
   const seen = new Set();
@@ -137,11 +167,41 @@ function parseAssignedJson(html, marker) {
   return null;
 }
 
+function parseAssignedObject(html, marker) {
+  const text = String(html || '');
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex < 0) return null;
+  const start = text.indexOf('{', markerIndex + marker.length);
+  if (start < 0) return null;
+  let depth = 0;
+  let quoted = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') quoted = false;
+      continue;
+    }
+    if (char === '"') quoted = true;
+    else if (char === '{' || char === '[') depth += 1;
+    else if (char === '}' || char === ']') {
+      depth -= 1;
+      if (depth === 0) {
+        try { return JSON.parse(text.slice(start, index + 1)); } catch (_error) { return null; }
+      }
+    }
+  }
+  return null;
+}
+
 const SOURCE_ALIASES = {
   tx:'tx', qq:'tx', '小秋':'tx',
   wy:'wy', '163':'wy', netease:'wy', '小芸':'wy',
   kw:'kw', kuwo:'kw', '小蜗':'kw',
-  kg:'kg', kugou:'kg', '小狗':'kg',
+  kg:'kg', kugou:'kg', '小枸':'kg', '小狗':'kg',
+  kgc:'kgc', kglite:'kgc', concept:'kgc', '小枸概念版':'kgc', '酷狗概念版':'kgc', '概念版':'kgc',
   mg:'mg', migu:'mg', '小菇':'mg',
 };
 
@@ -149,78 +209,390 @@ function normalizeSource(value) {
   return SOURCE_ALIASES[String(value || '').trim().toLowerCase()] || '';
 }
 
+function extractFirstUrl(input) {
+  const match = String(input || '').match(/https?:\/\/[^\s<>"']+/i);
+  return match ? match[0].replace(/[，。；;、）)\]}>]+$/g, '') : '';
+}
+
+function safeUrl(value, base) {
+  try { return new URL(String(value || '').trim(), base).href; } catch (_error) { return ''; }
+}
+
+function getUrlParamEverywhere(rawUrl, keys) {
+  try {
+    const parsed = new URL(rawUrl);
+    for (const key of keys) {
+      const value = parsed.searchParams.get(key);
+      if (value) return value;
+    }
+    const fragment = decodeURIComponent(parsed.hash || '');
+    for (const key of keys) {
+      const match = fragment.match(new RegExp(`(?:[?&#]|^|\\b)${key}=([^&#\\s]+)`, 'i'));
+      if (match) return match[1];
+    }
+  } catch (_error) {}
+  return '';
+}
+
+function extractMiguPlaylistId(value) {
+  const text = String(value || '');
+  const url = extractFirstUrl(text) || (/^https?:\/\//i.test(text.trim()) ? text.trim() : '');
+  if (url && /(?:^|\.)migu\.cn$/i.test((() => { try { return new URL(url).hostname; } catch (_e) { return ''; } })())) {
+    const direct = getUrlParamEverywhere(url, ['playlistId', 'playListId', 'id']);
+    if (/^\d+$/.test(direct)) return direct;
+    try {
+      const pathMatch = new URL(url).pathname.match(/\/(\d{5,})(?:\.html?)?\/?$/i);
+      if (pathMatch) return pathMatch[1];
+    } catch (_error) {}
+  }
+  const match = text.match(/(?:playlistId|playListId|(?:[?&#]|\b)id)\s*[=/:_-]+\s*(\d{5,})/i);
+  return match ? match[1] : '';
+}
+
+function extractMiguPlaylistIdentity(value) {
+  const id = extractMiguPlaylistId(value);
+  if (id) return id;
+  const text = String(value || '');
+  const url = extractFirstUrl(text) || (/^https?:\/\//i.test(text.trim()) ? text.trim() : '');
+  if (!url) return '';
+  try {
+    if (/(?:^|\.)migu\.cn$/i.test(new URL(url).hostname)) return `url:${url}`;
+  } catch (_error) {}
+  return '';
+}
+
+function extractKugouPlaylistIdentity(value) {
+  const text = String(value || '');
+  const collectionMatch = text.match(/(?:global_collection_id|global_specialid)["'\s:=]+(collection_[a-z0-9_-]+)/i)
+    || text.match(/\b(collection_[a-z0-9_-]+)\b/i);
+  if (collectionMatch) return collectionMatch[1].toLowerCase();
+  const gcidMatch = text.match(/\b(gcid_[a-z0-9]+)\b/i);
+  if (gcidMatch) return gcidMatch[1].toLowerCase();
+  const specialMatch = text.match(/(?:specialid|specialId|plistid|listid)["'\s:=]+(\d{3,})/i)
+    || text.match(/\/special\/single\/(\d+)/i);
+  if (specialMatch) return specialMatch[1];
+
+  const url = extractFirstUrl(text) || (/^https?:\/\//i.test(text.trim()) ? text.trim() : '');
+  if (!url) return '';
+  try {
+    const parsed = new URL(url);
+    if (!/(?:^|\.)kugou\.(?:com|cn)$/i.test(parsed.hostname)) return '';
+    for (const key of ['global_collection_id', 'global_specialid']) {
+      const value = parsed.searchParams.get(key);
+      if (/^collection_[a-z0-9_-]+$/i.test(value || '')) return value.toLowerCase();
+    }
+    for (const key of ['gcid', 'songlistid', 'encode_gic', 'encode_src_gid']) {
+      const value = parsed.searchParams.get(key);
+      if (/^gcid_[a-z0-9]+$/i.test(value || '')) return value.toLowerCase();
+    }
+    for (const key of ['specialid', 'specialId', 'plistid', 'listid', 'id']) {
+      const value = parsed.searchParams.get(key);
+      if (/^\d+$/.test(value || '')) return value;
+    }
+    const pathGCID = parsed.pathname.match(/songlist\/(gcid_[a-z0-9]+)/i);
+    if (pathGCID) return pathGCID[1].toLowerCase();
+    const pathSpecial = parsed.pathname.match(/(?:special|playlist)\/(?:single\/)?(\d+)/i);
+    if (pathSpecial) return pathSpecial[1];
+    // Concept-edition playlist links commonly carry an opaque chain and reveal
+    // global_collection_id only after redirect/page loading. Keep the URL as an
+    // import identity so importKG can resolve it instead of rejecting it early.
+    return `url:${url}`;
+  } catch (_error) {
+    return '';
+  }
+}
+
+
+function extractKugouNormalIdentity(value) {
+  const text = String(value || '');
+  const gcidMatch = text.match(/\b(gcid_[a-z0-9]+)\b/i);
+  if (gcidMatch) return gcidMatch[1].toLowerCase();
+  const specialMatch = text.match(/(?:specialid|specialId|plistid|listid)["'\s:=]+(\d{3,})/i)
+    || text.match(/\/(?:special|playlist)\/(?:single\/)?(\d+)/i);
+  if (specialMatch) return specialMatch[1];
+  const url = extractFirstUrl(text) || (/^https?:\/\//i.test(text.trim()) ? text.trim() : '');
+  if (!url) return '';
+  try {
+    const parsed = new URL(url);
+    if (!/(?:^|\.)kugou\.(?:com|cn)$/i.test(parsed.hostname)) return '';
+    for (const key of ['gcid', 'songlistid', 'encode_gic', 'encode_src_gid']) {
+      const item = parsed.searchParams.get(key);
+      if (/^gcid_[a-z0-9]+$/i.test(item || '')) return item.toLowerCase();
+    }
+    for (const key of ['specialid', 'specialId', 'plistid', 'listid', 'id']) {
+      const item = parsed.searchParams.get(key);
+      if (/^\d+$/.test(item || '')) return item;
+    }
+    const pathGCID = parsed.pathname.match(/songlist\/(gcid_[a-z0-9]+)/i);
+    if (pathGCID) return pathGCID[1].toLowerCase();
+    const pathSpecial = parsed.pathname.match(/(?:special|playlist)\/(?:single\/)?(\d+)/i);
+    if (pathSpecial) return pathSpecial[1];
+  } catch (_error) {}
+  return '';
+}
+
+function extractKugouConceptIdentity(value) {
+  const text = String(value || '');
+  const explicit = text.match(/(?:global_collection_id|global_specialid)["'\s:=]+([a-z0-9_-]{4,})/i)
+    || text.match(/\b(collection_[a-z0-9_-]+)\b/i);
+  if (explicit) return String(explicit[1]).toLowerCase();
+  const url = extractFirstUrl(text) || (/^https?:\/\//i.test(text.trim()) ? text.trim() : '');
+  if (!url) return '';
+  try {
+    const parsed = new URL(url);
+    if (!/(?:^|\.)kugou\.(?:com|cn)$/i.test(parsed.hostname)) return '';
+    for (const key of ['global_collection_id', 'global_specialid']) {
+      const item = parsed.searchParams.get(key);
+      if (/^[a-z0-9_-]{4,}$/i.test(item || '')) return item.toLowerCase();
+    }
+    for (const key of ['gcid', 'songlistid', 'encode_gic', 'encode_src_gid']) {
+      const item = parsed.searchParams.get(key);
+      if (/^gcid_[a-z0-9]+$/i.test(item || '')) return item.toLowerCase();
+    }
+    for (const key of ['specialid', 'specialId']) {
+      const item = parsed.searchParams.get(key);
+      if (/^\d+$/.test(item || '') && item !== '0') return item;
+    }
+    if (/^t1\.kugou\.com$/i.test(parsed.hostname) || /\/share\/zlist\.html/i.test(parsed.pathname)) return `url:${url}`;
+  } catch (_error) {}
+  return '';
+}
+
+function findKugouConceptIdentityInPayload(payload, depth = 0, seen = new Set()) {
+  if (payload == null || depth > 8) return '';
+  if (typeof payload === 'string') return extractKugouConceptIdentity(payload);
+  if (typeof payload !== 'object' || seen.has(payload)) return '';
+  seen.add(payload);
+  for (const key of ['global_collection_id', 'global_specialid', 'collection_id', 'gcid', 'specialid']) {
+    const value = payload[key];
+    if (value != null) {
+      const direct = extractKugouConceptIdentity(`${key}=${String(value)}`);
+      if (direct) return direct;
+    }
+  }
+  for (const value of Object.values(payload)) {
+    const found = findKugouConceptIdentityInPayload(value, depth + 1, seen);
+    if (found) return found;
+  }
+  return '';
+}
+
+function extractJsonRedirect(body, baseUrl) {
+  const text = String(body || '').trim().replace(/^\uFEFF/, '');
+  if (!text || (text[0] !== '{' && text[0] !== '[')) return '';
+  try {
+    const payload = JSON.parse(text);
+    const candidates = [];
+    const visit = (value, depth = 0) => {
+      if (value == null || depth > 7) return;
+      if (typeof value === 'string') {
+        if (/^https?:\/\//i.test(value)) candidates.push(value);
+        return;
+      }
+      if (typeof value !== 'object') return;
+      for (const [key, item] of Object.entries(value)) {
+        if (/url|link|jump|redirect|target/i.test(key) && typeof item === 'string') candidates.push(item);
+        visit(item, depth + 1);
+      }
+    };
+    visit(payload);
+    for (const candidate of candidates) {
+      const resolved = safeUrl(candidate, baseUrl);
+      if (resolved && resolved !== baseUrl) return resolved;
+    }
+  } catch (_error) {}
+  return '';
+}
+
 function detect(input, preferredSource) {
   const text = String(input || '').trim();
-  const rules = [
-    ['tx', /(?:y\.qq\.com|i\d*\.y\.qq\.com|c\d*\.y\.qq\.com|m\.qq\.com)[^\s]*?(?:playlist(?:\.html)?[/?]|[?&](?:id|disstid)=)(\d+)/i],
-    ['wy', /(?:music\.163\.com|y\.music\.163\.com|m\.music\.163\.com|163cn\.tv)[^\s]*?(?:playlist(?:\?id=|\/)|[?&](?:playlistId|id)=)(\d+)/i],
-    ['kw', /(?:kuwo\.cn|kuwo\.com|h5app\.kuwo\.cn|m\.kuwo\.cn)[^\s]*?(?:playlist(?:_detail)?[/?_-]|[?&](?:pid|playlistId|id)=)(\d+)/i],
-    ['kg', /(?:kugou\.com|kugou\.cn)[^\s]*?(?:songlist\/gcid_|plist\/list\/|special\/single\/|zlist\.html[^\s]*?[?&](?:listid|id)=|[?&](?:listid|specialid|id)=)([a-z0-9_]+)/i],
-    ['mg', /(?:migu\.cn|nf\.migu\.cn)[^\s]*?(?:playlist(?:contents_query_tag)?[/?_-]|[?&](?:playlistId|playListId|id)=)(\d+)/i],
-  ];
-  for (const [source, rx] of rules) {
-    const match = text.match(rx);
-    if (match) return { source, id:match[1], input:text };
-  }
-  const prefixed = text.match(/^(tx|qq|wy|163|kw|kg|mg|小秋|小芸|小蜗|小狗|小菇)\s*[:：]\s*(\d+)$/i);
-  if (prefixed) {
-    return { source:normalizeSource(prefixed[1]), id:prefixed[2], input:text };
-  }
   const source = normalizeSource(preferredSource);
+
+  if (source === 'kgc') {
+    const conceptId = extractKugouConceptIdentity(text);
+    if (conceptId) return { source:'kgc', id:conceptId, input:text };
+    if (extractKugouNormalIdentity(text)) throw new Error('这是普通小枸歌单链接，请选择“小枸”后再导入');
+    throw new Error('无法识别小枸概念版歌单；请粘贴概念版分享链接或 collection_ 开头的歌单编号');
+  }
+  if (source === 'kg') {
+    const normalId = extractKugouNormalIdentity(text);
+    if (normalId) return { source:'kg', id:normalId, input:text };
+    if (extractKugouConceptIdentity(text)) throw new Error('这是小枸概念版歌单，请选择“小枸概念版”后再导入');
+  }
+
+  const miguId = extractMiguPlaylistIdentity(text);
+  if (miguId && (/migu\.cn/i.test(text) || source === 'mg')) return { source:'mg', id:miguId, input:text };
+  const kugouId = extractKugouNormalIdentity(text);
+  if (kugouId && (/kugou\.(?:com|cn)/i.test(text) || source === 'kg')) return { source:'kg', id:kugouId, input:text };
+
+  const rules = [
+    ['tx', /(?:y\.qq\.com|i\d*\.y\.qq\.com|c\d*\.y\.qq\.com|m\.qq\.com)[^\s]*?(?:playlist(?:\.html)?[/?]|[?&#](?:id|disstid)=)(\d+)/i],
+    ['wy', /(?:music\.163\.com|y\.music\.163\.com|m\.music\.163\.com|163cn\.tv)[^\s]*?(?:playlist(?:\?id=|\/)|[?&#](?:playlistId|id)=)(\d+)/i],
+    ['kw', /(?:kuwo\.cn|kuwo\.com|h5app\.kuwo\.cn|m\.kuwo\.cn)[^\s]*?(?:playlist(?:_detail)?[/?_-]|[?&#](?:pid|playlistId|id)=)(\d+)/i],
+  ];
+  for (const [ruleSource, rx] of rules) {
+    const match = text.match(rx);
+    if (match) return { source:ruleSource, id:match[1], input:text };
+  }
+  const prefixed = text.match(/^(tx|qq|wy|163|kw|kg|kgc|kglite|mg|小秋|小芸|小蜗|小枸|小狗|小菇|小枸概念版|酷狗概念版|概念版)\s*[:：]\s*([a-z0-9_-]+)$/i);
+  if (prefixed) return { source:normalizeSource(prefixed[1]), id:prefixed[2], input:text };
+  if (source && /^\d+$/.test(text)) return { source, id:text, input:text };
+  if (source === 'kg' && /^gcid_[a-z0-9_-]+$/i.test(text)) return { source, id:text.toLowerCase(), input:text };
+  if (source === 'kgc' && /^(?:collection_|gcid_)[a-z0-9_-]+$/i.test(text)) return { source, id:text.toLowerCase(), input:text };
   if (source) {
-    if (/^\d+$/.test(text)) return { source, id:text, input:text };
     const matches = [...text.matchAll(/(?:playlist(?:Id)?|disstid|specialid|pid|id)[=/:_-]+(\d{4,})/ig)];
     if (matches.length) return { source, id:matches[matches.length - 1][1], input:text };
   }
   throw new Error('无法识别链接；请选择平台并粘贴歌单分享链接，或直接输入数字歌单 ID');
 }
 
-async function expandShareLink(input) {
-  const match = String(input || '').match(/https?:\/\/[^\s<>"']+/i);
-  if (!match) return String(input || '');
+function decodeHtmlEntities(text) {
+  return String(text || '')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>');
+}
+
+function extractHtmlRedirect(html, baseUrl) {
+  const text = decodeHtmlEntities(html);
+  const patterns = [
+    /<meta[^>]+http-equiv=["']?refresh["']?[^>]+content=["'][^"']*?url\s*=\s*([^"'>]+)["']/i,
+    /<meta[^>]+content=["'][^"']*?url\s*=\s*([^"'>]+)["'][^>]+http-equiv=["']?refresh/i,
+    /(?:window\.)?location(?:\.href)?\s*=\s*["']([^"']+)["']/i,
+    /location\.(?:replace|assign)\(\s*["']([^"']+)["']\s*\)/i,
+    /<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const url = safeUrl(match[1].trim(), baseUrl);
+      if (url) return url;
+    }
+  }
+  return '';
+}
+
+async function requestShareStep(url, method = 'GET') {
+  const headers = {
+    'user-agent':'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36',
+    Accept:'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  };
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10000);
+  const timer = setTimeout(() => controller.abort(), 12000);
   try {
-    const response = await networkFetch(match[0], {
-      method:'GET',
-      redirect:'follow',
-      signal:controller.signal,
-      headers:{ 'user-agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-    });
-    return response.url || match[0];
-  } catch (_error) {
     try {
-      return await expandShareLinkNative(match[0]);
-    } catch (_nativeError) {
-      return String(input || '');
+      const response = await networkFetch(url, { method, redirect:'manual', signal:controller.signal, headers });
+      const location = response.headers.get('location') || '';
+      const body = method === 'HEAD' ? '' : await response.text();
+      return { status:Number(response.status) || 0, location, body, responseUrl:response.url || url };
+    } catch (_fetchError) {
+      return await requestShareStepNative(url, method, headers);
     }
   } finally {
     clearTimeout(timer);
   }
 }
 
-function expandShareLinkNative(url, redirects = 0) {
+async function requestShareFollow(url, method = 'GET') {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await networkFetch(url, {
+      method,
+      redirect:'follow',
+      signal:controller.signal,
+      headers:{
+        'user-agent':'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36',
+        Accept:'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    });
+    return {
+      status:Number(response.status) || 0,
+      body:method === 'HEAD' ? '' : await response.text(),
+      responseUrl:response.url || url,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function requestShareStepNative(url, method = 'GET', headers = {}) {
   return new Promise((resolve, reject) => {
-    if (redirects > 6) {
-      reject(new Error('TOO_MANY_REDIRECTS'));
-      return;
-    }
     const target = new URL(url);
     const transport = target.protocol === 'http:' ? http : https;
-    const request = transport.get(target, {
-      headers:{ 'user-agent':'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Mobile Safari/537.36' },
-    }, (response) => {
-      if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-        response.resume();
-        resolve(expandShareLinkNative(new URL(response.headers.location, target).href, redirects + 1));
-        return;
-      }
-      response.resume();
-      resolve(target.href);
+    const request = transport.request(target, { method, headers }, (response) => {
+      const chunks = [];
+      let size = 0;
+      response.on('data', chunk => {
+        if (method === 'HEAD' || size >= 2 * 1024 * 1024) return;
+        size += chunk.length;
+        if (size <= 2 * 1024 * 1024) chunks.push(chunk);
+      });
+      response.on('end', () => resolve({
+        status:Number(response.statusCode) || 0,
+        location:String(response.headers.location || ''),
+        body:Buffer.concat(chunks).toString('utf8'),
+        responseUrl:target.href,
+      }));
     });
-    request.setTimeout(10000, () => request.destroy(new Error('REQUEST_TIMEOUT')));
+    request.setTimeout(12000, () => request.destroy(new Error('REQUEST_TIMEOUT')));
     request.on('error', reject);
+    request.end();
   });
+}
+
+async function expandShareLinkDetailed(input) {
+  const originalUrl = extractFirstUrl(input);
+  if (!originalUrl) return { url:String(input || ''), html:'', chain:[] };
+  let current = originalUrl;
+  let html = '';
+  const chain = [current];
+  const visited = new Set();
+  for (let index = 0; index < 8; index += 1) {
+    if (visited.has(current)) break;
+    visited.add(current);
+    let step = null;
+    try { step = await requestShareStep(current, 'HEAD'); } catch (_error) {}
+    let location = step?.location ? safeUrl(step.location, current) : '';
+    const knownShort = /(?:^|\.)(?:t1\.kugou\.com|c\.migu\.cn)$/i.test((() => { try { return new URL(current).hostname; } catch (_e) { return ''; } })());
+    // Some Node/Electron builds do not expose Location on manual redirects.
+    // Probe once with follow mode and use response.url as the canonical target.
+    if (!location && knownShort) {
+      try {
+        const followed = await requestShareFollow(current, 'HEAD');
+        if (followed.responseUrl && followed.responseUrl !== current) location = followed.responseUrl;
+      } catch (_error) {}
+    }
+    if (!location) {
+      try { step = await requestShareStep(current, 'GET'); } catch (_error) { step = null; }
+      location = step?.location ? safeUrl(step.location, current) : '';
+      html = step?.body || html;
+      if (!location && html) location = extractHtmlRedirect(html, current) || extractJsonRedirect(html, current);
+    }
+    if (!location && knownShort) {
+      try {
+        const followed = await requestShareFollow(current, 'GET');
+        html = followed.body || html;
+        if (followed.responseUrl && followed.responseUrl !== current) location = followed.responseUrl;
+        if (!location && html) location = extractHtmlRedirect(html, current) || extractJsonRedirect(html, current);
+      } catch (_error) {}
+    }
+    if (location && location !== current) {
+      current = location;
+      chain.push(current);
+      html = '';
+      continue;
+    }
+    if (!knownShort || html) break;
+  }
+  return { url:current, html, chain };
+}
+
+async function expandShareLink(input) {
+  const result = await expandShareLinkDetailed(input);
+  return result.url || String(input || '');
 }
 
 async function importQQ(id) {
@@ -298,107 +670,839 @@ async function importKW(id) {
   };
 }
 
-async function importKG(id, originalInput) {
-  let legacyId = id;
-  let sharedInfo = null;
-  if (!/^\d+$/.test(legacyId)) {
-    const sharedUrl = String(originalInput || '').match(/https?:\/\/[^\s<>"']+/i)?.[0];
-    const html = await fetchText(sharedUrl || `https://m.kugou.com/songlist/gcid_${encodeURIComponent(legacyId)}/`, {
-      headers:{ Referer:'https://www.kugou.com/' },
-    });
-    const outputMatch = html.match(/window\.\$output\s*=\s*(\{[\s\S]*?\});\s*<\/script>/i);
-    if (outputMatch) {
-      try { sharedInfo = JSON.parse(outputMatch[1])?.info || null; } catch (_error) {}
-    }
-    const match = html.match(/["']?specialid["']?\s*[:=]\s*["']?(\d+)/i)
-      || html.match(/\/special\/single\/(\d+)/i);
-    if (!match) throw new Error('酷狗新式歌单链接暂时无法换取歌单 ID，请确认歌单已设为公开');
-    legacyId = match[1];
+const KUGOU_GATEWAY_SIGN_KEY = 'OIlwieks28dk2k092lksi2UIkp';
+const KUGOU_PLAYLIST_SIGN_KEY = 'NVPh5oo715z5DIWAeQlhMDsWXXQV4hwt';
+
+function kugouSignatureForParams(params, secret = KUGOU_GATEWAY_SIGN_KEY, body = '') {
+  const pairs = [];
+  for (const [key, value] of params.entries()) {
+    if (String(key).toLowerCase() === 'signature') continue;
+    pairs.push(`${key}=${value}`);
   }
-  const detailHtml = await fetchText(`https://www.kugou.com/yy/special/single/${legacyId}.html`, {
-    headers:{ Referer:'https://www.kugou.com/' },
+  pairs.sort();
+  return crypto.createHash('md5').update(`${secret}${pairs.join('')}${body}${secret}`).digest('hex');
+}
+
+function buildSignedKugouUrl(base, values, secret = KUGOU_GATEWAY_SIGN_KEY, body = '') {
+  const url = new URL(base);
+  Object.entries(values || {}).forEach(([key, value]) => {
+    if (value != null && value !== '') url.searchParams.set(key, String(value));
   });
-  const detailRows = parseAssignedJson(detailHtml, 'var data=') || [];
-  const rows = uniqueBy([...(sharedInfo?.songs || []), ...detailRows], item =>
-    item.audio_id || item.audioid || item.rp_id || item.album_audio_id || item.id || item.hash || item.HASH
-  );
-  const info = sharedInfo?.listinfo || {};
-  if (!rows.length) throw new Error('小狗歌单读取失败');
+  url.searchParams.set('signature', kugouSignatureForParams(url.searchParams, secret, body));
+  return url.href;
+}
+
+function buildSignedKugouUrlIncludingEmpty(base, values, secret = KUGOU_GATEWAY_SIGN_KEY, body = '') {
+  const url = new URL(base);
+  Object.entries(values || {}).forEach(([key, value]) => {
+    if (value != null) url.searchParams.set(key, String(value));
+  });
+  url.searchParams.set('signature', kugouSignatureForParams(url.searchParams, secret, body));
+  return url.href;
+}
+
+function kugouAndroidBaseParams(extra = {}, clientver = 20489) {
+  const dfid = '-';
+  const deviceId = crypto.createHash('md5').update(dfid).digest('hex');
   return {
-    name:info.name || detailHtml.match(/<title>([^<]+)/i)?.[1]?.replace(/_酷狗音乐.*$/i, '') || `小狗歌单 ${id}`,
-    cover:String(info.pic || '').replace('{size}', '400'),
-    songs:rows.map(item => {
-      const singer = item.singername || singerText(item.singerinfo || item.authors)
-        || String(item.filename || '').split(' - ')[0] || '';
-      let name = item.songname || item.name || String(item.filename || '').split(' - ').slice(1).join(' - ');
-      if (singer && name.startsWith(`${singer} - `)) name = name.slice(singer.length + 3);
-      return {
-        id:item.audio_id || item.audioid || item.rp_id || item.album_audio_id || item.id,
-        songmid:item.audio_id || item.audioid || item.rp_id || item.album_audio_id || item.id,
-        name, singer,
-        albumName:item.album_name || item.albuminfo?.name || '', albumId:item.album_id || item.albuminfo?.id || '',
-        hash:item.hash || item.HASH || item.audio_info?.hash || '',
-        picUrl:String(item.img || item.cover || item.trans_param?.union_cover || '').replace('{size}', '400'),
-        interval:durationText((item.timelength || item.timelen || 0) / 1000),
-        source:'kg', types:['flac','320k','128k'],
-      };
-    }),
+    token:'', userid:'0', appid:1005, clientver,
+    dfid, mid:deviceId, uuid:deviceId,
+    clienttime:String(Math.floor(Date.now() / 1000)),
+    ...extra,
   };
 }
 
-async function importMG(id) {
-  // The service caps responses at 50 but still calculates offsets from the
-  // requested pageSize. Requesting more than 50 silently skips songs.
-  const pageSize = 50;
-  const [songsData, infoData] = await Promise.all([
-    fetchJson(`https://app.c.nf.migu.cn/MIGUM3.0/resource/playlist/song/v2.0?pageNo=1&pageSize=${pageSize}&playlistId=${id}`),
-    fetchJson(`https://c.musicapp.migu.cn/MIGUM3.0/resource/playlist/v2.0?playlistId=${id}`),
-  ]);
-  const rows = [...(songsData?.data?.songList || [])];
-  const total = Number(songsData?.data?.totalCount || infoData?.data?.musicNum || rows.length);
-  const actualPageSize = Math.max(1, rows.length || pageSize);
-  for (let page = 2; rows.length < total && page <= Math.ceil(total / actualPageSize) + 1; page += 1) {
-    const pageData = await fetchJson(
-      `https://app.c.nf.migu.cn/MIGUM3.0/resource/playlist/song/v2.0?pageNo=${page}&pageSize=${pageSize}&playlistId=${id}`
+async function decodeKugouGCIDVariant(gcid, idType, clientver = 20489) {
+  const body = JSON.stringify({ ret_info:1, data:[{ id:String(gcid), id_type:idType }] });
+  const values = kugouAndroidBaseParams({}, clientver);
+  const endpoints = [
+    'https://t.kugou.com/v1/songlist/batch_decode',
+    'http://t.kugou.com/v1/songlist/batch_decode',
+  ];
+  let lastError = null;
+  for (const endpoint of endpoints) {
+    try {
+      const url = buildSignedKugouUrlIncludingEmpty(endpoint, values, KUGOU_GATEWAY_SIGN_KEY, body);
+      const payload = await fetchJson(url, {
+        method:'POST',
+        headers:{
+          'content-type':'application/json',
+          'user-agent':'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Mobile Safari/537.36',
+          referer:'https://m.kugou.com/',
+        },
+        body,
+      });
+      const decoded = payload?.data?.list?.[0] || {};
+      const value = String(decoded.global_collection_id || decoded.global_specialid || decoded?.info?.global_specialid || decoded?.info?.specialid || '');
+      if (value) return value;
+    } catch (error) { lastError = error; }
+  }
+  if (lastError) throw lastError;
+  return '';
+}
+
+async function fetchKugouGlobalNoFilterRows(globalId) {
+  const rows = [];
+  const seen = new Set();
+  let total = 0;
+  const pageSize = 100;
+  for (let page = 0; page < 500; page += 1) {
+    const values = kugouAndroidBaseParams({
+      global_collection_id:globalId,
+      pagesize:pageSize,
+      plat:1,
+      type:1,
+      mode:1,
+      area_code:1,
+      begin_idx:page * pageSize,
+    });
+    const url = buildSignedKugouUrlIncludingEmpty(
+      'https://gateway.kugou.com/pubsongs/v2/get_other_list_file_nofilt',
+      values,
+      KUGOU_GATEWAY_SIGN_KEY,
     );
-    const pageRows = pageData?.data?.songList || [];
+    let payload;
+    try {
+      payload = await fetchJson(url, { headers:{
+        'user-agent':'Android13-AndroidPhone-20489-18-0-playlist-wifi',
+        'x-router':'pubsongs.kugou.com',
+        dfid:String(values.dfid), mid:String(values.mid), clienttime:String(values.clienttime),
+        referer:'https://m.kugou.com/',
+      } });
+    } catch (_error) { break; }
+    const data = payload?.data || {};
+    const pageRows = Array.isArray(data.songs) ? data.songs : kugouRowsFromPayload(payload);
     if (!pageRows.length) break;
-    const before = uniqueBy(rows, item => item.songId || item.id || item.copyrightId).length;
-    rows.push(...pageRows);
-    const after = uniqueBy(rows, item => item.songId || item.id || item.copyrightId).length;
-    if (after === before) break;
+    total = Math.max(total, Number(data.count || data.total || payload?.count || payload?.total || 0));
+    let added = 0;
+    for (const item of pageRows) {
+      const key = String(item.audio_id || item.audioid || item.rp_id || item.album_audio_id || item.album_audioid || item.id || item.hash || item.HASH || item.FileHash || '');
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      rows.push(item);
+      added += 1;
+    }
+    if (!added) break;
+    if (total && rows.length >= total) break;
+    if (!total && pageRows.length < pageSize) break;
   }
-  const songs = uniqueBy(rows, item => item.songId || item.id || item.copyrightId);
-  if (!rows.length) throw new Error('小菇歌单读取失败');
+  return { rows, total };
+}
+
+async function fetchKugouGlobalInfoGateway(globalId) {
+  const body = JSON.stringify({ data:[{ global_collection_id:globalId }], userid:'0', token:'' });
+  const values = kugouAndroidBaseParams({}, 20489);
+  const url = buildSignedKugouUrlIncludingEmpty('https://gateway.kugou.com/v3/get_list_info', values, KUGOU_GATEWAY_SIGN_KEY, body);
+  try {
+    const payload = await fetchJson(url, {
+      method:'POST',
+      headers:{
+        'content-type':'application/json',
+        'x-router':'pubsongs.kugou.com',
+        'user-agent':'Android13-AndroidPhone-20489-18-0-playlist-wifi',
+        dfid:String(values.dfid), mid:String(values.mid), clienttime:String(values.clienttime),
+      },
+      body,
+    });
+    const info = payload?.data?.[0] || payload?.data || {};
+    return info && typeof info === 'object' ? info : {};
+  } catch (_error) {
+    return {};
+  }
+}
+
+function kugouPlaylistSignature(url) {
+  const parsed = new URL(url);
+  return kugouSignatureForParams(parsed.searchParams, KUGOU_GATEWAY_SIGN_KEY, '');
+}
+
+function kugouRowsFromPayload(payload) {
+  const data = payload?.data || {};
+  const candidates = [data.info, data.songs, data.list, data.data, payload?.info, payload?.songs];
+  return candidates.find(Array.isArray) || [];
+}
+
+function mapKugouSongs(rows) {
+  return (rows || []).map(item => {
+    const singer = item.singername || item.SingerName || item.author_name || item.AuthorName || item.authorName || singerText(item.singerinfo || item.authors)
+      || String(item.filename || item.name || '').split(' - ')[0] || '';
+    let name = item.songname || item.SongName || item.song_name || item.audio_name || item.AudioName || item.ori_audio_name || item.OriSongName || item.name || String(item.filename || item.FileName || '').split(' - ').slice(1).join(' - ');
+    if (singer && name.startsWith(`${singer} - `)) name = name.slice(singer.length + 3);
+    const hash = item.hash || item.HASH || item.FileHash || item.file_hash || item.audio_info?.hash || item.audio_info?.hash_128 || '';
+    const id = item.audio_id || item.audioid || item.rp_id || item.album_audio_id || item.album_audioid || item.id || hash;
+    return {
+      id, songmid:id, name, singer,
+      albumName:item.album_name || item.AlbumName || item.albumname || item.albuminfo?.name || '',
+      albumId:item.album_id || item.AlbumID || item.albumid || item.albuminfo?.id || '',
+      hash,
+      picUrl:String(item.img || item.Image || item.image || item.cover || item.trans_param?.union_cover || item.album_info?.sizable_cover || '').replace('{size}', '400'),
+      interval:durationText(item.duration || item.Duration || (item.timelength || item.timelen || item.time_length || 0) / 1000),
+      source:'kg', types:['flac','320k','128k'],
+    };
+  }).filter(song => song.name && song.songmid);
+}
+
+async function importKugouPagedRows(specialId) {
+  const rows = [];
+  const seen = new Set();
+  let firstPayload = null;
+  let total = 0;
+  const pageSize = 300;
+  // The server may silently cap each response at 10 songs even when pagesize is
+  // much larger. Do not treat a short page as the end; continue until total is
+  // reached, an empty page arrives, or a page contains no new songs.
+  for (let page = 1; page <= 500; page += 1) {
+    const values = {
+      specialid:specialId, need_sort:1, module:'CloudMusic', clientver:11239,
+      pagesize:pageSize, specalidpgc:specialId, userid:0, page, type:0,
+      area_code:1, appid:1005,
+    };
+    const url = buildSignedKugouUrl('https://gatewayretry.kugou.com/v2/get_other_list_file', values);
+    let payload;
+    try {
+      payload = await fetchJson(url, { headers:{
+        'user-agent':'Android9-AndroidPhone-11239-18-0-playlist-wifi',
+        'x-router':'pubsongscdn.kugou.com', mid:'239526275778893399526700786998289824956',
+        dfid:'-', clienttime:String(Math.floor(Date.now() / 1000)), referer:'https://www.kugou.com/',
+      } });
+    } catch (_error) { break; }
+    if (!firstPayload) firstPayload = payload;
+    const pageRows = kugouRowsFromPayload(payload);
+    if (!pageRows.length) break;
+    total = Math.max(total, Number(payload?.data?.count || payload?.data?.total || 0));
+    let added = 0;
+    for (const item of pageRows) {
+      const key = String(item.audio_id || item.audioid || item.rp_id || item.album_audio_id || item.album_audioid || item.id || item.hash || item.HASH || item.FileHash || '');
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      rows.push(item);
+      added += 1;
+    }
+    if (!added) break;
+    if (total && rows.length >= total) break;
+  }
+  return { rows, payload:firstPayload, total };
+}
+
+async function decodeKugouGCID(gcid) {
+  gcid = String(gcid || '').trim();
+  if (!/^gcid_[a-z0-9]+$/i.test(gcid)) return '';
+  const attempts = [
+    // Newer public songlist/gcid links use id_type "1" with current Android parameters.
+    [gcid, '1', 20489],
+    [gcid, 1, 20489],
+    // Keep compatibility with older links and existing clients.
+    [gcid.toLowerCase(), 2, 20109],
+    [gcid.toLowerCase(), '2', 20489],
+  ];
+  let lastError = null;
+  for (const [value, idType, clientver] of attempts) {
+    try {
+      const decoded = await decodeKugouGCIDVariant(value, idType, clientver);
+      if (decoded) return decoded;
+    } catch (error) { lastError = error; }
+  }
+  if (lastError) throw lastError;
+  return '';
+}
+
+function normalizeKugouChain(value) {
+  const chain = String(value || '').trim().replace(/^gcid_/i, '');
+  return /^[a-z0-9]+$/i.test(chain) ? chain : '';
+}
+
+async function fetchKugouChainTransfer(chain) {
+  chain = normalizeKugouChain(chain);
+  if (!chain) throw new Error('INVALID_KUGOU_CHAIN');
+  const query = `pagesize=10000&chain=${encodeURIComponent(chain)}&su=1&page=1&n=${Math.random()}`;
+  let lastError = null;
+  for (const base of ['https://m.kugou.com/schain/transfer', 'http://m.kugou.com/schain/transfer']) {
+    try {
+      const payload = await fetchJson(`${base}?${query}`, { headers:{
+        'user-agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 Version/13.0.3 Mobile/15E148 Safari/604.1',
+        referer:'https://m.kugou.com/',
+      } });
+      const info = payload?.info || payload?.data?.info || payload?.data || {};
+      const rows = info?.list || payload?.list || payload?.data?.list || [];
+      return {
+        globalId:String(info.global_collection_id || info.global_specialid || payload?.global_collection_id || payload?.data?.global_collection_id || ''),
+        specialId:String(info.id || info.specialid || info.special_id || payload?.data?.specialid || ''),
+        total:Number(info.count || info.songcount || payload?.data?.count || payload?.count || 0),
+        rows:Array.isArray(rows) ? rows : [],
+        name:info?.info?.name || info.specialname || info.name || '',
+        cover:info?.info?.img || info.imgurl || info.img || '',
+      };
+    } catch (error) { lastError = error; }
+  }
+  throw lastError || new Error('KUGOU_CHAIN_TRANSFER_FAILED');
+}
+
+async function fetchKugouChainShare(chain) {
+  chain = normalizeKugouChain(chain);
+  if (!chain) throw new Error('INVALID_KUGOU_CHAIN');
+  let name = '';
+  let cover = '';
+  try {
+    const metaHtml = await fetchText(`https://m.kugou.com/share/?chain=${encodeURIComponent(chain)}&id=${encodeURIComponent(chain)}`, {
+      headers:{ 'user-agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1' },
+    });
+    const match = /var\s+phpParam\s*=\s*({[\s\S]+?});/.exec(metaHtml);
+    if (match) {
+      try {
+        const meta = JSON.parse(match[1]);
+        name = meta.specialname || meta.name || '';
+        cover = meta.imgurl || meta.img || '';
+      } catch (_error) {}
+    }
+  } catch (_error) {}
+  let rows = [];
+  try {
+    const html = await fetchText(`http://www.kugou.com/share/${encodeURIComponent(chain)}.html`, {
+      headers:{ 'user-agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36' },
+    });
+    rows = parseAssignedJson(html, 'var dataFromSmarty') || parseAssignedJson(html, 'dataFromSmarty') || [];
+  } catch (_error) {}
+  return { name, cover, rows:Array.isArray(rows) ? rows : [] };
+}
+
+function kugouWebQuery(extra = {}) {
+  const stamp = String(Date.now());
+  return { appid:1058, srcappid:2919, clientver:20000, clienttime:stamp, mid:stamp, uuid:stamp, dfid:'-', ...extra };
+}
+
+async function fetchKugouGlobalRows(globalId) {
+  const rows = [];
+  const seen = new Set();
+  let firstPayload = null;
+  let total = 0;
+  const pageSize = 300;
+  for (let page = 1; page <= 500; page += 1) {
+    const url = buildSignedKugouUrl('https://mobiles.kugou.com/api/v5/special/song_v2', kugouWebQuery({
+      global_specialid:globalId, specialid:0, plat:0, version:8000, page, pagesize:pageSize,
+    }), KUGOU_PLAYLIST_SIGN_KEY);
+    let payload;
+    try {
+      payload = await fetchJson(url, { headers:{
+        'user-agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 11_0 like Mac OS X) AppleWebKit/604.1.38 Mobile/15A372 Safari/604.1',
+        referer:'https://m3ws.kugou.com/share/index.php',
+      } });
+    } catch (_error) { break; }
+    if (!firstPayload) firstPayload = payload;
+    const pageRows = kugouRowsFromPayload(payload);
+    if (!pageRows.length) break;
+    total = Math.max(total, Number(payload?.data?.total || payload?.data?.count || 0));
+    let added = 0;
+    for (const item of pageRows) {
+      const key = String(item.audio_id || item.audioid || item.rp_id || item.album_audio_id || item.album_audioid || item.id || item.hash || item.HASH || item.FileHash || '');
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      rows.push(item);
+      added += 1;
+    }
+    if (!added) break;
+    if (total && rows.length >= total) break;
+  }
+  return { rows, payload:firstPayload, total };
+}
+
+async function fetchKugouGlobalLegacyRows(globalId) {
+  const rows = [];
+  const seen = new Set();
+  let total = 0;
+  const pageSize = 500;
+  for (let page = 1; page <= 500; page += 1) {
+    const url = buildSignedKugouUrl('https://pubsongscdn.kugou.com/v2/get_other_list_file', {
+      need_sort:1, module:'CloudMusic', clientver:11589, pagesize:pageSize, page,
+      global_collection_id:globalId, userid:0, type:0, area_code:1, appid:1005,
+    }, KUGOU_GATEWAY_SIGN_KEY);
+    let payload;
+    try {
+      payload = await fetchJson(url, { headers:{
+        'user-agent':'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Mobile Safari/537.36',
+        referer:'https://m3ws.kugou.com/share/index.php', dfid:'-',
+      } });
+    } catch (_error) { break; }
+    const pageRows = kugouRowsFromPayload(payload);
+    if (!pageRows.length) break;
+    total = Math.max(total, Number(payload?.data?.total || payload?.data?.count || payload?.total || payload?.count || 0));
+    let added = 0;
+    for (const item of pageRows) {
+      const key = String(item.audio_id || item.audioid || item.rp_id || item.album_audio_id || item.album_audioid || item.id || item.hash || item.HASH || item.FileHash || '');
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      rows.push(item);
+      added += 1;
+    }
+    if (!added) break;
+    if (total && rows.length >= total) break;
+  }
+  return rows;
+}
+
+
+async function resolveKugouGlobalSpecialID(specialId) {
+  if (!/^\d+$/.test(String(specialId || ''))) return '';
+  try {
+    const payload = await fetchJson(`http://mobilecdnbj.kugou.com/api/v5/special/info?specialid=${encodeURIComponent(specialId)}`, {
+      headers:{ 'user-agent':'Mozilla/5.0' },
+    });
+    return String(payload?.data?.global_specialid || payload?.data?.global_collection_id || '');
+  } catch (_error) {
+    return '';
+  }
+}
+
+async function requestKugouLiteFallback(action, params = {}) {
+  let lastError = null;
+  for (const base of ['https://api.vsaa.cn/api/music.kugou.lite', 'http://api.vsaa.cn/api/music.kugou.lite']) {
+    try {
+      const url = new URL(base);
+      url.searchParams.set('act', action);
+      Object.entries(params).forEach(([key, value]) => {
+        if (value != null && value !== '') url.searchParams.set(key, String(value));
+      });
+      return await fetchJson(url.href, { headers:{ Accept:'application/json, text/plain, */*' } });
+    } catch (error) { lastError = error; }
+  }
+  throw lastError || new Error('KUGOU_LITE_FALLBACK_FAILED');
+}
+
+async function importKugouConceptFallback(globalId) {
+  let detail = {};
+  try {
+    const detailPayload = await requestKugouLiteFallback('playlist.detail', { ids:globalId });
+    detail = detailPayload?.data?.[0] || detailPayload?.data || {};
+  } catch (_error) {}
+  const rows = [];
+  const seen = new Set();
+  let total = 0;
+  const pageSize = 300;
+  for (let page = 1; page <= 500; page += 1) {
+    let payload;
+    try {
+      payload = await requestKugouLiteFallback('playlist.track.all', { id:globalId, page, pagesize:pageSize });
+    } catch (_error) { break; }
+    const data = payload?.data || {};
+    const pageRows = data.songs || data.info || data.list || [];
+    if (!Array.isArray(pageRows) || !pageRows.length) break;
+    total = Math.max(total, Number(data.count || data.total || payload?.count || payload?.total || 0));
+    let added = 0;
+    for (const item of pageRows) {
+      const key = String(item.audio_id || item.audioid || item.rp_id || item.album_audio_id || item.album_audioid || item.id || item.hash || item.HASH || item.FileHash || '');
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      rows.push(item);
+      added += 1;
+    }
+    if (!added) break;
+    if (total && rows.length >= total) break;
+  }
+  const songs = mapKugouSongs(rows);
+  if (!songs.length) throw new Error('小枸概念版备用接口也没有返回歌曲');
   return {
-    name:infoData?.data?.title || `小菇歌单 ${id}`, cover:infoData?.data?.imgItem?.img || '',
-    songs:songs.map(item => ({
-      id:item.songId || item.id, songmid:item.songId || item.id, copyrightId:item.copyrightId || '',
-      name:item.name || item.songName || '', singer:singerText(item.singerList || item.singers),
-      albumName:item.album || item.albumName || '', albumId:item.albumId || '', picUrl:item.img3 || item.img || '',
-      lrcUrl:item.lrcUrl || '', mrcUrl:item.mrcurl || '', trcUrl:item.trcUrl || '',
-      interval:durationText(item.duration), source:'mg', types:['flac24bit','flac','320k','128k'],
-    })),
+    name:detail.specialname || detail.name || detail.title || `小枸概念版歌单 ${globalId}`,
+    cover:String(detail.img || detail.imgurl || detail.cover || '').replace('{size}', '400'),
+    songs,
   };
 }
 
-const IMPORTERS = { tx:importQQ, wy:importWY, kw:importKW, kg:importKG, mg:importMG };
-async function importPlaylist(input, preferredSource) {
-  let parsed;
-  try {
-    parsed = detect(input, preferredSource);
-  } catch (firstError) {
-    const expanded = await expandShareLink(input);
-    if (expanded === String(input || '')) throw firstError;
-    parsed = detect(expanded, preferredSource);
+async function resolveKugouConceptIdentity(id, originalInput, context = {}) {
+  let identity = String(id || '').trim();
+  const sourceUrl = context.resolvedUrl || extractFirstUrl(originalInput) || (identity.startsWith('url:') ? identity.slice(4) : '');
+  const texts = [identity, originalInput, context.resolvedUrl, ...(context.redirectChain || []), context.html].filter(Boolean);
+  for (const text of texts) {
+    const found = extractKugouConceptIdentity(text);
+    if (found && !found.startsWith('url:')) { identity = found; break; }
   }
-  const result = await IMPORTERS[parsed.source](parsed.id, parsed.input);
+  if (identity.startsWith('url:') || !identity) identity = '';
+  if (/^gcid_/i.test(identity)) {
+    try { identity = await decodeKugouGCID(identity) || identity; } catch (_error) {}
+  }
+  if (/^\d+$/.test(identity)) {
+    const resolved = await resolveKugouGlobalSpecialID(identity);
+    if (resolved) identity = resolved;
+  }
+  if ((!identity || /^gcid_/i.test(identity)) && sourceUrl) {
+    let html = String(context.html || '');
+    if (!html) {
+      try { html = await fetchText(sourceUrl, { headers:{ Referer:'https://m.kugou.com/' } }); } catch (_error) {}
+    }
+    if (html) {
+      let payload = null;
+      try { payload = JSON.parse(html.trim().replace(/^\uFEFF/, '')); } catch (_error) {}
+      const payloadIdentity = payload ? findKugouConceptIdentityInPayload(payload) : '';
+      const htmlIdentity = payloadIdentity || extractKugouConceptIdentity(html);
+      if (htmlIdentity && !htmlIdentity.startsWith('url:')) identity = htmlIdentity;
+    }
+  }
+  if (/^gcid_/i.test(identity)) {
+    try { identity = await decodeKugouGCID(identity) || identity; } catch (_error) {}
+  }
+  if (/^\d+$/.test(identity)) {
+    const resolved = await resolveKugouGlobalSpecialID(identity);
+    if (resolved) identity = resolved;
+  }
+  return identity;
+}
+
+async function importKGC(id, originalInput, context = {}) {
+  const identity = await resolveKugouConceptIdentity(id, originalInput, context);
+  if (!identity || /^gcid_/i.test(identity) || identity.startsWith('url:')) {
+    const body = String(context.html || '').trim();
+    if (/"data"\s*:\s*null/i.test(body)) {
+      throw new Error('该小枸概念版短链接已返回 data:null，链接本身没有歌单编号；请重新生成公开分享链接，或直接粘贴 collection_ 开头的歌单编号');
+    }
+    throw new Error('没有取得小枸概念版歌单编号；请粘贴有效的小枸概念版公开分享链接，或直接输入 collection_ 开头的歌单编号');
+  }
+  try {
+    return await importKugouGlobalCollection(identity, { label:'小枸概念版歌单' });
+  } catch (officialError) {
+    try { return await importKugouConceptFallback(identity); }
+    catch (fallbackError) {
+      throw new Error(`小枸概念版歌单读取失败：${officialError.message || officialError}；备用接口：${fallbackError.message || fallbackError}`);
+    }
+  }
+}
+
+async function importKugouGlobalCollection(globalId, options = {}) {
+  const label = String(options.label || '小枸歌单');
+  let info = await fetchKugouGlobalInfoGateway(globalId);
+  if (!info || !Object.keys(info).length) {
+    try {
+      const infoUrl = buildSignedKugouUrl('https://mobiles.kugou.com/api/v5/special/info_v2', kugouWebQuery({
+        specialid:0, global_specialid:globalId, format:'json',
+      }), KUGOU_PLAYLIST_SIGN_KEY);
+      const infoPayload = await fetchJson(infoUrl, { headers:{
+        'user-agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 11_0 like Mac OS X) AppleWebKit/604.1.38 Mobile/15A372 Safari/604.1',
+        referer:'https://m3ws.kugou.com/share/index.php',
+      } });
+      info = infoPayload?.data || {};
+    } catch (_error) {}
+  }
+
+  // New no-filter endpoint is the primary path for songlist/gcid shares.
+  // Merge older endpoints as fallbacks because different regions/accounts can
+  // expose different subsets.
+  const noFilter = await fetchKugouGlobalNoFilterRows(globalId);
+  const noFilterRows = noFilter.rows || [];
+  const noFilterComplete = noFilterRows.length > 0 && (!noFilter.total || noFilterRows.length >= noFilter.total);
+  const paged = noFilterComplete ? { rows:[], total:0 } : await fetchKugouGlobalRows(globalId);
+  let legacyRows = [];
+  if (!noFilterRows.length && !(paged.rows || []).length) {
+    legacyRows = await fetchKugouGlobalLegacyRows(globalId);
+  }
+  const rows = uniqueBy([
+    ...(noFilter.rows || []),
+    ...(paged.rows || []),
+    ...legacyRows,
+  ], item => item.audio_id || item.album_audio_id || item.id || item.hash || item.HASH || item.FileHash);
+  const songs = mapKugouSongs(rows);
+  if (!songs.length) throw new Error(`${label}读取失败；服务器未返回公开歌曲数据`);
+  return {
+    name:info.specialname || info.name || info.title || `${label} ${globalId}`,
+    cover:String(info.imgurl || info.pic || info.cover || info.image || '').replace('{size}', '400'),
+    songs,
+  };
+}
+
+async function importKG(id, originalInput, context = {}) {
+  let identity = String(id || '').trim();
+  const sourceUrl = context.resolvedUrl || extractFirstUrl(originalInput) || (identity.startsWith('url:') ? identity.slice(4) : '');
+  const isNormalSonglistUrl = /(?:^|\.)kugou\.(?:com|cn)\/songlist\/gcid_/i.test(sourceUrl || extractFirstUrl(originalInput) || '');
+  let html = String(context.html || '');
+  if (identity.startsWith('url:')) identity = '';
+  if ((!identity || !/^(?:\d+|gcid_|collection_)/i.test(identity)) && sourceUrl) {
+    if (!html) {
+      try { html = await fetchText(sourceUrl, { headers:{ Referer:'https://www.kugou.com/' } }); } catch (_error) {}
+    }
+    identity = extractKugouPlaylistIdentity(`${sourceUrl}\n${html}`);
+    if (identity.startsWith('url:')) identity = '';
+  }
+  if (/^gcid_/i.test(identity)) {
+    try {
+      const decoded = await decodeKugouGCID(identity);
+      if (decoded) identity = decoded;
+    } catch (_error) {}
+  }
+  if (/^collection_/i.test(identity)) return importKugouGlobalCollection(identity, { label:'小枸歌单' });
+
+  let sharedInfo = null;
+  let embeddedRows = [];
+  if (html) {
+    const output = parseAssignedObject(html, 'window.$output')
+      || parseAssignedObject(html, 'window.__INITIAL_STATE__')
+      || parseAssignedObject(html, '__NEXT_DATA__');
+    if (output) sharedInfo = output?.info || output?.data?.info || output?.data || output;
+
+    // New Kugou links use gcid_ even for ordinary Kugou playlists. If the
+    // decode API fails, prefer a stronger identity exposed by the page itself.
+    const htmlIdentity = extractKugouPlaylistIdentity(html);
+    if (htmlIdentity && !String(htmlIdentity).startsWith('url:') && (!identity || /^gcid_/i.test(identity))) {
+      identity = htmlIdentity;
+      if (/^gcid_/i.test(identity)) {
+        try { identity = await decodeKugouGCID(identity) || identity; } catch (_error) {}
+      }
+      if (/^collection_/i.test(identity)) return importKugouGlobalCollection(identity, { label:'小枸歌单' });
+    }
+
+    // Some public m.kugou.com/songlist pages already embed the complete list.
+    // Import it directly instead of incorrectly treating every gcid_ as a
+    // concept-edition-only link.
+    const previewRows = sharedInfo?.songs || sharedInfo?.songlist || sharedInfo?.list || sharedInfo?.data?.songs || [];
+    embeddedRows = Array.isArray(previewRows) ? previewRows : [];
+  }
+  if (!/^\d+$/.test(identity)) {
+    if (embeddedRows.length > 10) {
+      const listInfo = sharedInfo?.listinfo || sharedInfo?.special_info || sharedInfo?.playlist || {};
+      return {
+        name:listInfo.name || listInfo.specialname || sharedInfo?.name || sharedInfo?.specialname || `小枸歌单 ${identity || ''}`.trim(),
+        cover:String(listInfo.pic || listInfo.imgurl || listInfo.img || sharedInfo?.pic || sharedInfo?.imgurl || '').replace('{size}', '400'),
+        songs:mapKugouSongs(embeddedRows),
+      };
+    }
+
+    // New ordinary Xiaogou shares use songlist/gcid_* and often expose only
+    // ten preview rows. Reuse the global collection resolver and Lite API
+    // before reporting failure instead of requiring a legacy numeric ID.
+    if (isNormalSonglistUrl || /^gcid_/i.test(identity)) {
+      const candidates = [];
+      const addCandidate = value => {
+        value = String(value || '').trim();
+        if (value && !candidates.includes(value)) candidates.push(value);
+      };
+      addCandidate(identity);
+      if (/^gcid_/i.test(identity)) addCandidate(identity.replace(/^gcid_/i, ''));
+      try {
+        const parsed = sourceUrl ? new URL(sourceUrl) : null;
+        if (parsed) {
+          addCandidate(parsed.searchParams.get('src_cid'));
+          addCandidate(parsed.searchParams.get('gcid'));
+          addCandidate(parsed.searchParams.get('global_collection_id'));
+          addCandidate(parsed.searchParams.get('global_specialid'));
+        }
+      } catch (_error) {}
+
+      // New ordinary shares expose a short chain in both gcid_* and src_cid.
+      // The schain transfer endpoint can return a global collection ID, legacy
+      // special ID, or the complete hash list. Try it before third-party fallbacks.
+      const chainCandidates = [];
+      const addChain = value => {
+        const chain = normalizeKugouChain(value);
+        if (chain && !chainCandidates.includes(chain)) chainCandidates.push(chain);
+      };
+      addChain(identity);
+      try {
+        const parsed = sourceUrl ? new URL(sourceUrl) : null;
+        if (parsed) {
+          addChain(parsed.searchParams.get('src_cid'));
+          addChain(parsed.searchParams.get('chain'));
+          addChain(parsed.pathname.match(/songlist\/(gcid_[a-z0-9]+)/i)?.[1]);
+        }
+      } catch (_error) {}
+
+      for (const chain of chainCandidates) {
+        try {
+          const transfer = await fetchKugouChainTransfer(chain);
+          if (transfer.globalId) return await importKugouGlobalCollection(transfer.globalId, { label:'小枸歌单' });
+          if (/^\d+$/.test(transfer.specialId)) {
+            const paged = await importKugouPagedRows(transfer.specialId);
+            const merged = uniqueBy([...(paged.rows || []), ...(transfer.rows || []), ...embeddedRows], item =>
+              item.audio_id || item.audioid || item.rp_id || item.album_audio_id || item.album_audioid || item.id || item.hash || item.HASH || item.FileHash
+            );
+            const songs = mapKugouSongs(merged);
+            if (songs.length) return {
+              name:transfer.name || `小枸歌单 ${transfer.specialId}`,
+              cover:String(transfer.cover || '').replace('{size}', '400'),
+              songs,
+            };
+          }
+          if (transfer.rows.length && transfer.total > 0 && transfer.rows.length >= transfer.total) {
+            const songs = mapKugouSongs(transfer.rows);
+            if (songs.length) return {
+              name:transfer.name || `小枸歌单 ${chain}`,
+              cover:String(transfer.cover || '').replace('{size}', '400'),
+              songs,
+            };
+          }
+        } catch (_transferError) {}
+
+        try {
+          const shared = await fetchKugouChainShare(chain);
+          if (shared.rows.length > 10) {
+            const songs = mapKugouSongs(shared.rows);
+            if (songs.length) return {
+              name:shared.name || `小枸歌单 ${chain}`,
+              cover:String(shared.cover || '').replace('{size}', '400'),
+              songs,
+            };
+          }
+        } catch (_shareError) {}
+      }
+
+      try {
+        const resolved = await resolveKugouConceptIdentity(identity, originalInput, context);
+        if (resolved && !/^gcid_/i.test(resolved) && !String(resolved).startsWith('url:')) {
+          try {
+            return await importKugouGlobalCollection(resolved, { label:'小枸歌单' });
+          } catch (_officialError) {
+            const fallback = await importKugouConceptFallback(resolved);
+            if (fallback && fallback.name) fallback.name = fallback.name.replace(/^小枸概念版歌单/, '小枸歌单');
+            return fallback;
+          }
+        }
+      } catch (_resolveError) {}
+
+      for (const candidate of candidates) {
+        try {
+          const fallback = await importKugouConceptFallback(candidate);
+          if (fallback && fallback.name) fallback.name = fallback.name.replace(/^小枸概念版歌单/, '小枸歌单');
+          return fallback;
+        } catch (_fallbackError) {}
+      }
+
+      throw new Error('小枸歌单已识别，但服务器未返回完整歌曲列表；已尝试新版 GCID 解码（id_type 1/2）、无过滤全量接口、分享链转换及旧分页接口');
+    }
+    throw new Error('该链接不是可读取的普通小枸歌单；概念版歌单请切换到“小枸概念版”入口');
+  }
+
+  let detailHtml = '';
+  let detailRows = [];
+  try {
+    detailHtml = await fetchText(`https://www.kugou.com/yy/special/single/${identity}.html`, { headers:{ Referer:'https://www.kugou.com/' } });
+    detailRows = parseAssignedJson(detailHtml, 'var data=') || [];
+  } catch (_error) {}
+  const paged = await importKugouPagedRows(identity);
+  const rows = uniqueBy([...(paged.rows || []), ...embeddedRows, ...detailRows], item =>
+    item.audio_id || item.audioid || item.rp_id || item.album_audio_id || item.album_audioid || item.id || item.hash || item.HASH || item.FileHash
+  );
+  const info = sharedInfo?.listinfo || paged?.payload?.data?.listinfo || paged?.payload?.data?.special_info || {};
+  const songs = mapKugouSongs(rows);
+  if (!songs.length) throw new Error('小狗歌单读取失败');
+  return {
+    name:info.name || info.specialname || detailHtml.match(/<title>([^<]+)/i)?.[1]?.replace(/_酷狗音乐.*$/i, '') || `小枸歌单 ${identity}`,
+    cover:String(info.pic || info.imgurl || info.img || '').replace('{size}', '400'),
+    songs,
+  };
+}
+
+function miguRows(payload) {
+  const data = payload?.data || {};
+  const rows = data.songList || data.contentItemList || data.items || payload?.songList || payload?.contentItemList || [];
+  return (Array.isArray(rows) ? rows : []).map(item => item?.objectInfo || item?.song || item?.music || item).filter(Boolean);
+}
+
+async function importMG(id, originalInput, context = {}) {
+  let playlistId = String(id || '').trim();
+  if (playlistId.startsWith('url:')) playlistId = '';
+  if (!/^\d+$/.test(playlistId)) {
+    const candidates = [context.resolvedUrl, context.html, originalInput, id].filter(Boolean).join('\n');
+    playlistId = extractMiguPlaylistId(candidates);
+  }
+  if (!playlistId) {
+    const sourceUrl = context.resolvedUrl || extractFirstUrl(originalInput) || (String(id || '').startsWith('url:') ? String(id).slice(4) : '');
+    if (sourceUrl) {
+      try {
+        const resolved = await expandShareLinkDetailed(sourceUrl);
+        playlistId = extractMiguPlaylistId(`${resolved.url}\n${resolved.html}`);
+      } catch (_error) {}
+    }
+  }
+  if (!playlistId) throw new Error('咪咕分享链接已识别，但没有取得歌单编号；请确认歌单已设为公开后重新分享');
+
+  const headers = {
+    Referer:'https://m.music.migu.cn/',
+    Accept:'application/json, text/plain, */*',
+    'user-agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 Version/13.0.3 Mobile/15E148 Safari/604.1',
+  };
+  const pageSize = 50;
+  const songUrl = page => `https://app.c.nf.migu.cn/MIGUM3.0/resource/playlist/song/v2.0?pageNo=${page}&pageSize=${pageSize}&playlistId=${encodeURIComponent(playlistId)}`;
+  const songsData = await fetchJson(songUrl(1), { headers });
+  let infoData = {};
+  for (const infoUrl of [
+    `https://c.musicapp.migu.cn/MIGUM3.0/resource/playlist/v2.0?playlistId=${encodeURIComponent(playlistId)}`,
+    `https://app.c.nf.migu.cn/resource/playlist/v2.0?playlistId=${encodeURIComponent(playlistId)}`,
+  ]) {
+    try {
+      infoData = await fetchJson(infoUrl, { headers });
+      if (infoData?.data || infoData?.title || infoData?.name) break;
+    } catch (_error) {}
+  }
+  const rows = [...miguRows(songsData)];
+  const total = Number(songsData?.data?.totalCount || songsData?.data?.total || songsData?.totalCount || infoData?.data?.musicNum || infoData?.data?.songCount || rows.length);
+  for (let page = 2; page <= 200 && (!total || rows.length < total); page += 1) {
+    const pageData = await fetchJson(songUrl(page), { headers });
+    const pageRows = miguRows(pageData);
+    if (!pageRows.length) break;
+    const before = uniqueBy(rows, item => item.contentId || item.songId || item.id || item.copyrightId).length;
+    rows.push(...pageRows);
+    const after = uniqueBy(rows, item => item.contentId || item.songId || item.id || item.copyrightId).length;
+    if (after === before || pageRows.length < pageSize) break;
+  }
+  const songs = uniqueBy(rows, item => item.contentId || item.songId || item.id || item.copyrightId);
+  if (!songs.length) throw new Error('小菇歌单读取失败；请确认歌单已公开并在中国大陆网络环境下重试');
+  const info = infoData?.data || infoData || {};
+  return {
+    name:info.title || info.name || info.playListName || `小菇歌单 ${playlistId}`,
+    cover:info?.imgItem?.img || info?.imgItems?.[0]?.img || info?.img || info?.cover || info?.image || '',
+    songs:songs.map(item => {
+      const songId = item.contentId || item.songId || item.id || item.copyrightId;
+      let duration = Number(item.duration || item.length || item.totalTime || 0);
+      if (duration > 36000) duration /= 1000;
+      return {
+        id:songId, songmid:songId, contentId:item.contentId || songId, copyrightId:item.copyrightId || '',
+        name:item.name || item.songName || item.title || item.contentName || '',
+        singer:singerText(item.singerList || item.singers || item.singer || item.artists || item.artist),
+        albumName:item.album || item.albumName || item?.albums?.[0]?.name || '', albumId:item.albumId || item?.albums?.[0]?.id || '',
+        picUrl:item.img3 || item.img2 || item.img1 || item.img || item.image || item?.albumImgs?.[0]?.img || item?.imgItems?.[0]?.img || '',
+        lrcUrl:item.lrcUrl || item.lyricUrl || '', mrcUrl:item.mrcurl || item.mrcUrl || '', trcUrl:item.trcUrl || '',
+        interval:durationText(duration), source:'mg', types:['flac24bit','flac','320k','128k'],
+      };
+    }).filter(song => song.name && song.songmid),
+  };
+}
+
+const IMPORTERS = { tx:importQQ, wy:importWY, kw:importKW, kg:importKG, kgc:importKGC, mg:importMG };
+async function importPlaylist(input, preferredSource) {
+  const originalInput = String(input || '').trim();
+  const firstUrl = extractFirstUrl(originalInput);
+  let resolution = { url:firstUrl || originalInput, html:'', chain:[] };
+  if (firstUrl) {
+    try { resolution = await expandShareLinkDetailed(originalInput); } catch (_error) {}
+  }
+
+  let parsed = null;
+  let lastDetectError = null;
+  const candidates = [resolution.url, originalInput].filter(Boolean);
+  for (const candidate of candidates) {
+    try {
+      parsed = detect(candidate, preferredSource);
+      break;
+    } catch (error) { lastDetectError = error; }
+  }
+  if (!parsed && resolution.html) {
+    const source = normalizeSource(preferredSource);
+    if (source === 'mg') {
+      const id = extractMiguPlaylistId(`${resolution.url}\n${resolution.html}`);
+      if (id) parsed = { source:'mg', id, input:resolution.url };
+    } else if (source === 'kg') {
+      const id = extractKugouNormalIdentity(`${resolution.url}\n${resolution.html}`);
+      if (id) parsed = { source:'kg', id, input:resolution.url };
+    } else if (source === 'kgc') {
+      const id = extractKugouConceptIdentity(`${resolution.url}\n${resolution.html}`);
+      if (id) parsed = { source:'kgc', id, input:resolution.url };
+    }
+  }
+  if (!parsed) throw lastDetectError || new Error('无法识别链接；请选择平台并粘贴歌单分享链接，或直接输入数字歌单 ID');
+
+  const result = await IMPORTERS[parsed.source](parsed.id, parsed.input, {
+    originalInput, resolvedUrl:resolution.url, html:resolution.html, redirectChain:resolution.chain,
+  });
   result.songs = (result.songs || []).filter(song => song.name && song.songmid);
   if (!result.songs.length) throw new Error('歌单中没有可导入的歌曲');
   return {
     ok:true,
     playlist:{
-      id:`platform_${parsed.source}_${parsed.id}`,
+      id:`platform_${parsed.source}_${String(parsed.id).replace(/[^a-z0-9_-]+/ig, '_').slice(0, 120)}`,
       name:result.name,
       cover:result.cover,
       source:parsed.source,
@@ -409,4 +1513,4 @@ async function importPlaylist(input, preferredSource) {
   };
 }
 
-module.exports = { importPlaylist, setFetchImplementation, detect };
+module.exports = { importPlaylist, setFetchImplementation, detect, expandShareLinkDetailed, extractMiguPlaylistId, extractMiguPlaylistIdentity, extractKugouPlaylistIdentity, extractKugouNormalIdentity, extractKugouConceptIdentity };
