@@ -1586,6 +1586,7 @@ const server = http.createServer(async (req, res) => {
       const hash = String(url.searchParams.get('hash') || '');
       const albumId = String(url.searchParams.get('albumId') || '');
       const lrcUrl = String(url.searchParams.get('lrcUrl') || '');
+      const trcUrl = String(url.searchParams.get('trcUrl') || '');
       const name = String(url.searchParams.get('name') || '').trim();
       const singer = String(url.searchParams.get('singer') || '').trim();
       let lyric = '';
@@ -1606,9 +1607,22 @@ const server = http.createServer(async (req, res) => {
         lyric = data?.lrc?.lyric || '';
         tlyric = data?.tlyric?.lyric || '';
         yrc = data?.yrc?.lyric || '';
-      } else if (source === 'mg' && /^https?:\/\//i.test(lrcUrl)) {
-        const response = await fetch(lrcUrl);
-        if (response.ok) lyric = await response.text();
+      } else if (source === 'mg') {
+        const normalizeRemoteLyricUrl = value => {
+          value = String(value || '').trim();
+          if (value.startsWith('//')) return 'https:' + value;
+          return value;
+        };
+        const originalUrl = normalizeRemoteLyricUrl(lrcUrl);
+        const translationUrl = normalizeRemoteLyricUrl(trcUrl);
+        if (/^https?:\/\//i.test(originalUrl)) {
+          const response = await fetch(originalUrl, { headers: { Referer: 'https://m.music.migu.cn/', 'User-Agent': 'Mozilla/5.0' } });
+          if (response.ok) lyric = await response.text();
+        }
+        if (/^https?:\/\//i.test(translationUrl)) {
+          const response = await fetch(translationUrl, { headers: { Referer: 'https://m.music.migu.cn/', 'User-Agent': 'Mozilla/5.0' } });
+          if (response.ok) tlyric = await response.text();
+        }
       } else if (source === 'kg' && hash) {
         const response = await fetch(`https://www.kugou.com/yy/index.php?r=play/getdata&hash=${encodeURIComponent(hash)}&album_id=${encodeURIComponent(albumId)}`, {
           headers: { Referer: 'https://www.kugou.com/' },
@@ -1627,34 +1641,133 @@ const server = http.createServer(async (req, res) => {
           return `[${String(minutes).padStart(2, '0')}:${rest}]${item.lineLyric || ''}`;
         }).join('\n');
       }
-      if (!lyric && !yrc && name) {
-        const searchResult = await lxSearch.searchAll(`${name} ${singer}`.trim(), {
-          sources: 'tx,wy',
-          limit: 8,
-        });
-        const normalizedName = name.replace(/\s+/g, '').toLowerCase();
-        const candidates = Array.isArray(searchResult.songs) ? searchResult.songs : [];
-        const matched = candidates.find(item =>
-          String(item.name || '').replace(/\s+/g, '').toLowerCase() === normalizedName &&
-          (!singer || String(item.singer || '').includes(singer))
-        ) || candidates.find(item =>
-          String(item.name || '').replace(/\s+/g, '').toLowerCase() === normalizedName
-        );
-        if (matched && matched.source === 'tx') {
-          const response = await fetch(`https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=${encodeURIComponent(matched.songmid || matched.id)}&format=json&nobase64=1`, {
-            headers: { Referer: 'https://y.qq.com/', 'User-Agent': 'Mozilla/5.0' },
+      // Imported tracks often keep the source platform's original lyric but
+      // omit its translated track. Search both Netease and QQ with several
+      // title variants, rank candidates, and try candidates until an actual
+      // translation is found. This only supplements lyrics; artwork is never
+      // read or changed here.
+      if (name && ((!lyric && !yrc) || !tlyric)) {
+        try {
+          const normalizeMatchText = value => String(value || '')
+            .normalize('NFKC')
+            .replace(/&amp;/gi, '&')
+            .replace(/[\s·・•_—–\-‐‑‒―~～,，.。!！?？:：;；'"“”‘’`´/\\|]+/g, '')
+            .replace(/[\[\]【】{}<>《》〈〉]/g, '')
+            .toLowerCase();
+          const titleVariants = value => {
+            const raw = String(value || '').normalize('NFKC').trim();
+            const variants = new Set([raw]);
+            const withoutFeat = raw
+              .replace(/\s*[（(\[]\s*(?:feat\.?|ft\.?|with)\s+[^）)\]]+[）)\]]/ig, '')
+              .replace(/\s+(?:feat\.?|ft\.?|with)\s+.+$/ig, '')
+              .trim();
+            if (withoutFeat) variants.add(withoutFeat);
+            const withoutVersion = withoutFeat
+              .replace(/\s*[（(\[][^）)\]]*(?:live|remix|mix|ver(?:sion)?\.?|edit|cover|翻唱|伴奏|纯音乐|现场|重制|重录|动画|电影|剧场版)[^）)\]]*[）)\]]\s*$/ig, '')
+              .replace(/\s*[-–—]\s*(?:live|remix|mix|ver(?:sion)?\.?|edit|cover|翻唱|伴奏|纯音乐|现场|重制|重录).*/ig, '')
+              .trim();
+            if (withoutVersion) variants.add(withoutVersion);
+            const withoutAllTailBrackets = withoutFeat.replace(/\s*[（(\[].*?[）)\]]\s*$/g, '').trim();
+            if (withoutAllTailBrackets) variants.add(withoutAllTailBrackets);
+            return Array.from(variants).filter(Boolean);
+          };
+          const singerParts = value => String(value || '')
+            .normalize('NFKC')
+            .split(/[、,&，/\\|＋+×xX;；]|\s+(?:feat\.?|ft\.?|with)\s+/i)
+            .map(part => normalizeMatchText(part))
+            .filter(Boolean);
+          const wantedTitles = titleVariants(name);
+          const wantedNormalizedTitles = wantedTitles.map(normalizeMatchText).filter(Boolean);
+          const wantedSingerParts = singerParts(singer);
+          const searchQueries = [];
+          wantedTitles.forEach(title => {
+            if (singer) searchQueries.push(`${title} ${singer}`.trim());
+            searchQueries.push(title);
           });
-          const data = response.ok ? await response.json() : {};
-          lyric = data.lyric || '';
-          tlyric = data.trans || '';
-        } else if (matched && matched.source === 'wy') {
-          const response = await fetch(`https://music.163.com/api/song/lyric?id=${encodeURIComponent(matched.songmid || matched.id)}&lv=1&kv=1&tv=1&yv=1`, {
-            headers: { Referer: 'https://music.163.com/', 'User-Agent': 'Mozilla/5.0' },
-          });
-          const data = response.ok ? await response.json() : {};
-          lyric = data?.lrc?.lyric || '';
-          tlyric = data?.tlyric?.lyric || '';
-          yrc = data?.yrc?.lyric || '';
+          const uniqueQueries = Array.from(new Set(searchQueries.filter(Boolean))).slice(0, 6);
+          const candidateMap = new Map();
+          for (const queryText of uniqueQueries) {
+            const searchResult = await lxSearch.searchAll(queryText, {
+              sources: 'wy,tx',
+              limit: 20,
+            });
+            const found = Array.isArray(searchResult.songs) ? searchResult.songs : [];
+            found.forEach(item => {
+              const key = `${item.source || ''}|${item.songmid || item.id || ''}`;
+              if (key !== '|') candidateMap.set(key, item);
+            });
+          }
+          const scoreCandidate = item => {
+            const candidateName = normalizeMatchText(item && item.name);
+            if (!candidateName) return -999;
+            let score = -20;
+            if (wantedNormalizedTitles.includes(candidateName)) score = 120;
+            else {
+              const titleSimilarity = wantedNormalizedTitles.reduce((best, wanted) => {
+                if (!wanted) return best;
+                if (candidateName.includes(wanted) || wanted.includes(candidateName)) {
+                  const shorter = Math.min(candidateName.length, wanted.length);
+                  const longer = Math.max(candidateName.length, wanted.length) || 1;
+                  return Math.max(best, 70 + Math.round(25 * shorter / longer));
+                }
+                return best;
+              }, -20);
+              score = Math.max(score, titleSimilarity);
+            }
+            const candidateSinger = normalizeMatchText(item && (item.singer || item.artist));
+            if (wantedSingerParts.length && candidateSinger) {
+              let singerHits = 0;
+              wantedSingerParts.forEach(part => {
+                if (candidateSinger.includes(part) || part.includes(candidateSinger)) singerHits++;
+              });
+              score += Math.min(36, singerHits * 18);
+            }
+            if (String(item && item.source || '') === source) score += 3;
+            return score;
+          };
+          const candidates = Array.from(candidateMap.values())
+            .map(item => ({ item, score: scoreCandidate(item) }))
+            .filter(entry => entry.score >= 60)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 14);
+          for (const entry of candidates) {
+            const matched = entry.item;
+            let candidateLyric = '';
+            let candidateYrc = '';
+            let candidateTranslation = '';
+            try {
+              if (matched.source === 'tx') {
+                const response = await fetch(`https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=${encodeURIComponent(matched.songmid || matched.id)}&format=json&nobase64=1`, {
+                  headers: { Referer: 'https://y.qq.com/', 'User-Agent': 'Mozilla/5.0' },
+                });
+                const data = response.ok ? await response.json() : {};
+                candidateLyric = data.lyric || '';
+                candidateTranslation = data.trans || data.translation || '';
+              } else if (matched.source === 'wy') {
+                const response = await fetch(`https://music.163.com/api/song/lyric?id=${encodeURIComponent(matched.songmid || matched.id)}&lv=1&kv=1&tv=1&yv=1`, {
+                  headers: { Referer: 'https://music.163.com/', 'User-Agent': 'Mozilla/5.0' },
+                });
+                const data = response.ok ? await response.json() : {};
+                candidateLyric = data?.lrc?.lyric || '';
+                candidateYrc = data?.yrc?.lyric || '';
+                // Romanized lyrics are not treated as a translation.
+                candidateTranslation = data?.tlyric?.lyric || '';
+              }
+            } catch (candidateError) {
+              console.warn('[PlatformLyricCandidate]', candidateError.message || candidateError);
+              continue;
+            }
+            if (!lyric && !yrc) {
+              lyric = candidateLyric || lyric;
+              yrc = candidateYrc || yrc;
+            }
+            if (candidateTranslation) {
+              tlyric = candidateTranslation;
+              break;
+            }
+          }
+        } catch (translationError) {
+          console.warn('[PlatformLyricTranslationSupplement]', translationError.message || translationError);
         }
       }
       sendJSON(res, { ok: !!(lyric || yrc), lyric, tlyric, yrc });
