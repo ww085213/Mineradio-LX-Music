@@ -45,6 +45,7 @@
   "build": {
     "appId": "com.mineradio.app",
     "productName": "Mineradio",
+    "artifactName": "Mineradio.Setup.${version}.${ext}",
     "asar": false,
     "directories": {
       "buildResources": "build",
