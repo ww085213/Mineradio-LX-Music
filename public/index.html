@@ -18582,7 +18582,12 @@ function openPlatformPlaylistImport() {
   mask.className = 'playlist-select-mask';
   mask.innerHTML =
     '<div class="playlist-select-dialog playlist-import-dialog" role="dialog" aria-modal="true" aria-labelledby="playlist-import-title">' +
-      '<div class="playlist-select-head"><div><strong id="playlist-import-title">导入平台歌单</strong><br><small>支持手机、电脑、H5 与短分享链接</small></div><button class="fx-mini-btn ghost" data-import-close="1">关闭</button></div>' +
+      '<div class="playlist-select-head"><div><strong id="playlist-import-title">导入歌单与音乐</strong><br><small>支持本地音乐、LX 歌单和平台分享链接</small></div><button class="fx-mini-btn ghost" data-import-close="1">关闭</button></div>' +
+      '<div class="playlist-import-platforms" aria-label="本地导入方式">' +
+        '<button class="playlist-import-platform" data-import-local="1" type="button">本地音乐</button>' +
+        '<button class="playlist-import-platform" data-import-lx="1" type="button">LX 歌单</button>' +
+      '</div>' +
+      '<div class="playlist-import-hint">本地音乐支持文件和文件夹；LX 歌单支持一个或多个 .lxmc 文件。</div>' +
       '<div class="playlist-import-platforms" role="radiogroup" aria-label="音乐平台">' +
         '<button class="playlist-import-platform active" data-import-source="tx" role="radio" aria-checked="true">小秋</button>' +
         '<button class="playlist-import-platform" data-import-source="wy" role="radio" aria-checked="false">小芸</button>' +
@@ -18600,6 +18605,16 @@ function openPlatformPlaylistImport() {
   mask.addEventListener('click', function(event){
     if (event.target === mask || event.target.closest('[data-import-close]')) {
       closePlatformPlaylistImport();
+      return;
+    }
+    if (event.target.closest('[data-import-local]')) {
+      closePlatformPlaylistImport();
+      openLocalFolderImport();
+      return;
+    }
+    if (event.target.closest('[data-import-lx]')) {
+      closePlatformPlaylistImport();
+      openLxPlaylistImport();
       return;
     }
     var sourceButton = event.target.closest('[data-import-source]');
