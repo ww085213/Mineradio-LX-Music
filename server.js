@@ -9,11 +9,20 @@ const path = require('path');
 const crypto = require('crypto');
 const tls = require('tls');
 const { once } = require('events');
+const { Readable } = require('stream');
 const { fileURLToPath } = require('url');
+const { execFileSync } = require('child_process');
+const lxSourceHost = require('./lx-source-host');
+const lxSearch = require('./lx-search');
+const platformPlaylistImport = require('./platform-playlist-import');
 let electronNet = null;
 try {
   electronNet = require('electron').net;
 } catch (_err) {}
+if (electronNet && typeof electronNet.fetch === 'function') {
+  lxSearch.setFetchImplementation(electronNet.fetch.bind(electronNet));
+  platformPlaylistImport.setFetchImplementation(electronNet.fetch.bind(electronNet));
+}
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -111,6 +120,31 @@ function sendJSON(res, data, status) {
 }
 
 const wallpaperMediaIndex = new Map();
+function steamRegistryRoots() {
+  if (process.platform !== 'win32') return [];
+  const roots = new Set();
+  const queries = [
+    ['HKCU\\Software\\Valve\\Steam', 'SteamPath'],
+    ['HKCU\\Software\\Valve\\Steam', 'SteamExe'],
+    ['HKLM\\SOFTWARE\\WOW6432Node\\Valve\\Steam', 'InstallPath'],
+    ['HKLM\\SOFTWARE\\Valve\\Steam', 'InstallPath'],
+  ];
+  queries.forEach(([key, value]) => {
+    try {
+      const output = execFileSync('reg.exe', ['query', key, '/v', value], {
+        encoding:'utf8',
+        windowsHide:true,
+        timeout:2500,
+      });
+      const match = output.match(new RegExp(`${value}\\s+REG_\\w+\\s+(.+)$`, 'mi'));
+      if (!match) return;
+      let found = match[1].trim().replace(/\//g, '\\');
+      if (/steam\.exe$/i.test(found)) found = path.dirname(found);
+      if (found) roots.add(found);
+    } catch (_error) {}
+  });
+  return [...roots];
+}
 function steamLibraryRoots() {
   const roots = new Set([
     'C:\\Program Files\\Steam',
@@ -119,6 +153,15 @@ function steamLibraryRoots() {
     'E:\\SteamLibrary',
     'F:\\SteamLibrary',
   ]);
+  steamRegistryRoots().forEach(root => roots.add(root));
+  // 兼容 Steam 或 Wallpaper Engine 安装在任意盘符的常见自定义目录。
+  for (let code = 67; code <= 90; code++) {
+    const drive = String.fromCharCode(code) + ':\\';
+    roots.add(path.join(drive, 'Steam'));
+    roots.add(path.join(drive, 'SteamLibrary'));
+    roots.add(path.join(drive, 'Games', 'Steam'));
+    roots.add(path.join(drive, 'Games', 'SteamLibrary'));
+  }
   for (const root of [...roots]) {
     const vdf = path.join(root, 'steamapps', 'libraryfolders.vdf');
     try {
@@ -259,6 +302,7 @@ function readLxPlaylists() {
         lrcUrl: meta.lrcUrl || '',
         trcUrl: meta.trcUrl || '',
         mrcUrl: meta.mrcUrl || '',
+        meta,
       };
       if (!songsByList.has(row.listId)) songsByList.set(row.listId, []);
       songsByList.get(row.listId).push(song);
@@ -1490,6 +1534,232 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pn === '/api/lx-source/status') {
+    try {
+      sendJSON(res, await lxSourceHost.status());
+    } catch (err) {
+      sendJSON(res, { ok: false, error: err.message || 'LX_SOURCE_UNAVAILABLE' }, 503);
+    }
+    return;
+  }
+
+  if (pn === '/api/lx-source/resolve') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    try {
+      const body = await readRequestBody(req);
+      const source = String(body.source || '').toLowerCase();
+      const musicInfo = body.musicInfo && typeof body.musicInfo === 'object' ? body.musicInfo : {};
+      const result = await lxSourceHost.resolveMusicUrl(source, musicInfo, String(body.quality || ''));
+      sendJSON(res, { ok: true, source, ...result });
+    } catch (err) {
+      console.warn('[LXSourceResolve]', err.message);
+      sendJSON(res, { ok: false, error: err.message || 'LX_SOURCE_RESOLVE_FAILED' }, 502);
+    }
+    return;
+  }
+
+  if (pn === '/api/lx-source/lyric') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    try {
+      const body = await readRequestBody(req);
+      const source = String(body.source || '').toLowerCase();
+      const musicInfo = body.musicInfo && typeof body.musicInfo === 'object' ? body.musicInfo : {};
+      const lyrics = await lxSourceHost.resolveLyrics(source, musicInfo);
+      sendJSON(res, { ok: true, source, ...lyrics });
+    } catch (err) {
+      console.warn('[LXSourceLyric]', err.message);
+      sendJSON(res, { ok: false, error: err.message || 'LX_SOURCE_LYRIC_FAILED' }, 502);
+    }
+    return;
+  }
+
+  if (pn === '/api/platform-lyric') {
+    try {
+      const source = String(url.searchParams.get('source') || '').toLowerCase();
+      const id = String(url.searchParams.get('id') || '');
+      const hash = String(url.searchParams.get('hash') || '');
+      const albumId = String(url.searchParams.get('albumId') || '');
+      const lrcUrl = String(url.searchParams.get('lrcUrl') || '');
+      const name = String(url.searchParams.get('name') || '').trim();
+      const singer = String(url.searchParams.get('singer') || '').trim();
+      let lyric = '';
+      let tlyric = '';
+      let yrc = '';
+      if (source === 'tx' && id) {
+        const response = await fetch(`https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=${encodeURIComponent(id)}&format=json&nobase64=1`, {
+          headers: { Referer: 'https://y.qq.com/', 'User-Agent': 'Mozilla/5.0' },
+        });
+        const data = response.ok ? await response.json() : {};
+        lyric = data.lyric || '';
+        tlyric = data.trans || '';
+      } else if (source === 'wy' && id) {
+        const response = await fetch(`https://music.163.com/api/song/lyric?id=${encodeURIComponent(id)}&lv=1&kv=1&tv=1&yv=1`, {
+          headers: { Referer: 'https://music.163.com/', 'User-Agent': 'Mozilla/5.0' },
+        });
+        const data = response.ok ? await response.json() : {};
+        lyric = data?.lrc?.lyric || '';
+        tlyric = data?.tlyric?.lyric || '';
+        yrc = data?.yrc?.lyric || '';
+      } else if (source === 'mg' && /^https?:\/\//i.test(lrcUrl)) {
+        const response = await fetch(lrcUrl);
+        if (response.ok) lyric = await response.text();
+      } else if (source === 'kg' && hash) {
+        const response = await fetch(`https://www.kugou.com/yy/index.php?r=play/getdata&hash=${encodeURIComponent(hash)}&album_id=${encodeURIComponent(albumId)}`, {
+          headers: { Referer: 'https://www.kugou.com/' },
+        });
+        const data = response.ok ? await response.json() : {};
+        lyric = data?.data?.lyrics || '';
+      } else if (source === 'kw' && id) {
+        const response = await fetch(`https://m.kuwo.cn/newh5/singles/songinfoandlrc?musicId=${encodeURIComponent(id)}`, {
+          headers: { Referer: 'https://m.kuwo.cn/' },
+        });
+        const data = response.ok ? await response.json() : {};
+        lyric = (data?.data?.lrclist || []).map(item => {
+          const seconds = Number(item.time) || 0;
+          const minutes = Math.floor(seconds / 60);
+          const rest = (seconds - minutes * 60).toFixed(2).padStart(5, '0');
+          return `[${String(minutes).padStart(2, '0')}:${rest}]${item.lineLyric || ''}`;
+        }).join('\n');
+      }
+      if (!lyric && !yrc && name) {
+        const searchResult = await lxSearch.searchAll(`${name} ${singer}`.trim(), {
+          sources: 'tx,wy',
+          limit: 8,
+        });
+        const normalizedName = name.replace(/\s+/g, '').toLowerCase();
+        const candidates = Array.isArray(searchResult.songs) ? searchResult.songs : [];
+        const matched = candidates.find(item =>
+          String(item.name || '').replace(/\s+/g, '').toLowerCase() === normalizedName &&
+          (!singer || String(item.singer || '').includes(singer))
+        ) || candidates.find(item =>
+          String(item.name || '').replace(/\s+/g, '').toLowerCase() === normalizedName
+        );
+        if (matched && matched.source === 'tx') {
+          const response = await fetch(`https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=${encodeURIComponent(matched.songmid || matched.id)}&format=json&nobase64=1`, {
+            headers: { Referer: 'https://y.qq.com/', 'User-Agent': 'Mozilla/5.0' },
+          });
+          const data = response.ok ? await response.json() : {};
+          lyric = data.lyric || '';
+          tlyric = data.trans || '';
+        } else if (matched && matched.source === 'wy') {
+          const response = await fetch(`https://music.163.com/api/song/lyric?id=${encodeURIComponent(matched.songmid || matched.id)}&lv=1&kv=1&tv=1&yv=1`, {
+            headers: { Referer: 'https://music.163.com/', 'User-Agent': 'Mozilla/5.0' },
+          });
+          const data = response.ok ? await response.json() : {};
+          lyric = data?.lrc?.lyric || '';
+          tlyric = data?.tlyric?.lyric || '';
+          yrc = data?.yrc?.lyric || '';
+        }
+      }
+      sendJSON(res, { ok: !!(lyric || yrc), lyric, tlyric, yrc });
+    } catch (err) {
+      sendJSON(res, { ok: false, lyric: '', error: err.message || 'PLATFORM_LYRIC_FAILED' }, 502);
+    }
+    return;
+  }
+
+  if (pn === '/api/lx-source/import') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    try {
+      const body = await readRequestBody(req);
+      const result = body.url
+        ? await lxSourceHost.importSourceUrl(body.url)
+        : await lxSourceHost.importSource(body.script, body.fileName);
+      sendJSON(res, result);
+    } catch (err) {
+      sendJSON(res, { ok: false, error: err.message || 'LX_SOURCE_IMPORT_FAILED' }, 400);
+    }
+    return;
+  }
+
+  if (pn === '/api/lx-source/search') {
+    try {
+      const result = await lxSearch.searchAll(url.searchParams.get('q'), {
+        sources: url.searchParams.get('sources'),
+        limit: url.searchParams.get('limit'),
+      });
+      sendJSON(res, result, result.ok ? 200 : 502);
+    } catch (err) {
+      sendJSON(res, { ok: false, songs: [], error: err.message || 'LX_SEARCH_FAILED' }, 502);
+    }
+    return;
+  }
+
+  if (pn === '/api/audio') {
+    let target;
+    try {
+      target = new URL(String(url.searchParams.get('url') || ''));
+      if (!/^https?:$/.test(target.protocol)) throw new Error('INVALID_AUDIO_URL');
+      if (/^(localhost|127\.|0\.0\.0\.0|\[?::1\]?)$/i.test(target.hostname)) throw new Error('LOCAL_AUDIO_URL_BLOCKED');
+    } catch (err) {
+      sendJSON(res, { ok:false, error:err.message || 'INVALID_AUDIO_URL' }, 400);
+      return;
+    }
+    const controller = new AbortController();
+    req.on('close', () => controller.abort());
+    try {
+      const fetchImpl = electronNet && typeof electronNet.fetch === 'function'
+        ? electronNet.fetch.bind(electronNet)
+        : globalThis.fetch;
+      const upstream = await fetchImpl(target.href, {
+        method: req.method === 'HEAD' ? 'HEAD' : 'GET',
+        redirect: 'follow',
+        signal: controller.signal,
+        headers: {
+          Accept: '*/*',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          ...(req.headers.range ? { Range:req.headers.range } : {}),
+          ...(req.headers['if-range'] ? { 'If-Range':req.headers['if-range'] } : {}),
+        },
+      });
+      const headers = {
+        'Content-Type': upstream.headers.get('content-type') || 'audio/mpeg',
+        'Accept-Ranges': upstream.headers.get('accept-ranges') || 'bytes',
+        'Cache-Control': 'no-store',
+        'Access-Control-Allow-Origin': '*',
+      };
+      ['content-length', 'content-range', 'etag', 'last-modified'].forEach(name => {
+        const value = upstream.headers.get(name);
+        if (value) headers[name] = value;
+      });
+      res.writeHead(upstream.status, headers);
+      if (req.method === 'HEAD' || !upstream.body) {
+        res.end();
+      } else {
+        Readable.fromWeb(upstream.body).on('error', () => {
+          if (!res.destroyed) res.destroy();
+        }).pipe(res);
+      }
+    } catch (err) {
+      if (!res.headersSent) sendJSON(res, { ok:false, error:err.message || 'AUDIO_PROXY_FAILED' }, 502);
+      else if (!res.destroyed) res.destroy();
+    }
+    return;
+  }
+
+  if (pn === '/api/platform-playlist/import') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { ok:false, error:'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    try {
+      const body = await readRequestBody(req);
+      sendJSON(res, await platformPlaylistImport.importPlaylist(body.input, body.source));
+    } catch (err) {
+      sendJSON(res, { ok:false, error:err.message || 'PLAYLIST_IMPORT_FAILED' }, 400);
+    }
+    return;
+  }
+
   if (pn === '/api/lx/status') {
     try {
       const status = await lxApiRequest('/status?filter=status,name,singer,albumName,duration,progress,playbackRate,picUrl,lyricLineText,volume,mute');
@@ -1804,8 +2074,14 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  let filePath = pn === '/' ? '/index.html' : pn;
-  filePath = path.join(__dirname, 'public', filePath);
+  const publicRoot = path.resolve(__dirname, 'public');
+  const relativePath = pn === '/' ? 'index.html' : pn.replace(/^[/\\]+/, '');
+  let filePath = path.resolve(publicRoot, relativePath);
+  if (filePath !== publicRoot && !filePath.startsWith(publicRoot + path.sep)) {
+    res.writeHead(403);
+    res.end('Forbidden');
+    return;
+  }
   serveStatic(res, filePath);
 });
 

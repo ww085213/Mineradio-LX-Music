@@ -227,7 +227,7 @@
     var state = {
       enabled:false,text:'Mineradio',progress:0,progressSpan:4.8,progressReceivedAt:0,playing:false,
       playbackTime:0,playbackDuration:0,playbackRate:1,playbackReceivedAt:0,beatMapKey:'',
-      size:1,opacity:.92,clickThrough:true,lyricGlowParticles:false,cinema:true,highlightFollow:false,frameRate:60,
+      size:1,opacity:.92,clickThrough:true,lyricGlowParticles:false,lyricMotion:true,cinema:true,highlightFollow:false,frameRate:60,
       lyricGlow:true,lyricGlowBeat:true,lyricGlowStrength:.35,highBloom:0,beatGlow:0,beatPulse:0,bass:0,feather:.055,
       fontFamily:'Inter,"Noto Sans SC","PingFang SC","Microsoft YaHei",Arial,sans-serif',
       fontWeight:900,letterSpacing:0,lineHeight:1,lyricScale:1,rows:'double',align:'center',
@@ -718,6 +718,11 @@
         window.desktopOverlay.setLyricsPointerCapture(active).catch(function(){});
       }
     }
+    function setDraggingState(active) {
+      if (window.desktopOverlay && window.desktopOverlay.setLyricsDrag) {
+        window.desktopOverlay.setLyricsDrag(!!active).catch(function(){});
+      }
+    }
     function sendHotBounds() {
       if (!window.desktopOverlay || !window.desktopOverlay.setLyricsHotBounds) return;
       var rect = lyricViewport.getBoundingClientRect();
@@ -880,6 +885,14 @@
       return { glowStrength:glowStrength, glowDrive:glowDrive };
     }
     function applyStageMotion(now) {
+      if (state.lyricMotion === false) {
+        live.lift += (0 - live.lift) * .45;
+        live.scale += (1 - live.scale) * .45;
+        stage.style.transform = 'translate3d(0,0,0) rotateX(0deg) rotateY(0deg) scale(1)';
+        stage.style.filter = 'brightness(1.04) saturate(1.08)';
+        setRootVar('--lyric-css-beat-glow', '0px');
+        return;
+      }
       var cinemaBinding = state.cinema !== false;
       var motionBeat = cinemaBinding ? live.beat : 0;
       var motionSolar = cinemaBinding ? live.solar : 0;
@@ -1145,6 +1158,7 @@
       } catch (e) {}
       dragging = false;
       dragPointerId = null;
+      setDraggingState(false);
       setPointerCapture(false);
     }
     window.addEventListener('pointermove', function(evt){
@@ -1188,6 +1202,7 @@
         dragPointerId = evt.pointerId;
         dragLast.x = evt.screenX;
         dragLast.y = evt.screenY;
+        setDraggingState(true);
         setPointerCapture(true);
         try {
           if (stage.setPointerCapture) stage.setPointerCapture(evt.pointerId);

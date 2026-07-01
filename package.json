@@ -1,7 +1,7 @@
 {
   "name": "mineradio",
   "productName": "Mineradio",
-  "version": "1.4.6",
+  "version": "1.4.7",
   "description": "接入用户本机 LX Music（落雪音乐）开放 API，实现读取并播放用户本机 LX Music 歌单的桌面音乐可视化工具。",
   "author": "Mineradio contributors",
   "license": "MIT",
@@ -54,6 +54,9 @@
       "desktop/**/*",
       "public/**/*",
       "server.js",
+      "lx-source-host.js",
+      "lx-search.js",
+      "platform-playlist-import.js",
       "package.json"
     ],
     "win": {

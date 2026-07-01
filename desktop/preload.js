@@ -41,9 +41,18 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   exitFullscreenWindowed: () => ipcRenderer.invoke('desktop-window-exit-fullscreen-windowed'),
   getState: () => ipcRenderer.invoke('desktop-window-get-state'),
   close: () => ipcRenderer.invoke('desktop-window-close'),
+  beginWindowDrag: () => ipcRenderer.invoke('desktop-window-drag-state', true),
+  endWindowDrag: () => ipcRenderer.invoke('desktop-window-drag-state', false),
   getTraySettings: () => ipcRenderer.invoke('mineradio-tray-get-settings'),
   setCloseToTray: (enabled) => ipcRenderer.invoke('mineradio-tray-set-close-to-tray', !!enabled),
   setStartupEnabled: (enabled) => ipcRenderer.invoke('mineradio-startup-set-enabled', !!enabled),
+  updateTrayPlayback: (state) => ipcRenderer.invoke('mineradio-tray-update-playback', state || {}),
+  onTrayCommand: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload || {});
+    ipcRenderer.on('mineradio-tray-command', listener);
+    return () => ipcRenderer.removeListener('mineradio-tray-command', listener);
+  },
   openUpdateInstaller: (filePath) => ipcRenderer.invoke('mineradio-open-update-installer', filePath),
   restartApp: () => ipcRenderer.invoke('mineradio-restart-app'),
   openLxScheme: (schemeUrl) => ipcRenderer.invoke('mineradio-lx-open-scheme', schemeUrl),

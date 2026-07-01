@@ -14,6 +14,13 @@ let desktopLyricsState = {};
 let desktopLyricsUserBounds = null;
 let desktopLyricsProgrammaticMove = false;
 let desktopLyricsPointerCapture = false;
+let desktopLyricsDragging = false;
+let desktopLyricsExternalLeftDrag = false;
+let desktopLyricsPointerReleaseTimer = null;
+let desktopLyricsMoveTimer = null;
+let desktopLyricsPendingMove = { x: 0, y: 0 };
+let desktopLyricsMainMoveSuspended = false;
+let desktopLyricsMainMoveRestoreTimer = null;
 let desktopLyricsMouseIgnored = null;
 let desktopLyricsMousePoller = null;
 let desktopLyricsMousePollerBuffer = '';
@@ -25,6 +32,7 @@ let htmlFullscreenActive = false;
 let windowFullscreenActive = false;
 let mainWindowStateTimer = null;
 let tray = null;
+let trayPlaybackState = { title: '', artist: '', playing: false, volume: 80 };
 let closeToTrayEnabled = true;
 let appQuitting = false;
 let lxPlaybackLinked = false;
@@ -546,7 +554,29 @@ function setStartupEnabled(enabled) {
  */
 function refreshTrayMenu() {
   if (!tray) return;
+  const songLabel = trayPlaybackState.title
+    ? `${trayPlaybackState.title}${trayPlaybackState.artist ? ` - ${trayPlaybackState.artist}` : ''}`
+    : '暂无正在播放的歌曲';
+  const sendTrayCommand = (command, value) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('mineradio-tray-command', { command, value });
+    }
+  };
   tray.setContextMenu(Menu.buildFromTemplate([
+    { label: songLabel.slice(0, 80), enabled: false },
+    { type: 'separator' },
+    { label: trayPlaybackState.playing ? '暂停' : '播放', click: () => sendTrayCommand('toggle-play') },
+    { label: '上一曲', click: () => sendTrayCommand('previous') },
+    { label: '下一曲', click: () => sendTrayCommand('next') },
+    {
+      label: `音量 ${Math.max(0, Math.min(100, Number(trayPlaybackState.volume) || 0))}%`,
+      submenu: [
+        { label: '音量 +10%', click: () => sendTrayCommand('volume', 10) },
+        { label: '音量 -10%', click: () => sendTrayCommand('volume', -10) },
+        { label: '静音 / 恢复', click: () => sendTrayCommand('mute') },
+      ],
+    },
+    { type: 'separator' },
     { label: '显示 Mineradio', click: focusMainWindow },
     {
       label: '关闭按钮最小化到托盘',
@@ -788,10 +818,59 @@ function rememberDesktopLyricsBounds() {
 function applyDesktopLyricsMouseBehavior() {
   if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return;
   const locked = desktopLyricsState.clickThrough !== false;
-  const shouldIgnore = locked || !desktopLyricsPointerCapture;
+  const shouldIgnore = desktopLyricsExternalLeftDrag || locked || (!desktopLyricsPointerCapture && !desktopLyricsDragging);
   if (desktopLyricsMouseIgnored === shouldIgnore) return;
   desktopLyricsMouseIgnored = shouldIgnore;
   desktopLyricsWindow.setIgnoreMouseEvents(shouldIgnore, { forward: true });
+}
+
+function setDesktopLyricsPointerCapture(active) {
+  if (desktopLyricsPointerReleaseTimer) {
+    clearTimeout(desktopLyricsPointerReleaseTimer);
+    desktopLyricsPointerReleaseTimer = null;
+  }
+  if (active || desktopLyricsDragging) {
+    desktopLyricsPointerCapture = true;
+    applyDesktopLyricsMouseBehavior();
+    return;
+  }
+  // 鼠标在透明窗口边缘移动时会交替触发 enter/leave；短暂滞回可避免穿透状态频闪。
+  desktopLyricsPointerReleaseTimer = setTimeout(() => {
+    desktopLyricsPointerReleaseTimer = null;
+    if (desktopLyricsDragging) return;
+    desktopLyricsPointerCapture = false;
+    applyDesktopLyricsMouseBehavior();
+  }, 140);
+}
+
+function flushDesktopLyricsMove() {
+  desktopLyricsMoveTimer = null;
+  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) {
+    desktopLyricsPendingMove = { x: 0, y: 0 };
+    return;
+  }
+  const dx = desktopLyricsPendingMove.x;
+  const dy = desktopLyricsPendingMove.y;
+  desktopLyricsPendingMove = { x: 0, y: 0 };
+  if (!dx && !dy) return;
+  const bounds = desktopLyricsWindow.getBounds();
+  const next = constrainDesktopLyricsBounds({
+    ...bounds,
+    x: Math.round(bounds.x + dx),
+    y: Math.round(bounds.y + dy),
+  });
+  desktopLyricsProgrammaticMove = true;
+  desktopLyricsWindow.setPosition(next.x, next.y, false);
+  desktopLyricsUserBounds = desktopLyricsWindow.getBounds();
+  setTimeout(() => {
+    desktopLyricsProgrammaticMove = false;
+  }, 48);
+}
+
+function queueDesktopLyricsMove(dx, dy) {
+  desktopLyricsPendingMove.x += clampNumber(dx, -160, 160, 0);
+  desktopLyricsPendingMove.y += clampNumber(dy, -160, 160, 0);
+  if (!desktopLyricsMoveTimer) desktopLyricsMoveTimer = setTimeout(flushDesktopLyricsMove, 16);
 }
 
 function desktopLyricsHotBoundsOnScreen() {
@@ -830,6 +909,34 @@ function handleDesktopLyricsGlobalMiddleClick() {
   broadcastDesktopLyricsLockState();
 }
 
+function handleDesktopLyricsGlobalLeftButton(down) {
+  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed() || !desktopLyricsState.enabled) {
+    desktopLyricsExternalLeftDrag = false;
+    return;
+  }
+  if (down) {
+    const point = screen.getCursorScreenPoint();
+    // 若按下瞬间歌词窗口正在穿透，事件必然属于下面的其他窗口；
+    // 即便坐标恰好落在歌词热区，也必须在松键前持续穿透。
+    desktopLyricsExternalLeftDrag = desktopLyricsMouseIgnored === true
+      || !pointInBounds(point, desktopLyricsHotBoundsOnScreen());
+    if (desktopLyricsExternalLeftDrag && desktopLyricsWindow.isVisible()) {
+      // Windows DWM may flicker when a transparent GPU overlay overlaps a
+      // moving Electron window. Remove the overlay from composition for the
+      // duration of the external drag, then restore it once.
+      desktopLyricsWindow.hide();
+    }
+  } else {
+    const shouldRestore = desktopLyricsExternalLeftDrag;
+    desktopLyricsExternalLeftDrag = false;
+    if (shouldRestore && !desktopLyricsMainMoveSuspended && desktopLyricsState.enabled && !desktopLyricsWindow.isDestroyed()) {
+      desktopLyricsWindow.showInactive();
+      sendDesktopLyricsState();
+    }
+  }
+  applyDesktopLyricsMouseBehavior();
+}
+
 function startDesktopLyricsMousePoller() {
   if (process.platform !== 'win32' || desktopLyricsMousePoller) return;
   const script = `
@@ -842,13 +949,24 @@ public class MineradioMousePoll {
 }
 "@
 $prev = $false
+$leftPrev = $false
 while ($true) {
   $down = (([MineradioMousePoll]::GetAsyncKeyState(4) -band 0x8000) -ne 0)
+  $leftDown = (([MineradioMousePoll]::GetAsyncKeyState(1) -band 0x8000) -ne 0)
   if ($down -and -not $prev) {
     [Console]::Out.WriteLine("MMB")
     [Console]::Out.Flush()
   }
+  if ($leftDown -and -not $leftPrev) {
+    [Console]::Out.WriteLine("LMB_DOWN")
+    [Console]::Out.Flush()
+  }
+  if (-not $leftDown -and $leftPrev) {
+    [Console]::Out.WriteLine("LMB_UP")
+    [Console]::Out.Flush()
+  }
   $prev = $down
+  $leftPrev = $leftDown
   Start-Sleep -Milliseconds 24
 }
 `;
@@ -863,6 +981,8 @@ while ($true) {
       desktopLyricsMousePollerBuffer = lines.pop() || '';
       lines.forEach((line) => {
         if (line.trim() === 'MMB') handleDesktopLyricsGlobalMiddleClick();
+        else if (line.trim() === 'LMB_DOWN') handleDesktopLyricsGlobalLeftButton(true);
+        else if (line.trim() === 'LMB_UP') handleDesktopLyricsGlobalLeftButton(false);
       });
     });
     desktopLyricsMousePoller.on('exit', () => {
@@ -900,6 +1020,29 @@ function broadcastDesktopLyricsEnabledState(enabled) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('mineradio-desktop-lyrics-enabled-state', { enabled: !!enabled });
   }
+}
+
+function suspendDesktopLyricsForMainWindowMove() {
+  if (desktopLyricsMainMoveRestoreTimer) {
+    clearTimeout(desktopLyricsMainMoveRestoreTimer);
+    desktopLyricsMainMoveRestoreTimer = null;
+  }
+  desktopLyricsMainMoveSuspended = true;
+  if (desktopLyricsWindow && !desktopLyricsWindow.isDestroyed() && desktopLyricsWindow.isVisible()) {
+    desktopLyricsWindow.hide();
+  }
+}
+
+function restoreDesktopLyricsAfterMainWindowMove(delay = 80) {
+  if (desktopLyricsMainMoveRestoreTimer) clearTimeout(desktopLyricsMainMoveRestoreTimer);
+  desktopLyricsMainMoveRestoreTimer = setTimeout(() => {
+    desktopLyricsMainMoveRestoreTimer = null;
+    desktopLyricsMainMoveSuspended = false;
+    if (!desktopLyricsState.enabled || !desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return;
+    desktopLyricsWindow.showInactive();
+    applyDesktopLyricsMouseBehavior();
+    sendDesktopLyricsState();
+  }, Math.max(0, delay));
 }
 
 function positionDesktopLyricsWindow(payload = desktopLyricsState, options = {}) {
@@ -969,11 +1112,20 @@ function createDesktopLyricsWindow(payload = {}) {
   positionDesktopLyricsWindow(desktopLyricsState, { force: yChanged || !desktopLyricsUserBounds });
   desktopLyricsWindow.once('ready-to-show', () => {
     if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return;
+    if (desktopLyricsMainMoveSuspended) return;
     desktopLyricsWindow.showInactive();
     sendDesktopLyricsState();
   });
   desktopLyricsWindow.webContents.once('did-finish-load', sendDesktopLyricsState);
   desktopLyricsWindow.on('closed', () => {
+    if (desktopLyricsPointerReleaseTimer) clearTimeout(desktopLyricsPointerReleaseTimer);
+    if (desktopLyricsMoveTimer) clearTimeout(desktopLyricsMoveTimer);
+    desktopLyricsPointerReleaseTimer = null;
+    desktopLyricsMoveTimer = null;
+    desktopLyricsDragging = false;
+    desktopLyricsExternalLeftDrag = false;
+    desktopLyricsPointerCapture = false;
+    desktopLyricsPendingMove = { x: 0, y: 0 };
     desktopLyricsWindow = null;
     desktopLyricsMouseIgnored = null;
   });
@@ -984,7 +1136,17 @@ function createDesktopLyricsWindow(payload = {}) {
 
 function closeDesktopLyricsWindow() {
   desktopLyricsState = { ...desktopLyricsState, enabled: false };
+  if (desktopLyricsPointerReleaseTimer) clearTimeout(desktopLyricsPointerReleaseTimer);
+  if (desktopLyricsMoveTimer) clearTimeout(desktopLyricsMoveTimer);
+  desktopLyricsPointerReleaseTimer = null;
+  desktopLyricsMoveTimer = null;
+  desktopLyricsDragging = false;
+  desktopLyricsExternalLeftDrag = false;
   desktopLyricsPointerCapture = false;
+  desktopLyricsPendingMove = { x: 0, y: 0 };
+  if (desktopLyricsMainMoveRestoreTimer) clearTimeout(desktopLyricsMainMoveRestoreTimer);
+  desktopLyricsMainMoveRestoreTimer = null;
+  desktopLyricsMainMoveSuspended = false;
   desktopLyricsMouseIgnored = null;
   desktopLyricsHotBounds = null;
   stopDesktopLyricsMousePoller();
@@ -1141,6 +1303,12 @@ ipcMain.handle('desktop-window-close', (event) => {
   getSenderWindow(event)?.close();
 });
 
+ipcMain.handle('desktop-window-drag-state', (_event, active) => {
+  if (active) suspendDesktopLyricsForMainWindowMove();
+  else restoreDesktopLyricsAfterMainWindowMove(80);
+  return { ok:true, active:!!active };
+});
+
 ipcMain.handle('mineradio-lx-set-linked', (_event, linked) => {
   lxPlaybackLinked = !!linked;
   return { ok: true, linked: lxPlaybackLinked };
@@ -1155,6 +1323,17 @@ ipcMain.handle('mineradio-tray-set-close-to-tray', (_event, enabled) => {
   writeDesktopShellSettings({ closeToTray: closeToTrayEnabled });
   refreshTrayMenu();
   return { ok: true, closeToTray: closeToTrayEnabled };
+});
+
+ipcMain.handle('mineradio-tray-update-playback', (_event, state = {}) => {
+  trayPlaybackState = {
+    title: String(state.title || '').slice(0, 120),
+    artist: String(state.artist || '').slice(0, 120),
+    playing: !!state.playing,
+    volume: Math.max(0, Math.min(100, Math.round(Number(state.volume) || 0))),
+  };
+  refreshTrayMenu();
+  return { ok: true };
 });
 
 ipcMain.handle('mineradio-startup-set-enabled', (_event, enabled) => {
@@ -1328,14 +1507,25 @@ ipcMain.handle('mineradio-desktop-lyrics-update', async (_event, payload) => {
   }
 });
 
-ipcMain.handle('mineradio-desktop-lyrics-set-dragging', async () => {
-  return { ok: true };
+ipcMain.handle('mineradio-desktop-lyrics-set-dragging', async (_event, active) => {
+  desktopLyricsDragging = !!active;
+  if (desktopLyricsDragging) {
+    desktopLyricsExternalLeftDrag = false;
+    setDesktopLyricsPointerCapture(true);
+  } else {
+    if (desktopLyricsMoveTimer) {
+      clearTimeout(desktopLyricsMoveTimer);
+      desktopLyricsMoveTimer = null;
+      flushDesktopLyricsMove();
+    }
+    setDesktopLyricsPointerCapture(false);
+  }
+  return { ok: true, dragging: desktopLyricsDragging };
 });
 
 ipcMain.handle('mineradio-desktop-lyrics-set-pointer-capture', async (_event, active) => {
   try {
-    desktopLyricsPointerCapture = !!active;
-    applyDesktopLyricsMouseBehavior();
+    setDesktopLyricsPointerCapture(!!active);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message || 'DESKTOP_LYRICS_POINTER_FAILED' };
@@ -1371,14 +1561,7 @@ ipcMain.handle('mineradio-desktop-lyrics-move-by', async (_event, dx, dy) => {
   try {
     if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return { ok: false, error: 'NO_DESKTOP_LYRICS_WINDOW' };
     if (desktopLyricsState.clickThrough !== false) return { ok: false, error: 'DESKTOP_LYRICS_LOCKED' };
-    const bounds = desktopLyricsWindow.getBounds();
-    const next = {
-      ...bounds,
-      x: Math.round(bounds.x + clampNumber(dx, -160, 160, 0)),
-      y: Math.round(bounds.y + clampNumber(dy, -160, 160, 0)),
-    };
-    desktopLyricsWindow.setBounds(next, false);
-    desktopLyricsUserBounds = desktopLyricsWindow.getBounds();
+    queueDesktopLyricsMove(dx, dy);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message || 'DESKTOP_LYRICS_MOVE_FAILED' };
@@ -1480,7 +1663,24 @@ async function createWindow() {
   mainWindow.on('hide', () => sendWindowState(mainWindow));
   mainWindow.on('focus', () => sendWindowState(mainWindow));
   mainWindow.on('blur', () => sendWindowState(mainWindow));
-  mainWindow.on('move', () => scheduleWindowStateSend(mainWindow));
+  // Hide the transparent desktop-lyrics overlay for the complete native
+  // move/resize loop. This avoids Windows DWM flicker between two GPU windows.
+  if (process.platform === 'win32' && typeof mainWindow.hookWindowMessage === 'function') {
+    mainWindow.hookWindowMessage(0x00A1, () => { // WM_NCLBUTTONDOWN
+      suspendDesktopLyricsForMainWindowMove();
+      restoreDesktopLyricsAfterMainWindowMove(500);
+    });
+    mainWindow.hookWindowMessage(0x0216, () => suspendDesktopLyricsForMainWindowMove()); // WM_MOVING
+    mainWindow.hookWindowMessage(0x0231, () => suspendDesktopLyricsForMainWindowMove()); // WM_ENTERSIZEMOVE
+    mainWindow.hookWindowMessage(0x0232, () => restoreDesktopLyricsAfterMainWindowMove(80)); // WM_EXITSIZEMOVE
+  }
+  mainWindow.on('will-move', suspendDesktopLyricsForMainWindowMove);
+  mainWindow.on('move', () => {
+    suspendDesktopLyricsForMainWindowMove();
+    restoreDesktopLyricsAfterMainWindowMove(320);
+    scheduleWindowStateSend(mainWindow);
+  });
+  mainWindow.on('moved', () => restoreDesktopLyricsAfterMainWindowMove(80));
   mainWindow.on('resize', () => scheduleWindowStateSend(mainWindow));
   mainWindow.on('close', (event) => {
     if (!appQuitting && closeToTrayEnabled) {
@@ -1532,6 +1732,14 @@ if (!gotSingleInstanceLock) {
 
   app.whenReady().then(async () => {
     applySavedDesktopShellSettings();
+    session.defaultSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => {
+      if (permission !== 'media') return false;
+      return /^http:\/\/127\.0\.0\.1:\d+\/?$/.test(String(requestingOrigin || ''));
+    });
+    session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+      const url = webContents && !webContents.isDestroyed() ? webContents.getURL() : '';
+      callback(permission === 'media' && /^http:\/\/127\.0\.0\.1:\d+\//.test(String(url || '')));
+    });
     session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
       desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } })
         .then((sources) => {
