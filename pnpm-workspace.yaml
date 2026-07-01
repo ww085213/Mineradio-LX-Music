@@ -1,6 +1,6 @@
 allowBuilds:
-  electron: set this to true or false
-  electron-winstaller: set this to true or false
+  electron: true
+  electron-winstaller: true
 onlyBuiltDependencies:
   - electron
   - electron-winstaller
