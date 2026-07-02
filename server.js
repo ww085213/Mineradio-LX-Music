@@ -239,6 +239,22 @@ function compatibleWallpaperMedia(dir, project) {
   });
   return candidates[0] || { file:'', mediaType:'' };
 }
+function wallpaperContentFingerprint(file) {
+  if (!file) return '';
+  try {
+    const stat = fs.statSync(file);
+    const length = Math.min(stat.size, 128 * 1024);
+    const buffer = Buffer.alloc(length);
+    const fd = fs.openSync(file, 'r');
+    try { fs.readSync(fd, buffer, 0, length, 0); } finally { fs.closeSync(fd); }
+    return crypto.createHash('sha1')
+      .update(String(stat.size))
+      .update(buffer)
+      .digest('hex');
+  } catch (_error) {
+    return '';
+  }
+}
 function scanWallpaperEngineLibrary() {
   wallpaperMediaIndex.clear();
   const results = [];
@@ -248,6 +264,7 @@ function scanWallpaperEngineLibrary() {
     projectRoots.push(path.join(root, 'steamapps', 'common', 'wallpaper_engine', 'projects', 'myprojects'));
   });
   const seen = new Set();
+  const seenContent = new Set();
   projectRoots.forEach(root => {
     if (!fs.existsSync(root)) return;
     let dirs = [];
@@ -267,7 +284,10 @@ function scanWallpaperEngineLibrary() {
         if (!media && !preview) return;
         const fingerprint = crypto.createHash('sha1').update(projectPath).digest('hex').slice(0, 18);
         if (seen.has(fingerprint)) return;
+        const contentFingerprint = wallpaperContentFingerprint(media || preview);
+        if (contentFingerprint && seenContent.has(contentFingerprint)) return;
         seen.add(fingerprint);
+        if (contentFingerprint) seenContent.add(contentFingerprint);
         if (media) wallpaperMediaIndex.set(fingerprint + ':media', media);
         if (preview) wallpaperMediaIndex.set(fingerprint + ':preview', preview);
         results.push({
