@@ -19275,6 +19275,7 @@ function renderLxSongResults(songs, q) {
         '</div>' +
       '</div>' +
       '<button class="add-btn" title="播放" onclick="event.stopPropagation();playLxSearchResult(' + index + ')">▶</button>' +
+      '<button class="add-btn" title="收藏到我的歌单" onclick="event.stopPropagation();collectSearchResult(' + index + ')">' + playlistPlusIconSvg() + '</button>' +
     '</div>';
   }).join('');
   $results.innerHTML = rows +
@@ -19310,9 +19311,6 @@ async function playLxSearchResult(index) {
     return;
   }
   primeOnlineAudioForUserGesture();
-  $results.classList.remove('show');
-  $input.value = '';
-  $input.blur();
   rememberSearchQuery(song.name || '');
   try {
     // 搜索结果只在用户实际点击后加入“搜索播放”；未点击的版本绝不进入歌单或队列。
@@ -20851,6 +20849,7 @@ function renderSongSearchResults(songs) {
         '</div>' +
       '</div>' +
       '<button class="add-btn" title="下一首播放" onclick="event.stopPropagation();queueSearchResult(' + i + ')">+</button>' +
+      '<button class="add-btn" title="收藏到我的歌单" onclick="event.stopPropagation();collectSearchResult(' + i + ')">' + playlistPlusIconSvg() + '</button>' +
     '</div>';
   }).join('');
   $results.classList.add('show');
@@ -21467,8 +21466,6 @@ function playSearchResult(i) {
     if (matchIdx >= 0) currentIdx = moveQueueIndexToTop(matchIdx);
     else { playQueue.unshift(cloneSong(song)); currentIdx = 0; }
   }
-  $results.classList.remove('show');
-  $input.value = ''; $input.blur();
   playQueueAt(currentIdx);
 }
 var firstPlayDone = false;
