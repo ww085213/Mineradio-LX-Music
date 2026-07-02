@@ -79,8 +79,15 @@ async function searchKw(query, limit) {
 }
 
 async function searchKg(query, limit) {
-  const data = await fetchJson(`https://songsearch.kugou.com/song_search_v2?keyword=${encodeURIComponent(query)}&page=1&pagesize=${limit}&userid=0&platform=WebFilter&filter=2&iscorrection=1&privilege_filter=0&area_code=1`, { useNodeFetch: true });
-  return (data?.data?.lists || []).map(item => ({
+  const baseUrl = `https://songsearch.kugou.com/song_search_v2?keyword=${encodeURIComponent(query)}&page=1&pagesize=${limit}&userid=0&platform=WebFilter&filter=2&iscorrection=1&privilege_filter=0&area_code=1`;
+  let rows = [];
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const data = await fetchJson(`${baseUrl}&_=${Date.now()}_${attempt}`, { useNodeFetch: true });
+    rows = data?.data?.lists || [];
+    if (rows.length) break;
+    if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 380 * (2 ** attempt)));
+  }
+  return rows.map(item => ({
     id: item.Audioid,
     songmid: item.Audioid,
     name: item.SongName || '',

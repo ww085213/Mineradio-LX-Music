@@ -1,7 +1,7 @@
 {
   "name": "mineradio",
   "productName": "Mineradio",
-  "version": "1.5.1",
+  "version": "1.5.0",
   "description": "可独立运行的本地音乐播放器、跨平台歌单工具与桌面音乐可视化应用。",
   "author": "Mineradio contributors",
   "license": "MIT",
