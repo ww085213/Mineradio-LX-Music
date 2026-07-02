@@ -20125,6 +20125,44 @@ function lxSourceQualityCandidates(sourceName) {
 }
 var lxResolvePromise = null;
 var lxResolveSongKey = '';
+async function resolveCrossPlatformAudioFallback(song, failedSource) {
+  var query = [song && song.name, song && (song.singer || song.artist)].filter(Boolean).join(' ').trim();
+  if (!query) return '';
+  var sourceNames = { tx:'小秋', wy:'小芸', kw:'小蜗', kg:'小狗', mg:'小菇' };
+  try {
+    var alternatives = await apiJson('/api/lx-source/search?q=' + encodeURIComponent(query) +
+      '&limit=16&sources=' + encodeURIComponent(['wy','kw','kg','mg','tx'].filter(function(source){ return source !== failedSource; }).join(',')),
+      { timeoutMs:22000 });
+    var wantedName = simpleSearchNorm(song.name || '');
+    var candidates = alternatives && Array.isArray(alternatives.songs) ? alternatives.songs.filter(function(candidate){
+      if (!candidate || String(candidate.source || '') === failedSource) return false;
+      var candidateName = simpleSearchNorm(candidate.name || '');
+      return wantedName && (candidateName === wantedName || candidateName.indexOf(wantedName) >= 0 || wantedName.indexOf(candidateName) >= 0);
+    }).slice(0, 10) : [];
+    for (var i = 0; i < candidates.length; i++) {
+      var candidate = candidates[i];
+      var sourceName = normalizeLxSourceName(candidate.source);
+      try {
+        var candidatePayload = lxSongPlayPayload(candidate);
+        var qualities = lxSourceQualityCandidates(sourceName);
+        var resolved = await apiJson('/api/lx-source/resolve', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body:JSON.stringify({ source:sourceName, quality:qualities[0] || '320k', musicInfo:candidatePayload }),
+          timeoutMs:30000
+        });
+        if (resolved && resolved.ok && /^https?:\/\//i.test(String(resolved.url || ''))) {
+          showSourceFallbackNotice(
+            '已自动换源',
+            (sourceNames[failedSource] || failedSource || '原平台') + '版本不可播放，已切换到' + (sourceNames[sourceName] || sourceName)
+          );
+          return String(resolved.url);
+        }
+      } catch (_candidateError) {}
+    }
+  } catch (_searchError) {}
+  return '';
+}
 async function resolveImportedLxAudio(song) {
   song = song || {};
   var sourceName = normalizeLxSourceName(song.source || song.provider || song.type);
@@ -20147,6 +20185,8 @@ async function resolveImportedLxAudio(song) {
       });
     } catch (e) {
       if (e && e.name === 'AbortError') throw new Error('音源解析超时，请换音源或稍后重试');
+      var fallbackUrl = await resolveCrossPlatformAudioFallback(song, sourceName);
+      if (fallbackUrl) return fallbackUrl;
       throw e;
     }
     console.info('[LXSourceResolveResponse]', result);
