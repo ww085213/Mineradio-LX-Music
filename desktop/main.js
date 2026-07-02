@@ -188,6 +188,33 @@ function localFileProxyUrl(filePath) {
   if (!mainServerPort) return pathToFileURL(filePath).href;
   return `http://127.0.0.1:${mainServerPort}/api/local-file?token=${encodeURIComponent(LOCAL_FILE_TOKEN)}&path=${encodeURIComponent(filePath)}`;
 }
+async function validateLocalAudioFile(filePath, ext) {
+  if (!['.mp3', '.flac', '.wav', '.ogg', '.m4a'].includes(ext)) return { playable:true, error:'' };
+  try {
+    const handle = await fs.promises.open(filePath, 'r');
+    const buffer = Buffer.alloc(256 * 1024);
+    let bytesRead = 0;
+    try { ({ bytesRead } = await handle.read(buffer, 0, buffer.length, 0)); } finally { await handle.close(); }
+    const data = buffer.subarray(0, bytesRead);
+    let valid = false;
+    if (ext === '.flac') valid = data.subarray(0, 4).toString('ascii') === 'fLaC';
+    else if (ext === '.wav') valid = data.subarray(0, 4).toString('ascii') === 'RIFF' && data.subarray(8, 12).toString('ascii') === 'WAVE';
+    else if (ext === '.ogg') valid = data.subarray(0, 4).toString('ascii') === 'OggS';
+    else if (ext === '.m4a') valid = data.subarray(4, 12).includes(Buffer.from('ftyp'));
+    else {
+      let start = 0;
+      if (data.subarray(0, 3).toString('ascii') === 'ID3' && data.length >= 10) {
+        start = 10 + ((data[6] & 0x7f) << 21) + ((data[7] & 0x7f) << 14) + ((data[8] & 0x7f) << 7) + (data[9] & 0x7f);
+      }
+      for (let i = Math.min(start, data.length); i + 1 < data.length; i++) {
+        if (data[i] === 0xff && (data[i + 1] & 0xe0) === 0xe0 && (data[i + 1] & 0x06) !== 0) { valid = true; break; }
+      }
+    }
+    return { playable:valid, error:valid ? '' : '音频数据损坏、加密或扩展名不正确' };
+  } catch (_error) {
+    return { playable:false, error:'文件无法读取' };
+  }
+}
 
 async function localMusicEntryFromPath(filePath, relativeRoot) {
   const abs = path.resolve(String(filePath || ''));
@@ -200,6 +227,7 @@ async function localMusicEntryFromPath(filePath, relativeRoot) {
     return null;
   }
   if (!stat.isFile()) return null;
+  const validation = await validateLocalAudioFile(abs, ext);
   const root = relativeRoot ? path.resolve(relativeRoot) : path.dirname(abs);
   rememberLocalMusicRoot(root);
   const rel = path.relative(root, abs) || path.basename(abs);
@@ -214,6 +242,8 @@ async function localMusicEntryFromPath(filePath, relativeRoot) {
     size: stat.size,
     lastModified: Math.round(stat.mtimeMs),
     type: LOCAL_LIBRARY_MIME[ext] || '',
+    playable: validation.playable,
+    validationError: validation.error,
   };
 }
 
@@ -251,6 +281,7 @@ async function scanLocalMusicFolder(folderPath) {
         continue;
       }
       const webkitRelativePath = localLibraryRelativePath(root, rel);
+      const validation = await validateLocalAudioFile(abs, ext);
       files.push({
         fullPath: abs,
         filePath: abs,
@@ -261,6 +292,8 @@ async function scanLocalMusicFolder(folderPath) {
         size: stat.size,
         lastModified: Math.round(stat.mtimeMs),
         type: LOCAL_LIBRARY_MIME[ext] || '',
+        playable: validation.playable,
+        validationError: validation.error,
       });
     }
     if (visited > 60000) break;

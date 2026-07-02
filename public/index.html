@@ -24405,7 +24405,7 @@ function createLocalSongsFromFiles(files, opts) {
   var lyricMaps = buildLocalLyricMaps(list);
   var coverMaps = buildLocalCoverMaps(list);
   return list
-    .filter(function(file){ return isLocalAudioFile(file, !!opts.folderOnly); })
+    .filter(function(file){ return isLocalAudioFile(file, !!opts.folderOnly) && file.playable !== false; })
     .sort(function(a, b){ return localFilePath(a).localeCompare(localFilePath(b), 'zh-Hans-CN', { numeric: true, sensitivity: 'base' }); })
     .map(function(file){ return makeLocalSongFromFile(file, findLocalLyricFile(file, lyricMaps), findLocalCoverFile(file, coverMaps)); });
 }
@@ -25529,10 +25529,15 @@ function analyzeLocalLibraryDuplicates(songs) {
 }
 async function handleLocalFolderFiles(files, opts) {
   opts = opts || {};
+  var rejectedAudioCount = (files || []).filter(function(file){
+    return isLocalAudioFile(file, !!opts.folderOnly) && file.playable === false;
+  }).length;
   var songs = createLocalSongsFromFiles(files, { folderOnly: !!opts.folderOnly });
   var duplicateStats = analyzeLocalLibraryDuplicates(songs);
   if (!songs.length) {
-    showToast(opts.folderOnly ? '文件夹里没有找到 MP3 / FLAC 音乐' : '没有找到可播放的本地音乐');
+    showToast(rejectedAudioCount
+      ? ('检测到 ' + rejectedAudioCount + ' 个损坏、加密或伪装的音频文件，已跳过')
+      : (opts.folderOnly ? '文件夹里没有找到 MP3 / FLAC 音乐' : '没有找到可播放的本地音乐'));
     return;
   }
   var libraryFolderPath = opts.folderPath || savedLocalLibraryFolderPath();
@@ -26419,7 +26424,7 @@ function renderWallpaperPicker() {
   var grid = document.getElementById('wallpaper-picker-grid');
   if (!grid) return;
   var visibleItems = wallpaperEngineLibrary.map(function(item, index){ return { item:item, index:index }; })
-    .filter(function(entry){ return entry.item.playable && !hiddenWallpaperIds.has(String(entry.item.id)); });
+    .filter(function(entry){ return (entry.item.playable || entry.item.nativeScene) && !hiddenWallpaperIds.has(String(entry.item.id)); });
   if (!visibleItems.length) {
     grid.innerHTML = '<div style="grid-column:1/-1;padding:36px;text-align:center;color:rgba(255,255,255,.42)">没有找到可用壁纸</div>';
     return;
@@ -26431,7 +26436,7 @@ function renderWallpaperPicker() {
       '<button class="wallpaper-card-hide" type="button" title="从 MR 隐藏" onclick="event.stopPropagation();hideWallpaperEngineItem(' + index + ')">×</button>' +
       (preview ? '<img src="' + preview + '" alt="" loading="lazy">' : '<div style="height:132px;background:linear-gradient(135deg,#1d2330,#07080b)"></div>') +
       '<span class="wallpaper-card-meta">' + escHtml(item.title || 'Wallpaper') + '<small>' +
-        (item.mediaType === 'video' ? '动态媒体 · 原始清晰度' : '图片壁纸 · 原始清晰度') +
+        (item.nativeScene ? '原生 Scene · Wallpaper Engine 播放' : (item.mediaType === 'video' ? '动态媒体 · 原始清晰度' : '图片壁纸 · 原始清晰度')) +
       '</small></span>' +
     '</div>';
   }).join('');
@@ -26463,9 +26468,25 @@ function closeWallpaperPicker() {
   var picker = document.getElementById('wallpaper-picker');
   if (picker) picker.classList.remove('show');
 }
-function applyWallpaperEngineItem(index) {
+async function applyWallpaperEngineItem(index) {
   var item = wallpaperEngineLibrary[Number(index)];
   if (!item) return;
+  if (item.nativeScene && !item.playable) {
+    try {
+      var result = await apiJson('/api/wallpaper/apply-scene', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ id:item.id }),
+        timeoutMs:8000
+      });
+      if (!result || !result.ok) throw new Error(result && result.error || 'WALLPAPER_APPLY_FAILED');
+      closeWallpaperPicker();
+      showToast('已交给 Wallpaper Engine 原生播放；Scene 无法嵌入 MR 窗口');
+    } catch (error) {
+      showToast(error && error.message === 'WALLPAPER_ENGINE_NOT_FOUND' ? '未找到 Wallpaper Engine' : '原生 Scene 启动失败');
+    }
+    return;
+  }
   var playable = item.playable && (item.mediaType || item.dynamic);
   if (!playable) {
     showToast('该壁纸没有可读取的高清原始媒体');

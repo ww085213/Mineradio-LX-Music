@@ -11,7 +11,7 @@ const tls = require('tls');
 const { once } = require('events');
 const { Readable } = require('stream');
 const { fileURLToPath } = require('url');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawn } = require('child_process');
 const lxSourceHost = require('./lx-source-host');
 const lxSearch = require('./lx-search');
 const platformPlaylistImport = require('./platform-playlist-import');
@@ -120,6 +120,15 @@ function sendJSON(res, data, status) {
 }
 
 const wallpaperMediaIndex = new Map();
+const wallpaperProjectIndex = new Map();
+function wallpaperEngineExecutable() {
+  const candidates = [];
+  steamLibraryRoots().forEach(root => {
+    const base = path.join(root, 'steamapps', 'common', 'wallpaper_engine');
+    candidates.push(path.join(base, 'wallpaper64.exe'), path.join(base, 'wallpaper32.exe'));
+  });
+  return candidates.find(candidate => fs.existsSync(candidate)) || '';
+}
 function steamRegistryRoots() {
   if (process.platform !== 'win32') return [];
   const roots = new Set();
@@ -257,6 +266,8 @@ function wallpaperContentFingerprint(file) {
 }
 function scanWallpaperEngineLibrary() {
   wallpaperMediaIndex.clear();
+  wallpaperProjectIndex.clear();
+  const engineExecutable = wallpaperEngineExecutable();
   const results = [];
   const projectRoots = [];
   steamLibraryRoots().forEach(root => {
@@ -281,7 +292,7 @@ function scanWallpaperEngineLibrary() {
           project.preview,
           'preview.jpg', 'preview.png', 'preview.jpeg', 'preview.webp', 'preview.gif'
         ]);
-        if (!media && !preview) return;
+        if (!media && !preview && !engineExecutable) return;
         const fingerprint = crypto.createHash('sha1').update(projectPath).digest('hex').slice(0, 18);
         if (seen.has(fingerprint)) return;
         const contentFingerprint = wallpaperContentFingerprint(media || preview);
@@ -290,6 +301,7 @@ function scanWallpaperEngineLibrary() {
         if (contentFingerprint) seenContent.add(contentFingerprint);
         if (media) wallpaperMediaIndex.set(fingerprint + ':media', media);
         if (preview) wallpaperMediaIndex.set(fingerprint + ':preview', preview);
+        wallpaperProjectIndex.set(fingerprint, projectPath);
         results.push({
           id: fingerprint,
           title: String(project.title || path.basename(dir)).slice(0, 160),
@@ -298,11 +310,26 @@ function scanWallpaperEngineLibrary() {
           playable: !!media,
           dynamic: !!media && compatible.mediaType === 'video',
           hasPreview: !!preview,
+          nativeScene: !media && type === 'scene' && !!engineExecutable,
         });
       } catch (_err) {}
     });
   });
   return results.sort((a, b) => Number(b.playable) - Number(a.playable) || a.title.localeCompare(b.title, 'zh-CN'));
+}
+function applyWallpaperEngineProject(id) {
+  if (!wallpaperProjectIndex.size) scanWallpaperEngineLibrary();
+  const projectPath = wallpaperProjectIndex.get(String(id || ''));
+  const executable = wallpaperEngineExecutable();
+  if (!projectPath) throw new Error('WALLPAPER_NOT_FOUND');
+  if (!executable) throw new Error('WALLPAPER_ENGINE_NOT_FOUND');
+  const child = spawn(executable, ['-control', 'openWallpaper', '-file', projectPath], {
+    detached: true,
+    windowsHide: true,
+    stdio: 'ignore',
+  });
+  child.unref();
+  return { executable, projectPath };
 }
 
 async function lxApiRequest(apiPath) {
@@ -2036,6 +2063,21 @@ const server = http.createServer(async (req, res) => {
   if (pn === '/api/wallpaper/list') {
     const wallpapers = scanWallpaperEngineLibrary();
     sendJSON(res, { ok: true, wallpapers, count: wallpapers.length });
+    return;
+  }
+
+  if (pn === '/api/wallpaper/apply-scene') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    try {
+      const body = await readRequestBody(req);
+      const applied = applyWallpaperEngineProject(body.id);
+      sendJSON(res, { ok: true, native: true, projectPath: applied.projectPath });
+    } catch (error) {
+      sendJSON(res, { ok: false, error: error.message || 'WALLPAPER_APPLY_FAILED' }, 400);
+    }
     return;
   }
 

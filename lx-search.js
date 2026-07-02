@@ -20,26 +20,35 @@ function singers(value) {
 }
 
 async function fetchJson(url, options = {}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12000);
-  try {
-    const selectedFetch = options.useNodeFetch ? globalThis.fetch : networkFetch;
-    const fetchOptions = { ...options };
-    delete fetchOptions.useNodeFetch;
-    const response = await selectedFetch(url, {
-      ...fetchOptions,
-      signal: controller.signal,
-      headers: {
-        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'referer': new URL(url).origin + '/',
-        ...(fetchOptions.headers || {}),
-      },
-    });
-    if (!response.ok) throw new Error(`HTTP_${response.status}`);
-    return await response.json();
-  } finally {
-    clearTimeout(timer);
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+    try {
+      const selectedFetch = options.useNodeFetch ? globalThis.fetch : networkFetch;
+      const fetchOptions = { ...options };
+      delete fetchOptions.useNodeFetch;
+      const response = await selectedFetch(url, {
+        ...fetchOptions,
+        signal: controller.signal,
+        headers: {
+          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'referer': new URL(url).origin + '/',
+          ...(fetchOptions.headers || {}),
+        },
+      });
+      if (!response.ok) throw new Error(`HTTP_${response.status}`);
+      return await response.json();
+    } catch (error) {
+      lastError = error;
+      const retryable = /HTTP_(?:429|5\d\d)|abort|timeout|fetch|network|socket|ECONN|ENOTFOUND/i.test(String(error && (error.message || error)));
+      if (!retryable || attempt >= 2) throw error;
+      await new Promise(resolve => setTimeout(resolve, 280 * (attempt + 1)));
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  throw lastError || new Error('SEARCH_REQUEST_FAILED');
 }
 
 async function searchKw(query, limit) {
