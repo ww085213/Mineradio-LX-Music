@@ -9087,6 +9087,9 @@ function localAssetCacheSnapshot(song) {
     localLyricText: song.localLyricText || '',
     localLyricLoaded: !!song.localLyricLoaded,
     localLyricLightScanned: !!song.localLyricLightScanned,
+    localOnlineLyricText: song.localOnlineLyricText || '',
+    localTranslationText: song.localTranslationText || '',
+    localOnlineLyricLoaded: !!song.localOnlineLyricLoaded,
     localLyricFileSignature: localAssetFileSignature(song.localLyricFile),
     localLyricSource: song.localLyricFile ? 'file' : (song.localLyricTagName ? 'embedded' : (song.localLyricLoaded ? 'none' : '')),
     localCoverFileName: song.localCoverFileName || '',
@@ -9154,6 +9157,12 @@ function applyLocalAssetCacheToSong(song, record) {
     song.localLyricLightScanned = !!record.localLyricLightScanned;
     song.localLyricFileName = record.localLyricFileName || song.localLyricFileName || '';
     song.localLyricTagName = record.localLyricTagName || song.localLyricTagName || '';
+    changed = true;
+  }
+  if (record.localOnlineLyricText || record.localTranslationText || record.localOnlineLyricLoaded) {
+    song.localOnlineLyricText = record.localOnlineLyricText || '';
+    song.localTranslationText = record.localTranslationText || '';
+    song.localOnlineLyricLoaded = !!record.localOnlineLyricLoaded;
     changed = true;
   }
   var coverFileSig = localAssetFileSignature(song.localCoverFile);
@@ -18925,9 +18934,9 @@ async function showCurrentLxSource() {
       '<div style="display:grid;gap:9px;margin-top:14px">' +
         installed.map(function(item){
           return '<button type="button" class="playlist-import-platform' + (item.active ? ' active' : '') + '" data-source-id="' +
-            escapeHtml(String(item.id || '')) + '" style="width:100%;text-align:left;padding:12px 14px">' +
-            escapeHtml(String(item.name || '未命名音源')) +
-            (item.version ? ' <small style="opacity:.55">v' + escapeHtml(String(item.version)) + '</small>' : '') +
+            escHtml(String(item.id || '')) + '" style="width:100%;text-align:left;padding:12px 14px">' +
+            escHtml(String(item.name || '未命名音源')) +
+            (item.version ? ' <small style="opacity:.55">v' + escHtml(String(item.version)) + '</small>' : '') +
             (item.active ? ' <small style="float:right">当前</small>' : '') +
           '</button>';
         }).join('') +
@@ -21851,8 +21860,10 @@ function parseLocalLyricText(text) {
   });
 }
 function applyLocalOriginalLyricsState(song) {
-  var text = song && String(song.localLyricText || '').trim();
+  var text = song && String(song.localLyricText || song.localOnlineLyricText || '').trim();
   var lines = text ? parseLocalLyricText(text) : [];
+  var translationText = song && String(song.localTranslationText || '').trim();
+  if (translationText) lines = mergeLyricTranslations(lines, parseLyricText(translationText));
   var timingSource = lines.length
     ? (lines[0].source === 'local-lrc' ? 'local-lrc' : 'local-text')
     : 'fallback';
@@ -21875,6 +21886,48 @@ function maybeApplyLocalLyricsForSong(song, opts) {
   if (!isCurrentLocalQueueSong(song)) return;
   applyLocalOriginalLyricsState(song);
   updateCustomLyricControls();
+}
+function localOnlineLyricQuery(song) {
+  var title = String(song && song.name || '').replace(/\.[a-z0-9]{2,5}$/i, '').trim();
+  var artist = String(song && (song.artist || song.albumArtist || song.singer) || '').trim();
+  return { title:title, artist:artist };
+}
+function ensureLocalOnlineLyricsForSong(song, opts) {
+  opts = opts || {};
+  if (!song) return Promise.resolve(false);
+  if (song.localOnlineLyricLoaded) {
+    maybeApplyLocalLyricsForSong(song, opts);
+    return Promise.resolve(!!(song.localOnlineLyricText || song.localTranslationText));
+  }
+  if (song.localOnlineLyricPromise) return song.localOnlineLyricPromise;
+  var query = localOnlineLyricQuery(song);
+  if (!query.title) return Promise.resolve(false);
+  song.localOnlineLyricPromise = apiJson(
+    '/api/platform-lyric?source=wy&name=' + encodeURIComponent(query.title) +
+    '&singer=' + encodeURIComponent(query.artist),
+    { timeoutMs:26000 }
+  ).then(function(data){
+    data = data || {};
+    var original = String(data.lyric || data.lrc || '').trim();
+    var translated = String(data.tlyric || data.tlrc || data.trans || data.translation || '').trim();
+    if (!song.localLyricText && original) song.localOnlineLyricText = original;
+    if (translated) song.localTranslationText = translated;
+    song.localOnlineLyricLoaded = true;
+    if (opts.applyCurrent && (opts.token == null || opts.token === trackSwitchToken) && isCurrentLocalQueueSong(song)) {
+      applyLocalOriginalLyricsState(song);
+      updateCustomLyricControls();
+      if (translated) showToast('已补充翻译歌词');
+    }
+    scheduleLocalAssetCacheWrite(song);
+    return !!(original || translated);
+  }).catch(function(error){
+    console.warn('[LocalOnlineLyricSupplement]', query, error);
+    song.localOnlineLyricLoaded = true;
+    return false;
+  }).finally(function(){
+    song.localOnlineLyricPromise = null;
+  });
+  return song.localOnlineLyricPromise;
 }
 function ensureLocalLyricsForSong(song, opts) {
   opts = opts || {};
@@ -21934,7 +21987,10 @@ function ensureLocalLyricsForSong(song, opts) {
   return song.localLyricPromise;
 }
 function loadLocalLyricsForSong(song, token) {
-  return ensureLocalLyricsForSong(song, { token:token, applyCurrent:true });
+  var opts = { token:token, applyCurrent:true };
+  return ensureLocalLyricsForSong(song, opts).then(function(){
+    return ensureLocalOnlineLyricsForSong(song, opts);
+  });
 }
 async function playLocalQueueItem(song, idx, opts, token, firstVisualPlay, bmKey, markPlayPhase) {
   // 本地队列播放期间禁止后台轮询把播放来源悄悄切回落雪。
