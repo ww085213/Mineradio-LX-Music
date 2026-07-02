@@ -20254,7 +20254,8 @@ async function startImportedAudioUrl(audioUrl) {
   }
   throw lastError || new Error('播放器无法加载音频地址');
 }
-async function playImportedLxInsideMineradio(song, playlistIndex, songIndex) {
+async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opts) {
+  opts = opts || {};
   trackSwitchToken++;
   prepareImportedLxPlayerUi(song);
   showToast('正在解析：' + (song.name || '落雪歌曲'));
@@ -20290,9 +20291,16 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex) {
   hideBeatChip();
   audio.onended = function(){
     var list = lxMirrorPlaylists[playlistIndex];
-    if (!list || !list.songs || !list.songs.length) return;
-    var next = playMode === 'shuffle' ? Math.floor(Math.random() * list.songs.length) : (songIndex + 1) % list.songs.length;
-    playLxMirrorSong(playlistIndex, next);
+    if (list && list.songs && list.songs.length) {
+      var next = playMode === 'shuffle' ? Math.floor(Math.random() * list.songs.length) : (songIndex + 1) % list.songs.length;
+      playLxMirrorSong(playlistIndex, next);
+      return;
+    }
+    if (!playQueue.length) return;
+    var nextQueueIndex = playMode === 'shuffle'
+      ? Math.floor(Math.random() * playQueue.length)
+      : (currentIdx + 1) % playQueue.length;
+    playQueueAt(nextQueueIndex);
   };
   await startImportedAudioUrl(audioUrl);
   await loadImportedLxLyrics(song);
@@ -21878,6 +21886,19 @@ async function playQueueAt(idx, opts) {
   if (selectedQueueSong && selectedQueueSong.type === 'lx-online') {
     currentIdx = idx;
     await playLxMirrorSong(selectedQueueSong.lxPlaylistIndex, selectedQueueSong.lxSongIndex);
+    return;
+  }
+  var selectedSource = normalizeLxSourceName(selectedQueueSong && (selectedQueueSong.source || selectedQueueSong.provider));
+  if (selectedQueueSong && /^(tx|wy|kw|mg|kg)$/.test(selectedSource)) {
+    currentIdx = idx;
+    try {
+      await playImportedLxInsideMineradio(selectedQueueSong, -1, -1, opts);
+    } catch (onlinePlayError) {
+      console.error('Online search playback failed:', onlinePlayError);
+      hideLoading();
+      forcePlaybackControlsInteractive();
+      showToast(playbackFailureToastText(onlinePlayError));
+    }
     return;
   }
   clearLocalLibraryPassiveQueue();
