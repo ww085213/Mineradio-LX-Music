@@ -149,6 +149,12 @@
       -webkit-text-fill-color:var(--lyric-secondary);
       opacity:.78;
     }
+    .desktop-lyric-row.current .desktop-lyric-translation{
+      color:var(--lyric-highlight);
+      -webkit-text-fill-color:var(--lyric-highlight);
+      opacity:1;
+      text-shadow:0 0 1px rgba(255,255,255,.52),0 0 calc(8px + var(--lyric-css-beat-glow)) var(--lyric-shadow-soft),0 0 calc(18px + var(--lyric-css-beat-glow)) var(--lyric-shadow-glow);
+    }
     body.highlight .line{
       background:linear-gradient(90deg,
         var(--lyric-highlight) 0%,
@@ -726,7 +732,9 @@
       var size = baseFontSize;
       fitScaleX = 1;
       var minSize = Math.max(24, Math.min(32, baseFontSize * .55));
-      var maxScrollableWidth = readableWidth * 1.76;
+      // Desktop lyrics stay centered. Long lines shrink to fit instead of
+      // continuously drifting left and right across the desktop.
+      var maxScrollableWidth = readableWidth;
       for (var i = 0; i < 24; i++) {
         var width = measureLineWidth(size);
         var height = size * state.lineHeight * currentLyricLineCount();
@@ -734,31 +742,18 @@
         size = Math.max(minSize, size - Math.max(1.25, size * .062));
       }
       var measuredWidth = measureLineWidth(size);
-      var maxRenderedWidth = readableWidth * 1.82;
+      var maxRenderedWidth = readableWidth;
       if (measuredWidth > maxRenderedWidth) {
-        fitScaleX = clamp(maxRenderedWidth / measuredWidth, .72, 1, 1);
+        fitScaleX = clamp(maxRenderedWidth / measuredWidth, .52, 1, 1);
       }
-      var scaledWidth = measuredWidth * fitScaleX;
-      var travelWidth = Math.max(0, scaledWidth - clearWidth);
-      var clearTailMargin = Math.max(58, Math.min(edgeWidth * 1.18, size * 1.08));
-      var centeredTailLimit = scaledWidth > clearWidth * 1.28 ? Math.max(0, scaledWidth / 2 - clearWidth * .18) : 0;
-      scrollState.limit = travelWidth > 0 ? Math.max(travelWidth / 2 + clearTailMargin, centeredTailLimit) : 0;
-      scrollState.overflow = scrollState.limit * 2;
-      scrollState.needed = travelWidth > Math.max(16, size * .18);
-      var maskEdgeWidth = scrollState.needed ? Math.round(clamp(edgeWidth * .44, 26, 58, 42)) : edgeWidth;
-      if (!scrollState.needed) {
-        scrollState.offset = 0;
-        scrollState.dir = -1;
-        scrollState.holdUntil = 0;
-        scrollState.lastAt = 0;
-      } else {
-        var limit = scrollState.limit || scrollState.overflow / 2;
-        if (!isFinite(scrollState.offset) || Math.abs(scrollState.offset) > limit + 8) {
-          scrollState.offset = 0;
-          scrollState.dir = -1;
-          scrollState.holdUntil = performance.now() + lyricScrollInitialHoldMs();
-        }
-      }
+      scrollState.limit = 0;
+      scrollState.overflow = 0;
+      scrollState.needed = false;
+      scrollState.offset = 0;
+      scrollState.dir = -1;
+      scrollState.holdUntil = 0;
+      scrollState.lastAt = 0;
+      var maskEdgeWidth = edgeWidth;
       renderedFontSize = Math.round(size);
       setRootVar('--lyric-size', renderedFontSize + 'px');
       setRootVar('--lyric-vertical-feather', Math.round(clamp(renderedFontSize * .92, 38, 72, 46)) + 'px');
