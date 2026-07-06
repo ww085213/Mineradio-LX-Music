@@ -1924,6 +1924,20 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pn === '/api/lx-source/delete') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    try {
+      const body = await readRequestBody(req);
+      sendJSON(res, await lxSourceHost.deleteSource(body.id));
+    } catch (err) {
+      sendJSON(res, { ok: false, error: err.message || 'LX_SOURCE_DELETE_FAILED' }, 400);
+    }
+    return;
+  }
+
   if (pn === '/api/lx-source/search') {
     try {
       const result = await lxSearch.searchAll(url.searchParams.get('q'), {

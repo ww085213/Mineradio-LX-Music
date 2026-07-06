@@ -641,12 +641,30 @@ async function expandShareLink(input) {
 
 async function importQQ(id) {
   const headers = { Origin:'https://y.qq.com', Referer:`https://y.qq.com/n/ryqq/playlist/${id}` };
-  const oldQuery = `type=1&json=1&utf8=1&onlysong=0&new_format=1&disstid=${encodeURIComponent(id)}&loginUin=0&hostUin=0&format=json&platform=yqq.json&needNewCode=0`;
-  const legacyRequests = [
-    `https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?${oldQuery}`,
-    `https://c6.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?${oldQuery}`,
-    `https://i.y.qq.com/qzone-music/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?${oldQuery}`,
-  ].map(url => fetchJson(url, { headers, retryAttempts:1 }).then(data => data?.cdlist?.[0]).catch(() => null));
+  const rowKey = item => String(item && (item.mid || item.songmid || item.id || item.songid || item.songId) || '').trim();
+  const normalizeRows = rows => (rows || []).map(item => item?.songInfo || item?.songinfo || item).filter(Boolean);
+  const legacyPage = async (begin, count) => {
+    const query = `type=1&json=1&utf8=1&onlysong=0&new_format=1&disstid=${encodeURIComponent(id)}&song_begin=${encodeURIComponent(begin)}&song_num=${encodeURIComponent(count)}&loginUin=0&hostUin=0&format=json&platform=yqq.json&needNewCode=0`;
+    const urls = [
+      `https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?${query}`,
+      `https://c6.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?${query}`,
+      `https://i.y.qq.com/qzone-music/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?${query}`,
+    ];
+    for (const url of urls) {
+      try {
+        const data = await fetchJson(url, { headers, retryAttempts:1 });
+        const list = data?.cdlist?.[0];
+        if (list) {
+          return {
+            info:list,
+            rows:normalizeRows(list.songlist || list.songList || []),
+            total:Number(list.songnum || list.songNum || data.total_song_num || data.total || 0),
+          };
+        }
+      } catch (_error) {}
+    }
+    return null;
+  };
   const musicuPage = async (begin, count) => {
     const body = {
       comm:{ ct:24, cv:0 },
@@ -664,54 +682,76 @@ async function importQQ(id) {
     });
     const payload = data?.req_0?.data || {};
     const info = payload.dirinfo || payload.dissinfo || {};
-    const rows = (payload.songlist || payload.songList || []).map(item => item?.songInfo || item?.songinfo || item).filter(Boolean);
+    const rows = normalizeRows(payload.songlist || payload.songList || []);
     return { info, rows, total:Number(info.songnum || info.songNum || payload.total_song_num || payload.total || rows.length) };
   };
-  const firstMusicu = musicuPage(0, 200).catch(() => null);
-  const candidates = await Promise.all([...legacyRequests, firstMusicu]);
-  const legacyList = candidates.slice(0, 3).find(Boolean);
-  const modern = candidates[3];
-  const list = legacyList || (modern ? {
-    dissname:modern.info.dissname || modern.info.title || modern.info.name,
-    logo:modern.info.logo || modern.info.picurl || modern.info.cover,
-    songlist:modern.rows,
-    songnum:modern.total,
-  } : null);
-  if (!list) throw new Error('小秋歌单读取失败');
-  const rows = [...(list.songlist || [])];
-  if (legacyList && modern?.rows?.length) {
-    const existing = new Set(rows.map(item => String(item.mid || item.songmid || item.id || item.songid || '')).filter(Boolean));
-    for (const item of modern.rows) {
-      const key = String(item.mid || item.songmid || item.id || item.songid || '');
-      if (!key || existing.has(key)) continue;
-      existing.add(key);
+
+  const firstResults = await Promise.allSettled([legacyPage(0, 200), musicuPage(0, 200)]);
+  const legacyFirst = firstResults[0].status === 'fulfilled' ? firstResults[0].value : null;
+  const modernFirst = firstResults[1].status === 'fulfilled' ? firstResults[1].value : null;
+  const baseInfo = legacyFirst?.info || modernFirst?.info || null;
+  if (!baseInfo && !(legacyFirst?.rows?.length || modernFirst?.rows?.length)) throw new Error('小秋歌单读取失败');
+
+  const rows = [];
+  const seen = new Set();
+  const addRows = pageRows => {
+    let added = 0;
+    for (const item of pageRows || []) {
+      const key = rowKey(item);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
       rows.push(item);
+      added += 1;
     }
-  }
-  const total = Number(list.songnum || list.songNum || modern?.total || rows.length);
-  if (modern && total > rows.length) {
-    const seen = new Set(rows.map(item => String(item.mid || item.songmid || item.id || item.songid || '')).filter(Boolean));
-    for (let begin = rows.length; begin < total && begin < 20000; begin += 200) {
-      const page = await musicuPage(begin, Math.min(200, total - begin));
-      if (!page.rows.length) break;
-      let added = 0;
-      for (const item of page.rows) {
-        const key = String(item.mid || item.songmid || item.id || item.songid || '');
-        if (!key || seen.has(key)) continue;
-        seen.add(key);
-        rows.push(item);
-        added += 1;
-      }
-      if (!added) break;
+    return added;
+  };
+  addRows(legacyFirst && legacyFirst.rows);
+  addRows(modernFirst && modernFirst.rows);
+
+  let total = Math.max(
+    Number(legacyFirst && legacyFirst.total || 0),
+    Number(modernFirst && modernFirst.total || 0),
+    Number(baseInfo && (baseInfo.songnum || baseInfo.songNum) || 0),
+    rows.length
+  );
+  // Older QQ endpoints often expose only the first 120 songs unless song_begin
+  // and song_num are requested explicitly. Continue paging through both modern
+  // and legacy endpoints and stop only after repeated stagnant pages or total is reached.
+  let stagnantPages = 0;
+  for (let begin = rows.length; begin < 30000 && (!total || seen.size < total); begin += 200) {
+    const pageResults = await Promise.allSettled([
+      musicuPage(begin, 200),
+      legacyPage(begin, 200),
+    ]);
+    let added = 0;
+    for (const result of pageResults) {
+      if (result.status !== 'fulfilled' || !result.value) continue;
+      total = Math.max(total, Number(result.value.total || 0));
+      added += addRows(result.value.rows);
     }
+    stagnantPages = added ? 0 : stagnantPages + 1;
+    if (stagnantPages >= 2) break;
+    // Some endpoints return fewer rows than requested near the end; if there is
+    // no trustworthy total, one stagnant page is enough to stop.
+    if (!total && !added) break;
   }
+
   return {
-    name:list.dissname || `小秋歌单 ${id}`, cover:list.logo || '',
+    name:baseInfo.dissname || baseInfo.title || baseInfo.name || `小秋歌单 ${id}`,
+    cover:baseInfo.logo || baseInfo.picurl || baseInfo.cover || '',
     songs:rows.map(item => ({
-      id:item.id || item.songid, songmid:item.mid || item.songmid, name:item.title || item.name || item.songname || '', singer:singerText(item.singer),
-      albumName:item.album?.name || item.albumname || '', albumId:item.album?.mid || item.albummid || '', albumMid:item.album?.mid || item.albummid || '',
-      strMediaMid:item.file?.media_mid || item.strMediaMid || item.mid || item.songmid || '', picUrl:(item.album?.mid || item.albummid) ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${item.album?.mid || item.albummid}.jpg` : '',
-      interval:durationText(item.interval), source:'tx', types:['flac','320k','128k'],
+      id:item.id || item.songid || item.songId,
+      songmid:item.mid || item.songmid,
+      name:item.title || item.name || item.songname || '',
+      singer:singerText(item.singer),
+      albumName:item.album?.name || item.albumname || '',
+      albumId:item.album?.mid || item.albummid || '',
+      albumMid:item.album?.mid || item.albummid || '',
+      strMediaMid:item.file?.media_mid || item.strMediaMid || item.mid || item.songmid || '',
+      picUrl:(item.album?.mid || item.albummid) ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${item.album?.mid || item.albummid}.jpg` : '',
+      interval:durationText(item.interval),
+      source:'tx',
+      types:['flac','320k','128k'],
     })),
   };
 }

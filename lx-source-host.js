@@ -33,6 +33,40 @@ const ALLOWED_ACTIONS = new Set(['musicUrl', 'lyric', 'pic']);
 const LX_HTTP_TIMEOUT_MS = 12000;
 const LX_ACTION_TIMEOUT_MS = 14000;
 
+function ignoreBrokenPipe(stream) {
+  try {
+    if (!stream || typeof stream.on !== 'function') return;
+    stream.on('error', err => {
+      if (err && err.code === 'EPIPE') return;
+      throw err;
+    });
+  } catch (_err) {}
+}
+
+ignoreBrokenPipe(process.stdout);
+ignoreBrokenPipe(process.stderr);
+
+function safeConsoleMethod(method) {
+  return (...args) => {
+    try {
+      const fn = console && typeof console[method] === 'function' ? console[method] : console.log;
+      if (typeof fn === 'function') fn.apply(console, args);
+    } catch (err) {
+      if (err && err.code === 'EPIPE') return;
+      throw err;
+    }
+  };
+}
+
+const safeSourceConsole = Object.freeze({
+  log: safeConsoleMethod('log'),
+  info: safeConsoleMethod('info'),
+  warn: safeConsoleMethod('warn'),
+  error: safeConsoleMethod('error'),
+  debug: safeConsoleMethod('debug'),
+  trace: safeConsoleMethod('trace'),
+});
+
 function withTimeout(promise, timeoutMs, code) {
   let timer;
   return Promise.race([
@@ -166,6 +200,72 @@ function encodeRequestData(options, headers) {
   return null;
 }
 
+
+function sanitizeHeaderValue(value) {
+  if (value == null) return '';
+  if (Array.isArray(value)) return value.map(sanitizeHeaderValue).join(', ');
+  const text = String(value).replace(/[\r\n]+/g, ' ');
+  let out = '';
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+    if (code === 9 || (code >= 32 && code <= 255)) out += text[i];
+    else out += encodeURIComponent(text[i]);
+  }
+  return out;
+}
+
+function sanitizeHeaders(headers) {
+  const safe = {};
+  for (const [rawKey, rawValue] of Object.entries(headers || {})) {
+    const key = String(rawKey || '').trim();
+    if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(key)) continue;
+    safe[key.toLowerCase()] = sanitizeHeaderValue(rawValue);
+  }
+  return safe;
+}
+
+function sourceUrlHttpFallback(sourceUrl, err) {
+  try {
+    const target = new URL(String(sourceUrl || '').trim());
+    const message = String((err && (err.code || err.message)) || err || '');
+    if (target.protocol === 'https:' && target.hostname === 'ynx.de5.net' && /CERT|SSL|TLS|COMMON_NAME|certificate/i.test(message)) {
+      target.protocol = 'http:';
+      return target.href;
+    }
+  } catch (_err) {}
+  return '';
+}
+
+
+function normalizeCurrentScriptInfoName(name) {
+  name = String(name || '');
+  // 兼容部分玉宁熙脚本：注释里的 @name 带 -Pro，但脚本内部校验用的是 lx-玉宁熙。
+  if (/玉宁熙/i.test(name)) return name.replace(/-?Pro$/i, '').trim() || 'lx-玉宁熙';
+  return name;
+}
+
+function normalizeImportSourceUrl(input) {
+  let text = String(input || '').trim();
+  if (!text) throw new Error('LX_SOURCE_URL_INVALID');
+  if (/^[a-f0-9]{64}$/i.test(text)) {
+    text = 'http://ynx.de5.net/API/lx-ynx.php?APIKEY=' + text;
+  } else if (/^ynx\.de5\.net\//i.test(text)) {
+    text = 'http://' + text;
+  }
+  let target;
+  try {
+    target = new URL(text);
+  } catch (_err) {
+    throw new Error('LX_SOURCE_URL_INVALID');
+  }
+  if (!/^https?:$/.test(target.protocol)) throw new Error('LX_SOURCE_URL_INVALID');
+  if (target.protocol === 'https:' && target.hostname === 'ynx.de5.net') {
+    // 这个域名的 https 证书经常不匹配，直接走官方注释给的 http。
+    target.protocol = 'http:';
+  }
+  return target.href;
+}
+
 function lxRequest(url, options, callback, redirectCount = 0) {
   options = options || {};
   let callbackDone = false;
@@ -185,12 +285,13 @@ function lxRequest(url, options, callback, redirectCount = 0) {
     queueMicrotask(() => done(new Error('Unsupported protocol')));
     return () => {};
   }
-  const headers = Object.assign({
+  let headers = sanitizeHeaders(Object.assign({
     'accept': '*/*',
     'accept-encoding': 'gzip, deflate, br',
     'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Mineradio/LXSource',
-  }, options.headers || {});
+  }, options.headers || {}));
   const body = encodeRequestData(options, headers);
+  headers = sanitizeHeaders(headers);
   if (electronFetch) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), Math.min(Math.max(Number(options.timeout) || 60000, 1000), 60000));
@@ -295,10 +396,12 @@ async function createRuntime(recordOverride) {
     EVENT_NAMES,
     request: lxRequest,
     on(eventName, handler) {
-      if (eventName !== EVENT_NAMES.request || typeof handler !== 'function') {
-        return Promise.reject(new Error('Unsupported LX event'));
+      if (eventName === EVENT_NAMES.request && typeof handler === 'function') {
+        state.handler = handler;
       }
-      state.handler = handler;
+      // Some third-party LX sources register optional events that Mineradio does
+      // not need. Treat them as supported no-ops so import validation does not
+      // fail before playback can use the request handler.
       return Promise.resolve();
     },
     send(eventName, data) {
@@ -320,7 +423,7 @@ async function createRuntime(recordOverride) {
       },
     },
     currentScriptInfo: {
-      name: record.name || '',
+      name: normalizeCurrentScriptInfoName(record.name || ''),
       description: record.description || '',
       version: record.version || '',
       author: record.author || '',
@@ -332,13 +435,16 @@ async function createRuntime(recordOverride) {
   };
   const sandbox = {
     lx,
-    console,
+    console: safeSourceConsole,
     Buffer,
+    process: { platform: process.platform, versions: process.versions, env: {} },
     URL,
     URLSearchParams,
     TextEncoder,
     TextDecoder,
     AbortController,
+    fetch: typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined,
+    crypto: crypto.webcrypto,
     setTimeout,
     clearTimeout,
     setInterval,
@@ -348,6 +454,9 @@ async function createRuntime(recordOverride) {
     btoa: value => Buffer.from(String(value), 'binary').toString('base64'),
   };
   sandbox.globalThis = sandbox;
+  sandbox.global = sandbox;
+  sandbox.window = sandbox;
+  sandbox.self = sandbox;
   try {
     vm.runInNewContext(script, sandbox, {
       filename: `lx-source-${record.id || 'active'}.js`,
@@ -415,7 +524,6 @@ function metadataFromScript(script, fallbackName) {
 async function importSource(script, fileName) {
   script = String(script || '').replace(/^\uFEFF/, '');
   if (!script.trim() || script.length > 2 * 1024 * 1024) throw new Error('LX_SOURCE_FILE_INVALID');
-  if (!/(?:globalThis|global|this)\s*(?:\.\s*lx|\[\s*['\"]lx['\"]\s*\])|(?:^|[^\w])lx\s*[.;]/.test(script)) throw new Error('LX_SOURCE_API_NOT_FOUND');
   const record = metadataFromScript(script, fileName);
   fs.mkdirSync(MR_SOURCE_DIR, { recursive: true });
   const previousStore = readSourceStore();
@@ -475,6 +583,50 @@ async function selectSource(id) {
   }
 }
 
+async function deleteSource(id) {
+  id = String(id || '');
+  const previousStore = readSourceStore();
+  const target = previousStore.records.find(item => item.id === id);
+  if (!target) throw new Error('LX_SOURCE_NOT_FOUND');
+
+  const nextRecords = previousStore.records.filter(item => item.id !== id);
+  const nextStore = {
+    activeId: previousStore.activeId === id ? (nextRecords[0] && nextRecords[0].id || '') : previousStore.activeId,
+    records: nextRecords,
+  };
+  if (nextStore.activeId && !nextRecords.some(item => item.id === nextStore.activeId)) {
+    nextStore.activeId = nextRecords[0] && nextRecords[0].id || '';
+  }
+
+  const previousActive = previousStore.records.find(item => item.id === previousStore.activeId);
+  writeSourceStore(nextStore);
+  fallbackRuntimeCache.delete(id);
+
+  if (!nextRecords.length) {
+    try { fs.unlinkSync(MR_SOURCE_FILE); } catch (_err) {}
+    runtime = null;
+    return { ok: true, name: '未配置', version: '', sources: {}, installed: [] };
+  }
+
+  const activeRecord = nextRecords.find(item => item.id === nextStore.activeId) || nextRecords[0];
+  nextStore.activeId = activeRecord.id;
+  writeSourceStore(nextStore);
+  fs.writeFileSync(MR_SOURCE_FILE, JSON.stringify(activeRecord), 'utf8');
+
+  try {
+    const host = await getRuntime(previousStore.activeId === id);
+    return { ok: true, name: host.name, version: host.version, sources: host.sources, installed: listSources() };
+  } catch (err) {
+    writeSourceStore(previousStore);
+    try {
+      if (previousActive) fs.writeFileSync(MR_SOURCE_FILE, JSON.stringify(previousActive), 'utf8');
+      else fs.unlinkSync(MR_SOURCE_FILE);
+    } catch (_err) {}
+    runtime = null;
+    throw err;
+  }
+}
+
 function downloadSourceScript(sourceUrl) {
   return new Promise((resolve, reject) => {
     lxRequest(sourceUrl, {
@@ -494,12 +646,19 @@ function downloadSourceScript(sourceUrl) {
 }
 
 async function importSourceUrl(sourceUrl) {
-  sourceUrl = String(sourceUrl || '').trim();
-  if (!/^https?:\/\/\S+$/i.test(sourceUrl)) throw new Error('LX_SOURCE_URL_INVALID');
-  const script = await downloadSourceScript(sourceUrl);
+  sourceUrl = normalizeImportSourceUrl(sourceUrl);
+  let script;
+  try {
+    script = await downloadSourceScript(sourceUrl);
+  } catch (err) {
+    const fallbackUrl = sourceUrlHttpFallback(sourceUrl, err);
+    if (!fallbackUrl) throw err;
+    sourceUrl = fallbackUrl;
+    script = await downloadSourceScript(sourceUrl);
+  }
   let fileName = 'remote-source.js';
   try {
-    fileName = path.basename(new URL(sourceUrl).pathname) || fileName;
+    fileName = decodeURIComponent(path.basename(new URL(sourceUrl).pathname)) || fileName;
   } catch (_err) {}
   return importSource(script, fileName);
 }
@@ -579,6 +738,85 @@ function extractHttpUrl(value, depth = 0) {
   return '';
 }
 
+function readMp3FrameInfo(bytes) {
+  let offset = 0;
+  if (bytes.length >= 10 && bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
+    offset = 10 + ((bytes[6] & 0x7f) << 21) + ((bytes[7] & 0x7f) << 14) +
+      ((bytes[8] & 0x7f) << 7) + (bytes[9] & 0x7f);
+  }
+  const mpeg1Rates = [0,32,40,48,56,64,80,96,112,128,160,192,224,256,320,0];
+  const mpeg2Rates = [0,8,16,24,32,40,48,56,64,80,96,112,128,144,160,0];
+  const sampleRates = {
+    3: [44100, 48000, 32000],
+    2: [22050, 24000, 16000],
+    0: [11025, 12000, 8000],
+  };
+  for (let i = Math.max(0, offset); i + 3 < bytes.length; i++) {
+    if (bytes[i] !== 0xff || (bytes[i + 1] & 0xe0) !== 0xe0) continue;
+    const version = (bytes[i + 1] >> 3) & 3;
+    const layer = (bytes[i + 1] >> 1) & 3;
+    const bitrateIndex = (bytes[i + 2] >> 4) & 15;
+    const sampleIndex = (bytes[i + 2] >> 2) & 3;
+    if (version === 1 || layer !== 1 || bitrateIndex === 0 || bitrateIndex === 15 || sampleIndex === 3) continue;
+    const rates = version === 3 ? mpeg1Rates : mpeg2Rates;
+    return {
+      codec: 'mp3',
+      lossless: false,
+      bitrate: rates[bitrateIndex] * 1000,
+      sampleRate: sampleRates[version][sampleIndex],
+    };
+  }
+  return null;
+}
+
+async function probeAudioUrl(url) {
+  const fetchImpl = electronFetch || globalThis.fetch;
+  if (typeof fetchImpl !== 'function') throw new Error('LX_AUDIO_PROBE_UNAVAILABLE');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    const response = await fetchImpl(url, {
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: {
+        Range: 'bytes=0-131071',
+        'User-Agent': 'Mozilla/5.0 Mineradio/1.5',
+        Accept: 'audio/*,*/*;q=0.8',
+      },
+    });
+    if (!response.ok && response.status !== 206) throw new Error(`LX_AUDIO_PROBE_HTTP_${response.status}`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.length >= 4 && bytes[0] === 0x66 && bytes[1] === 0x4c && bytes[2] === 0x61 && bytes[3] === 0x43) {
+      let sampleRate = 0;
+      let bitDepth = 0;
+      if (bytes.length >= 26 && (bytes[4] & 0x7f) === 0) {
+        sampleRate = (bytes[18] << 12) | (bytes[19] << 4) | (bytes[20] >> 4);
+        bitDepth = (((bytes[20] & 1) << 4) | (bytes[21] >> 4)) + 1;
+      }
+      return { codec: 'flac', lossless: true, bitrate: 0, sampleRate, bitDepth };
+    }
+    if (bytes.length >= 4 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
+      return { codec: 'wav', lossless: true, bitrate: 0, sampleRate: 0 };
+    }
+    const mp3 = readMp3FrameInfo(bytes);
+    if (mp3) return mp3;
+    throw new Error('LX_AUDIO_FORMAT_UNVERIFIED');
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function audioProbeSatisfiesQuality(probe, quality) {
+  if (!probe) return false;
+  if (['master', 'flac24bit'].includes(quality)) return probe.lossless === true && probe.bitDepth >= 24;
+  if (quality === 'hires') {
+    return probe.lossless === true && (probe.bitDepth >= 24 || probe.sampleRate > 48000);
+  }
+  if (quality === 'flac') return probe.lossless === true;
+  if (quality === '320k') return probe.lossless === true || probe.bitrate >= 256000;
+  return probe.lossless === true || probe.bitrate >= 96000;
+}
+
 const musicUrlCache = new Map();
 async function resolveMusicUrl(source, musicInfo, quality, options) {
   options = options || {};
@@ -640,7 +878,14 @@ async function resolveMusicUrl(source, musicInfo, quality, options) {
         if (/^http:\/\/mcp\.nianxinxz\.com\//i.test(url)) {
           url = url.replace(/^http:/i, 'https:');
         }
-        if (url) return { url, quality: candidate, resolver: host.name };
+        if (url) {
+          const probe = await probeAudioUrl(url);
+          if (!audioProbeSatisfiesQuality(probe, requested)) {
+            errors.push(`${candidate}:LX_AUDIO_QUALITY_DOWNGRADED_${probe.codec}_${probe.bitrate || 0}`);
+            continue;
+          }
+          return { url, quality: candidate, actual: probe, resolver: host.name };
+        }
         errors.push(`${candidate}:LX_SOURCE_URL_INVALID`);
       } catch (err) {
         errors.push(`${candidate}:${err && err.message ? err.message : 'LX_SOURCE_RESOLVE_FAILED'}`);
@@ -693,6 +938,7 @@ module.exports = {
   importSourceUrl,
   listSources,
   selectSource,
+  deleteSource,
   resolveMusicUrl,
   resolveLyrics,
   status,

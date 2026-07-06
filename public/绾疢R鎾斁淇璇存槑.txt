@@ -1,0 +1,15 @@
+Mineradio 纯 MR 播放修复
+
+本版修复：
+1. 点击跨平台搜索结果后，直接向 /api/lx-source/resolve 发送解析请求。
+2. 搜索临时歌单索引失效时，自动重建可播放队列，不再点击无反应。
+3. 补齐 QQ、网易、酷我、酷狗、咪咕音源常用歌曲 ID 字段。
+4. 按音源声明自动尝试 flac、320k、128k 等音质。
+5. MR 音频代理播放失败时，自动尝试原始播放地址。
+6. 关闭纯 MR 模式下旧落雪播放器 /api/lx/status 的 503 轮询。
+7. 播放失败时显示具体错误，并在控制台输出 LXSourceResolveRequest/Response。
+
+替换位置：
+C:\Mineradio\resources\app\public
+
+请先完全退出 Mineradio，再将本压缩包中的 public 文件夹覆盖到上述位置。

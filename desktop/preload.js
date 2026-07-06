@@ -66,6 +66,8 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   backupUiState: (patch) => ipcRenderer.invoke('mineradio-ui-state-write', patch || {}),
   chooseLocalMusicFiles: () => ipcRenderer.invoke('mineradio-local-music-choose-files'),
   chooseLocalMusicFolder: () => ipcRenderer.invoke('mineradio-local-music-choose-folder'),
+  chooseLocalCoverFile: () => ipcRenderer.invoke('mineradio-local-cover-choose-file'),
+  chooseLocalLyricFile: () => ipcRenderer.invoke('mineradio-local-lyric-choose-file'),
   scanLocalMusicFolder: (folderPath) => ipcRenderer.invoke('mineradio-local-music-scan-folder', folderPath),
   refreshLocalMusicFiles: (folderPath, files) => ipcRenderer.invoke('mineradio-local-music-refresh-entries', folderPath, files || []),
   prepareLocalAudio: (filePath) => ipcRenderer.invoke('mineradio-local-audio-prepare', filePath),
@@ -91,6 +93,12 @@ contextBridge.exposeInMainWorld('desktopWindow', {
     const listener = (_event, payload) => callback(payload || {});
     ipcRenderer.on('mineradio-desktop-lyrics-enabled-state', listener);
     return () => ipcRenderer.removeListener('mineradio-desktop-lyrics-enabled-state', listener);
+  },
+  onDesktopLyricsSizeState: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload || {});
+    ipcRenderer.on('mineradio-desktop-lyrics-size-state', listener);
+    return () => ipcRenderer.removeListener('mineradio-desktop-lyrics-size-state', listener);
   },
   setWallpaperMode: (enabled, payload) => ipcRenderer.invoke('mineradio-wallpaper-set-enabled', !!enabled, payload || {}),
   updateWallpaperMode: (payload) => ipcRenderer.invoke('mineradio-wallpaper-update', payload || {}),
