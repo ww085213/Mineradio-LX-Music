@@ -480,8 +480,11 @@ html.local-only-mode body.home-has-library #empty-home .home-grid{
 .home-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .home-card{--tone-a:#00f5d4;--tone-b:#2442ff;--tone-c:#f8f4ee;position:relative;min-height:152px;border:1px solid color-mix(in srgb,var(--home-accent) 10%,rgba(255,255,255,.085));border-radius:22px;background:linear-gradient(142deg,rgba(18,21,26,.66),rgba(8,9,13,.76));box-shadow:0 20px 64px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.060);backdrop-filter:blur(24px) saturate(1.12);-webkit-backdrop-filter:blur(24px) saturate(1.12);padding:17px;overflow:hidden;color:#fff;text-align:left;font-family:inherit;cursor:pointer;transition:transform .22s cubic-bezier(.16,1,.3,1),border-color .22s,background .22s,box-shadow .22s}
 .playlist-context-menu{position:fixed;z-index:2600;min-width:168px;padding:6px;border-radius:12px;border:1px solid rgba(255,255,255,.13);background:rgba(12,14,18,.96);box-shadow:0 20px 60px rgba(0,0,0,.56);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}
-.playlist-context-menu button{width:100%;height:38px;padding:0 12px;border:0;border-radius:8px;background:transparent;color:#ff9ba8;font:700 12px inherit;text-align:left;cursor:pointer}
-.playlist-context-menu button:hover{background:rgba(255,78,96,.14);color:#fff}
+.playlist-context-menu button{width:100%;height:38px;padding:0 12px;border:0;border-radius:8px;background:transparent;color:rgba(255,255,255,.84);font:700 12px inherit;text-align:left;cursor:pointer}
+.playlist-context-menu button:hover{background:rgba(var(--fc-accent-rgb),.14);color:#fff}
+.playlist-context-menu button.danger{color:#ff9ba8}
+.playlist-context-menu button.danger:hover{background:rgba(255,78,96,.14);color:#fff}
+.playlist-context-menu button:disabled{opacity:.48;cursor:default}
 .home-card[data-home-tone="mix"]{--tone-a:#9db8cf;--tone-b:#00f5d4;--tone-c:#2442ff}
 .home-card[data-home-tone="local"]{--tone-a:#f8f4ee;--tone-b:#00f5d4;--tone-c:#2442ff}
 .home-card[data-home-tone="library"]{--tone-a:#00f5d4;--tone-b:#f8f4ee;--tone-c:#2442ff}
@@ -18032,12 +18035,27 @@ function openPlaylistContextMenu(event, kind, index) {
   var menu = document.createElement('div');
   menu.id = 'playlist-context-menu';
   menu.className = 'playlist-context-menu';
-  menu.innerHTML = '<button type="button">' + (kind === 'all' ? '移除全部本地音乐' : '删除歌单') + '</button>';
+  var canRefresh = false;
+  var refreshDisabled = false;
+  if (kind === 'lx') {
+    var list = lxMirrorPlaylists[Number(index)];
+    canRefresh = isPlatformImportedPlaylist(list);
+    refreshDisabled = !!(list && list.syncStatus === 'syncing');
+  }
+  menu.innerHTML = (canRefresh
+    ? '<button type="button" data-menu-refresh="1"' + (refreshDisabled ? ' disabled' : '') + '>' + (refreshDisabled ? '正在刷新' : '刷新歌单') + '</button>'
+    : '') +
+    '<button class="danger" type="button" data-menu-delete="1">' + (kind === 'all' ? '移除全部本地音乐' : '删除歌单') + '</button>';
   document.body.appendChild(menu);
-  var width = 168, height = 50;
+  var width = 168, height = canRefresh ? 92 : 50;
   menu.style.left = Math.max(8, Math.min(innerWidth - width - 8, event.clientX)) + 'px';
   menu.style.top = Math.max(8, Math.min(innerHeight - height - 8, event.clientY)) + 'px';
-  menu.querySelector('button').addEventListener('click', function(){
+  var refreshButton = menu.querySelector('[data-menu-refresh]');
+  if (refreshButton) refreshButton.addEventListener('click', function(){
+    closePlaylistContextMenu();
+    refreshPlatformPlaylist(Number(index));
+  });
+  menu.querySelector('[data-menu-delete]').addEventListener('click', function(){
     closePlaylistContextMenu();
     deleteHomePlaylist(kind, index);
   });
@@ -20203,6 +20221,7 @@ async function submitPlatformPlaylistImport() {
     });
     if (!result || !result.ok || !result.playlist) throw new Error(result && result.error || 'PLAYLIST_IMPORT_FAILED');
     var imported = result.playlist;
+    if (isPlatformImportedPlaylist(imported)) imported.originalInput = imported.originalInput || input || imported.sourceListId || '';
     var duplicate = (lxImportedPlaylists || []).find(function(list){ return String(list.id) === String(imported.id); });
     if (duplicate && !window.confirm('歌单“' + (duplicate.name || imported.name) + '”已经导入。要用最新内容更新它吗？')) {
       if (hint) { hint.className = 'playlist-import-hint'; hint.textContent = '已取消更新，原歌单保持不变。'; }
@@ -21042,10 +21061,215 @@ function normalizeImportedLxPlaylist(payload) {
     songs:data.list.map(compactImportedLxSong).filter(function(song){ return song.name && song.source; })
   };
 }
+function isPlatformImportedPlaylist(list) {
+  return !!(list && list.imported === true && /^platform_/i.test(String(list.id || '')));
+}
+function platformPlaylistIdentityFromId(list) {
+  var match = String(list && list.id || '').match(/^platform_([a-z0-9]+)_(.+)$/i);
+  if (!match) return null;
+  return {
+    source:normalizeLxSourceName(match[1]),
+    sourceListId:String(match[2] || '').replace(/_+$/g, '')
+  };
+}
+function platformPlaylistFallbackInput(list) {
+  if (!list) return '';
+  return String(list.originalInput || list.sourceListId || '').trim();
+}
+function normalizeStoredImportedPlaylist(list) {
+  if (!list || typeof list !== 'object') return list;
+  if (isPlatformImportedPlaylist(list)) {
+    var identity = platformPlaylistIdentityFromId(list) || {};
+    list.source = normalizeLxSourceName(list.source || '');
+    if (!list.source && identity.source) list.source = identity.source;
+    list.sourceListId = String(list.sourceListId || '').trim();
+    if (!list.sourceListId && identity.sourceListId) list.sourceListId = identity.sourceListId;
+    if (!list.originalInput && list.sourceListId) list.originalInput = list.sourceListId;
+  }
+  return list;
+}
+function isRefreshablePlatformPlaylist(list) {
+  return !!(isPlatformImportedPlaylist(list) && list.source && list.sourceListId && platformPlaylistFallbackInput(list));
+}
+function platformPlaylistRefreshProblem(list) {
+  if (!isPlatformImportedPlaylist(list)) return '';
+  if (!list.source || !list.sourceListId || !platformPlaylistFallbackInput(list)) {
+    return '歌单缺少平台来源信息，请重新导入该歌单后再刷新';
+  }
+  return '';
+}
+function formatPlatformPlaylistSyncTime(value) {
+  var stamp = Number(value) || Date.parse(value || '');
+  if (!stamp || !isFinite(stamp)) return '';
+  try {
+    return new Date(stamp).toLocaleString('zh-CN', {
+      month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false
+    });
+  } catch (_error) {
+    return '';
+  }
+}
+function platformPlaylistSyncStatusText(list) {
+  if (!list || !list.syncStatus) return '';
+  if (list.syncStatus === 'syncing') return '正在刷新';
+  if (list.syncStatus === 'success') {
+    var time = formatPlatformPlaylistSyncTime(list.lastSyncedAt);
+    return '上次刷新新增 ' + (Number(list.addedCount) || 0) + ' 首' + (time ? ' · ' + time : '');
+  }
+  if (list.syncStatus === 'error') return '上次刷新失败' + (list.syncError ? '：' + String(list.syncError).slice(0, 48) : '');
+  return '';
+}
+function platformPlaylistRefreshControlHtml(list, playlistIndex) {
+  if (!isPlatformImportedPlaylist(list)) return '';
+  var syncing = list.syncStatus === 'syncing';
+  var problem = platformPlaylistRefreshProblem(list);
+  var status = platformPlaylistSyncStatusText(list);
+  return '<button class="fx-mini-btn ghost" type="button" data-lx-refresh-playlist="' + playlistIndex + '"' +
+    (syncing ? ' disabled' : '') + (problem ? ' title="' + escHtml(problem) + '"' : '') + '>' + (syncing ? '正在刷新' : '刷新歌单') + '</button>' +
+    (problem ? '<span style="font-size:10.5px;color:rgba(255,255,255,.42);margin-left:8px">需要重新导入</span>' : (status ? '<span style="font-size:10.5px;color:rgba(255,255,255,.42);margin-left:8px">' + escHtml(status) + '</span>' : ''));
+}
+function platformPlaylistCardRefreshHtml(list, playlistIndex) {
+  if (!isPlatformImportedPlaylist(list)) return '';
+  var syncing = list.syncStatus === 'syncing';
+  var problem = platformPlaylistRefreshProblem(list);
+  return '<button class="fx-mini-btn ghost" type="button" data-lx-refresh-playlist="' + playlistIndex + '"' +
+    ' style="height:26px;padding:0 8px;flex:0 0 auto" ' + (syncing ? 'disabled ' : '') +
+    (problem ? 'title="' + escHtml(problem) + '"' : 'title="刷新歌单"') + '>' + (syncing ? '刷新中' : '刷新歌单') + '</button>';
+}
+function mergePlatformPlaylistSongs(existingSongs, remoteSongs) {
+  var oldSongs = (existingSongs || []).map(function(song){ return Object.assign({}, song); });
+  var seen = Object.create(null);
+  oldSongs.forEach(function(song){
+    var key = exactSearchSongKey(song);
+    if (key) seen[key] = true;
+  });
+  var addedSongs = [];
+  (remoteSongs || []).forEach(function(song){
+    var key = exactSearchSongKey(song);
+    if (!key || seen[key]) return;
+    seen[key] = true;
+    addedSongs.push(Object.assign({}, song));
+  });
+  return { songs:addedSongs.concat(oldSongs), addedCount:addedSongs.length };
+}
+function rebuildLxMirrorAfterImportedPlaylistChange(activeId, oldActiveIndex, opts) {
+  opts = opts || {};
+  var wasViewingRefreshedList = oldActiveIndex >= 0 && lxMirrorActivePlaylist === oldActiveIndex;
+  var activeSongKey = '';
+  if (oldActiveIndex >= 0 && lxActivePlaylistIndex === oldActiveIndex) {
+    var oldList = lxMirrorPlaylists && lxMirrorPlaylists[oldActiveIndex];
+    var oldSong = oldList && oldList.songs && oldList.songs[lxActiveSongIndex] || (playQueue && playQueue[currentIdx]);
+    activeSongKey = oldSong ? exactSearchSongKey(oldSong) : '';
+  }
+  var nonImported = (lxMirrorPlaylists || []).filter(function(list){ return !list || !list.imported; });
+  lxMirrorPlaylists = mergeLxPlaylistSources(nonImported, lxImportedPlaylists);
+  var nextIndex = activeId ? lxMirrorPlaylists.findIndex(function(list){ return String(list && list.id || '') === String(activeId); }) : -1;
+  if (nextIndex >= 0 && wasViewingRefreshedList) lxMirrorActivePlaylist = nextIndex;
+  if (nextIndex >= 0 && lxActivePlaylistIndex === oldActiveIndex) {
+    lxActivePlaylistIndex = nextIndex;
+    var activeList = lxMirrorPlaylists[nextIndex];
+    if (activeList && Array.isArray(activeList.songs)) {
+      var matchedActiveIndex = activeSongKey ? activeList.songs.findIndex(function(song){ return exactSearchSongKey(song) === activeSongKey; }) : -1;
+      lxActiveSongIndex = matchedActiveIndex >= 0 ? matchedActiveIndex : Math.max(0, Math.min(activeList.songs.length - 1, lxActiveSongIndex));
+      playQueue = activeList.songs.map(function(item, songIndex){ return lxQueueSong(item, nextIndex, songIndex); });
+      if (currentIdx >= 0) currentIdx = lxActiveSongIndex;
+      safeRenderQueuePanel('platform-playlist-refresh', { scrollCurrent:true });
+    }
+  }
+  if (wasViewingRefreshedList && opts.resetSearch !== false) {
+    playlistLibrarySearchQuery = '';
+    if (leftPanelSearchState) leftPanelSearchState.query = '';
+    if (playlistPanelDetailState) playlistPanelDetailState.query = '';
+  }
+  renderHomeDiscover();
+  if (wasViewingRefreshedList) safeSwitchPlaylistTab('playlists', 'platform-playlist-refresh');
+  renderLocalLibraryPlaylistPanel({ animate:false });
+  renderLeftPanelSearchResults({ preserveFocus:false });
+  scheduleShelfRebuild('platform-playlist-refresh', true);
+  if (wasViewingRefreshedList && nextIndex >= 0) {
+    requestAnimationFrame(function(){
+      scrollPlaylistPanelToSelector('[data-lx-playlist-index="' + nextIndex + '"]');
+    });
+  }
+  return nextIndex;
+}
+async function refreshPlatformPlaylist(playlistIndex) {
+  playlistIndex = Number(playlistIndex);
+  var mirror = lxMirrorPlaylists && lxMirrorPlaylists[playlistIndex];
+  if (!isRefreshablePlatformPlaylist(mirror)) {
+    showToast(platformPlaylistRefreshProblem(mirror) || '这个歌单没有可刷新的平台来源');
+    return false;
+  }
+  if (mirror.syncStatus === 'syncing') {
+    showToast('歌单正在刷新，请稍候');
+    return false;
+  }
+  var storedIndex = (lxImportedPlaylists || []).findIndex(function(list){ return String(list && list.id || '') === String(mirror.id || ''); });
+  if (storedIndex < 0) {
+    showToast('没有找到本地导入记录');
+    return false;
+  }
+  var stored = lxImportedPlaylists[storedIndex];
+  normalizeStoredImportedPlaylist(stored);
+  if (!isRefreshablePlatformPlaylist(stored)) {
+    showToast(platformPlaylistRefreshProblem(stored) || '这个歌单没有可刷新的平台来源');
+    return false;
+  }
+  var oldActiveIndex = playlistIndex;
+  stored.syncStatus = 'syncing';
+  stored.syncError = '';
+  mirror.syncStatus = 'syncing';
+  mirror.syncError = '';
+  renderHomeDiscover();
+  renderLocalLibraryPlaylistPanel({ animate:false });
+  showToast('正在刷新歌单：' + (stored.name || mirror.name || '平台歌单'));
+  try {
+    var result = await apiJson('/api/platform-playlist/import', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body:JSON.stringify({ input:platformPlaylistFallbackInput(stored), source:stored.source }),
+      timeoutMs:45000
+    });
+    if (!result || !result.ok || !result.playlist) throw new Error(result && result.error || 'PLAYLIST_REFRESH_FAILED');
+    var remote = result.playlist;
+    var merged = mergePlatformPlaylistSongs(stored.songs || [], remote.songs || []);
+    var updated = Object.assign({}, stored, {
+      name:remote.name || stored.name,
+      cover:remote.cover || stored.cover,
+      source:remote.source || stored.source,
+      sourceListId:remote.sourceListId || stored.sourceListId,
+      originalInput:stored.originalInput || remote.originalInput || stored.sourceListId || '',
+      imported:true,
+      songs:merged.songs,
+      trackCount:merged.songs.length,
+      lastSyncedAt:Date.now(),
+      syncStatus:'success',
+      syncError:'',
+      addedCount:merged.addedCount
+    });
+    lxImportedPlaylists[storedIndex] = updated;
+    saveImportedLxPlaylists();
+    rebuildLxMirrorAfterImportedPlaylistChange(updated.id, oldActiveIndex, { resetSearch:true });
+    showToast(merged.addedCount ? ('已同步，新增 ' + merged.addedCount + ' 首歌曲') : '歌单已是最新');
+    return true;
+  } catch (e) {
+    console.warn('[PlatformPlaylistRefresh]', e);
+    var message = e && e.message || '链接不可用';
+    if (/HTTP_40[13]/.test(message)) message = '平台拒绝访问，请换公开歌单或稍后重试';
+    else if (/abort|timeout/i.test(message)) message = '读取超时，请检查网络后重试';
+    stored.syncStatus = 'error';
+    stored.syncError = message;
+    stored.addedCount = 0;
+    saveImportedLxPlaylists();
+    rebuildLxMirrorAfterImportedPlaylistChange(stored.id, oldActiveIndex);
+    showToast('刷新歌单失败：' + message);
+    return false;
+  }
+}
 function readImportedLxPlaylists() {
   try {
     var saved = JSON.parse(localStorage.getItem(LX_IMPORTED_PLAYLISTS_KEY) || '[]');
-    return Array.isArray(saved) ? saved : [];
+    return Array.isArray(saved) ? saved.map(normalizeStoredImportedPlaylist).filter(Boolean) : [];
   } catch (_e) {
     return [];
   }
@@ -25190,6 +25414,7 @@ function playlistPanelEntryHtml(entry) {
     var lxHtml = '<div class="pl-card' + (lxMirrorActivePlaylist === lxIndex ? ' expanded' : '') + '" data-lx-playlist-index="' + lxIndex + '">' +
       lxImage +
       '<div style="flex:1;min-width:0"><div class="pl-name">' + escHtml(item.name || '落雪歌单') + '</div><div class="pl-sub">' + (item.songs || []).length + ' 首 · 在线播放</div></div>' +
+      platformPlaylistCardRefreshHtml(item, lxIndex) +
     '</div>';
     if (lxMirrorActivePlaylist === lxIndex) {
       var allFolderSongs = item.songs || [];
@@ -25199,7 +25424,7 @@ function playlistPanelEntryHtml(entry) {
       lxPlaylistDetailRenderLimits[detailKey] = renderLimit;
       var visibleSongs = allFolderSongs.slice(0, renderLimit);
       lxHtml += '<div class="pl-inline-detail" style="margin:6px 0 12px">' +
-        '<div class="pl-detail-actions"><button class="pl-detail-play" type="button" data-lx-song-index="0" data-lx-song-playlist="' + lxIndex + '">播放歌单第一首</button></div>' +
+        '<div class="pl-detail-actions"><button class="pl-detail-play" type="button" data-lx-song-index="0" data-lx-song-playlist="' + lxIndex + '">播放歌单第一首</button>' + platformPlaylistRefreshControlHtml(item, lxIndex) + '</div>' +
         '<div class="pl-detail-list">' + visibleSongs.map(function(song, songIndex){
           var songThumb = song.picUrl ? '<img src="' + escHtml(mobileRemoteCoverSrc(song.picUrl)) + '" alt="" loading="lazy" decoding="async" style="width:38px;height:38px;border-radius:7px;object-fit:cover;flex:0 0 auto" onerror="this.style.opacity=0.2">' : '';
           return '<div class="pl-detail-row" data-lx-song-index="' + songIndex + '" data-lx-song-playlist="' + lxIndex + '">' +
@@ -25297,6 +25522,7 @@ function renderLocalLibraryPlaylistPanel(opts) {
         var html = '<div class="pl-card' + (lxMirrorActivePlaylist === folderIndex ? ' expanded' : '') + '" data-lx-playlist-index="' + folderIndex + '">' +
           image +
           '<div style="flex:1;min-width:0"><div class="pl-name">' + escHtml(folder.name || '落雪歌单') + '</div><div class="pl-sub">' + (folder.songs || []).length + ' 首 · 在线播放</div></div>' +
+          platformPlaylistCardRefreshHtml(folder, folderIndex) +
         '</div>';
         if (lxMirrorActivePlaylist === folderIndex) {
           var allFolderSongs = folder.songs || [];
@@ -25306,7 +25532,7 @@ function renderLocalLibraryPlaylistPanel(opts) {
           lxPlaylistDetailRenderLimits[detailKey] = renderLimit;
           var visibleSongs = allFolderSongs.slice(0, renderLimit);
           html += '<div class="pl-inline-detail" style="margin:6px 0 12px">' +
-            '<div class="pl-detail-actions"><button class="pl-detail-play" type="button" data-lx-song-index="0" data-lx-song-playlist="' + folderIndex + '">播放歌单第一首</button></div>' +
+            '<div class="pl-detail-actions"><button class="pl-detail-play" type="button" data-lx-song-index="0" data-lx-song-playlist="' + folderIndex + '">播放歌单第一首</button>' + platformPlaylistRefreshControlHtml(folder, folderIndex) + '</div>' +
             '<div class="pl-detail-list">' + visibleSongs.map(function(song, songIndex){
               var songThumb = song.picUrl ? '<img src="' + escHtml(mobileRemoteCoverSrc(song.picUrl)) + '" alt="" loading="lazy" decoding="async" style="width:38px;height:38px;border-radius:7px;object-fit:cover;flex:0 0 auto" onerror="this.style.opacity=0.2">' : '';
               return '<div class="pl-detail-row" data-lx-song-index="' + songIndex + '" data-lx-song-playlist="' + folderIndex + '">' +
@@ -25356,6 +25582,13 @@ document.getElementById('pl-list').addEventListener('click', function(e){
       Number(importedRemove.getAttribute('data-lx-imported-playlist')),
       Number(importedRemove.getAttribute('data-lx-imported-remove'))
     );
+    return;
+  }
+  var platformRefresh = e.target && e.target.closest ? e.target.closest('[data-lx-refresh-playlist]') : null;
+  if (platformRefresh) {
+    e.preventDefault();
+    e.stopPropagation();
+    refreshPlatformPlaylist(Number(platformRefresh.getAttribute('data-lx-refresh-playlist')));
     return;
   }
   var detailRemove = e.target && e.target.closest ? e.target.closest('[data-pl-detail-remove]') : null;
@@ -25408,7 +25641,7 @@ document.getElementById('pl-list').addEventListener('click', function(e){
     var loadMoreLxDetail = e.target && e.target.closest ? e.target.closest('[data-lx-detail-load-more]') : null;
     if (loadMoreLxDetail) {
       var moreIndex = Number(loadMoreLxDetail.dataset.lxDetailLoadMore || -1);
-      var folder = lxUserPlaylists[moreIndex];
+      var folder = lxMirrorPlaylists[moreIndex];
       if (folder && Array.isArray(folder.songs)) {
         var detailKey = String(folder.id || folder.name || moreIndex);
         var currentLimit = lxPlaylistDetailRenderLimits[detailKey] || PLAYLIST_DETAIL_INITIAL_RENDER;
