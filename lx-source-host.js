@@ -17,6 +17,7 @@ const EVENT_NAMES = Object.freeze({
   request: 'request',
   inited: 'inited',
   updateAlert: 'updateAlert',
+  showConfigView: 'showConfigView',
 });
 
 const APPDATA_DIR = process.env.APPDATA || '';
@@ -92,6 +93,13 @@ function readJsonIfExists(file) {
   }
 }
 
+function backupBrokenJson(file) {
+  try {
+    if (!file || !fs.existsSync(file)) return;
+    fs.renameSync(file, file + '.broken-' + Date.now());
+  } catch (_err) {}
+}
+
 function lxDataFileCandidates(fileName) {
   return LX_DATA_DIRS.map(dir => path.join(dir, fileName));
 }
@@ -120,6 +128,7 @@ function saveMigratedSource(record) {
 
 function readSourceStore() {
   const saved = readJsonIfExists(MR_SOURCES_FILE);
+  if (!saved && fs.existsSync(MR_SOURCES_FILE)) backupBrokenJson(MR_SOURCES_FILE);
   const records = Array.isArray(saved?.records)
     ? saved.records.filter(item => item && typeof item.script === 'string' && item.script.trim())
     : [];
@@ -369,15 +378,15 @@ function lxRequestCompat(url, options, callback) {
     callback = options;
     options = {};
   }
+  if (typeof callback === 'function') {
+    return lxRequest(url, options || {}, callback);
+  }
   const promise = new Promise((resolve, reject) => {
     lxRequest(url, options || {}, (err, response, body) => {
       if (err) return reject(err);
       resolve({ ...response, body });
     });
   });
-  if (typeof callback === 'function') {
-    promise.then(response => callback(null, response, response.body), callback);
-  }
   return promise;
 }
 
@@ -424,7 +433,7 @@ async function createRuntime(recordOverride) {
   });
   const lx = {
     EVENT_NAMES,
-    request: lxRequest,
+    request: lxRequestCompat,
     on(eventName, handler) {
       if (eventName === EVENT_NAMES.request && typeof handler === 'function') {
         state.handler = handler;
