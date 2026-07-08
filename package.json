@@ -117,8 +117,7 @@
       "mirrors": [
         "https://gh.llkk.cc/",
         "https://ghfast.top/",
-        "https://gh-proxy.com/"
-      ]
+        "https://gh-proxy.com/",`n        "https://ghproxy.net/"`n      ]
     }
   },
   "dependencies": {
