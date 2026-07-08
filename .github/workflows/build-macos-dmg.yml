@@ -1,0 +1,87 @@
+name: Build macOS DMG
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: GitHub Release tag to upload assets to
+        required: true
+        default: v1.5.3-supplement
+      upload_release:
+        description: Upload DMG/ZIP assets to the release tag
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate macOS icon
+        shell: bash
+        run: |
+          mkdir -p build/icon.iconset
+          sips -z 16 16 build/icon.png --out build/icon.iconset/icon_16x16.png
+          sips -z 32 32 build/icon.png --out build/icon.iconset/icon_16x16@2x.png
+          sips -z 32 32 build/icon.png --out build/icon.iconset/icon_32x32.png
+          sips -z 64 64 build/icon.png --out build/icon.iconset/icon_32x32@2x.png
+          sips -z 128 128 build/icon.png --out build/icon.iconset/icon_128x128.png
+          sips -z 256 256 build/icon.png --out build/icon.iconset/icon_128x128@2x.png
+          sips -z 256 256 build/icon.png --out build/icon.iconset/icon_256x256.png
+          sips -z 512 512 build/icon.png --out build/icon.iconset/icon_256x256@2x.png
+          sips -z 512 512 build/icon.png --out build/icon.iconset/icon_512x512.png
+          sips -z 1024 1024 build/icon.png --out build/icon.iconset/icon_512x512@2x.png
+          iconutil -c icns build/icon.iconset -o build/icon.icns
+
+      - name: Build DMG and ZIP
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run build:mac
+
+      - name: Checksums
+        shell: bash
+        run: |
+          cd dist
+          shasum -a 256 Mineradio-*-mac-*.dmg Mineradio-*-mac-*.zip > macos.SHA256.txt
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mineradio-macos
+          path: |
+            dist/Mineradio-*-mac-*.dmg
+            dist/Mineradio-*-mac-*.zip
+            dist/latest-mac.yml
+            dist/macos.SHA256.txt
+
+      - name: Upload to GitHub Release
+        if: ${{ inputs.upload_release == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release upload "${{ inputs.release_tag }}" \
+            dist/Mineradio-*-mac-*.dmg \
+            dist/Mineradio-*-mac-*.zip \
+            dist/latest-mac.yml \
+            dist/macos.SHA256.txt \
+            --clobber

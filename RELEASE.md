@@ -30,6 +30,18 @@ dist/Mineradio.Setup.1.5.3.exe.blockmap
 dist/latest.yml
 ```
 
+macOS DMG/ZIP 需要在 macOS 环境构建：
+
+```bash
+npm run build:mac
+```
+
+仓库提供手动触发的 GitHub Actions workflow：
+
+```text
+.github/workflows/build-macos-dmg.yml
+```
+
 ## GitHub Release
 
 补充版独立发布，不覆盖原 `v1.5.3`：
@@ -50,6 +62,10 @@ Mineradio 1.5.3 补充版
 - `dist/Mineradio.Setup.1.5.3.exe.blockmap`
 - `dist/latest.yml`
 - `dist/Mineradio.Setup.1.5.3.SHA256.txt`
+- `dist/Mineradio-1.5.3-mac-universal.dmg`
+- `dist/Mineradio-1.5.3-mac-universal.zip`
+- `dist/latest-mac.yml`
+- `dist/macos.SHA256.txt`
 
 ## 说明
 
