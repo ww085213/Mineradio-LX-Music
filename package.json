@@ -10,7 +10,7 @@
     "start": "electron .",
     "build:win": "electron-builder --win nsis",
     "build:win:dir": "electron-builder --win dir",
-    "build:mac": "electron-builder --mac dmg zip --universal"
+    "build:mac": "electron-builder --mac dmg zip --universal --publish never"
   },
   "build": {
     "appId": "com.mineradio.desktop",
