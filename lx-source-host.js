@@ -364,6 +364,23 @@ function lxRequest(url, options, callback, redirectCount = 0) {
   return () => req.destroy();
 }
 
+function lxRequestCompat(url, options, callback) {
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  const promise = new Promise((resolve, reject) => {
+    lxRequest(url, options || {}, (err, response, body) => {
+      if (err) return reject(err);
+      resolve({ ...response, body });
+    });
+  });
+  if (typeof callback === 'function') {
+    promise.then(response => callback(null, response, response.body), callback);
+  }
+  return promise;
+}
+
 function cryptoUtils() {
   return {
     aesEncrypt(buffer, mode, key, iv) {
@@ -376,7 +393,20 @@ function cryptoUtils() {
     },
     randomBytes: size => crypto.randomBytes(size),
     md5: value => crypto.createHash('md5').update(value).digest('hex'),
+    sha1: value => crypto.createHash('sha1').update(value).digest('hex'),
+    sha256: value => crypto.createHash('sha256').update(value).digest('hex'),
+    hmacSha1: (key, value) => crypto.createHmac('sha1', key).update(value).digest('hex'),
+    hmacSha256: (key, value) => crypto.createHmac('sha256', key).update(value).digest('hex'),
   };
+}
+
+function normalizeSourceConfig(value) {
+  if (!value || typeof value !== 'object') return value || {};
+  const out = { ...value };
+  const qualitys = out.qualitys || out.qualities || out.quality || out.types;
+  if (Array.isArray(qualitys)) out.qualitys = qualitys.map(item => String(item || '')).filter(Boolean);
+  else if (qualitys && typeof qualitys === 'object') out.qualitys = Object.keys(qualitys).filter(Boolean);
+  return out;
 }
 
 async function createRuntime(recordOverride) {
@@ -412,6 +442,9 @@ async function createRuntime(recordOverride) {
       return Promise.resolve();
     },
     utils: {
+      request: lxRequestCompat,
+      fetch: lxRequestCompat,
+      httpFetch: lxRequestCompat,
       crypto: cryptoUtils(),
       buffer: {
         from: (...args) => Buffer.from(...args),
@@ -474,7 +507,7 @@ async function createRuntime(recordOverride) {
   if (typeof state.handler !== 'function') throw new Error('LX_SOURCE_REQUEST_HANDLER_MISSING');
   const sources = {};
   for (const [key, value] of Object.entries(state.info.sources || {})) {
-    if (ALLOWED_SOURCES.has(key)) sources[key] = value;
+    if (ALLOWED_SOURCES.has(key)) sources[key] = normalizeSourceConfig(value);
   }
   return {
     id: record.id,
@@ -523,7 +556,7 @@ function metadataFromScript(script, fallbackName) {
 
 async function importSource(script, fileName) {
   script = String(script || '').replace(/^\uFEFF/, '');
-  if (!script.trim() || script.length > 2 * 1024 * 1024) throw new Error('LX_SOURCE_FILE_INVALID');
+  if (!script.trim() || script.length > 5 * 1024 * 1024) throw new Error('LX_SOURCE_FILE_INVALID');
   const record = metadataFromScript(script, fileName);
   fs.mkdirSync(MR_SOURCE_DIR, { recursive: true });
   const previousStore = readSourceStore();
@@ -639,7 +672,7 @@ function downloadSourceScript(sourceUrl) {
         return reject(new Error(`LX_SOURCE_DOWNLOAD_HTTP_${response?.statusCode || 0}`));
       }
       const raw = Buffer.isBuffer(response.raw) ? response.raw : Buffer.from(String(response.body || ''));
-      if (!raw.length || raw.length > 2 * 1024 * 1024) return reject(new Error('LX_SOURCE_FILE_INVALID'));
+      if (!raw.length || raw.length > 5 * 1024 * 1024) return reject(new Error('LX_SOURCE_FILE_INVALID'));
       resolve(raw.toString('utf8'));
     });
   });
@@ -676,6 +709,16 @@ async function status() {
 
 function normalizeMusicInfo(source, input) {
   const info = { ...(input || {}) };
+  const fallbackIdPattern = /^(?:tx|wy|kw|kg|mg|song|row)_[0-9a-f]{12,}$/i;
+  const hasFallbackId = info.importFallbackId === true ||
+    fallbackIdPattern.test(String(info.songmid || '')) ||
+    fallbackIdPattern.test(String(info.id || ''));
+  if (hasFallbackId) {
+    for (const key of ['id', 'songmid', 'mid', 'songId', 'rid', 'musicId', 'hash', 'FileHash', 'fileHash', 'copyrightId', 'copyrightid']) {
+      if (info[key] != null) info[key] = '';
+    }
+    info.importFallbackId = true;
+  }
   const id = info.songmid ?? info.id ?? info.hash ?? info.copyrightId ?? '';
   info.id ??= id;
   info.songmid ??= id;
@@ -691,6 +734,16 @@ function normalizeMusicInfo(source, input) {
   info.albumName ??= info.album ?? '';
   info.album ??= info.albumName;
   info.meta = { ...(info.meta || {}) };
+  if (hasFallbackId) {
+    for (const key of ['mid', 'songmid', 'songid', 'id', 'hash', 'rid', 'musicId', 'copyrightId']) {
+      if (info.meta[key] != null) info.meta[key] = '';
+    }
+    for (const platformKey of ['qq', 'wy', 'kw', 'kg', 'mg']) {
+      if (info.meta[platformKey] && typeof info.meta[platformKey] === 'object') {
+        info.meta[platformKey] = {};
+      }
+    }
+  }
   info.meta.mid ??= info.songmid;
   info.meta.songmid ??= info.songmid;
   info.meta.songid ??= info.id;
@@ -711,11 +764,27 @@ function normalizeMusicInfo(source, input) {
   return info;
 }
 
+function normalizeExtractedHttpUrl(text) {
+  text = String(text || '').trim();
+  if (!text) return '';
+  text = text.replace(/\\\//g, '/').replace(/^['"]|['"]$/g, '').trim();
+  if (/^\/\//.test(text)) text = 'https:' + text;
+  if (/^https?:\/\//i.test(text)) return text;
+  const embedded = text.match(/https?:\\?\/\\?\/[^\s"'<>]+/i);
+  if (embedded) return normalizeExtractedHttpUrl(embedded[0]);
+  try {
+    const decoded = decodeURIComponent(text);
+    if (decoded !== text) return normalizeExtractedHttpUrl(decoded);
+  } catch (_err) {}
+  return '';
+}
+
 function extractHttpUrl(value, depth = 0) {
   if (depth > 5 || value == null) return '';
   if (typeof value === 'string') {
     const text = value.trim();
-    if (/^https?:\/\//i.test(text)) return text;
+    const direct = normalizeExtractedHttpUrl(text);
+    if (direct) return direct;
     try { return extractHttpUrl(JSON.parse(text), depth + 1); } catch (_err) { return ''; }
   }
   if (Array.isArray(value)) {
@@ -726,16 +795,52 @@ function extractHttpUrl(value, depth = 0) {
     return '';
   }
   if (typeof value === 'object') {
-    for (const key of ['url', 'musicUrl', 'playUrl', 'play_url', 'audio', 'src', 'link']) {
+    for (const key of ['url', 'musicUrl', 'music_url', 'playUrl', 'play_url', 'audio', 'src', 'link', 'location', 'href', 'file', 'purl']) {
       const found = extractHttpUrl(value[key], depth + 1);
       if (found) return found;
     }
-    for (const key of ['data', 'body', 'result', 'music', 'song']) {
+    for (const key of ['data', 'body', 'result', 'music', 'song', 'info', 'response']) {
       const found = extractHttpUrl(value[key], depth + 1);
       if (found) return found;
     }
   }
   return '';
+}
+
+function sanitizePlaybackHeaders(headers) {
+  const out = {};
+  const allowed = new Set(['accept', 'cookie', 'origin', 'referer', 'referrer', 'user-agent']);
+  for (const [rawKey, rawValue] of Object.entries(headers || {})) {
+    const key = String(rawKey || '').trim().toLowerCase();
+    if (!allowed.has(key) || rawValue == null) continue;
+    const normalizedKey = key === 'referrer' ? 'referer' : key;
+    out[normalizedKey] = sanitizeHeaderValue(rawValue);
+  }
+  return out;
+}
+
+function extractPlaybackHeaders(value, depth = 0) {
+  if (depth > 5 || value == null) return {};
+  if (typeof value === 'string') {
+    try { return extractPlaybackHeaders(JSON.parse(value), depth + 1); } catch (_err) { return {}; }
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = extractPlaybackHeaders(item, depth + 1);
+      if (Object.keys(found).length) return found;
+    }
+    return {};
+  }
+  if (typeof value !== 'object') return {};
+  for (const key of ['headers', 'header', 'requestHeaders', 'playHeaders', 'audioHeaders', 'proxyHeaders']) {
+    const headers = sanitizePlaybackHeaders(value[key]);
+    if (Object.keys(headers).length) return headers;
+  }
+  for (const key of ['data', 'body', 'result', 'music', 'song', 'info', 'response']) {
+    const found = extractPlaybackHeaders(value[key], depth + 1);
+    if (Object.keys(found).length) return found;
+  }
+  return {};
 }
 
 function readMp3FrameInfo(bytes) {
@@ -769,20 +874,22 @@ function readMp3FrameInfo(bytes) {
   return null;
 }
 
-async function probeAudioUrl(url) {
+async function probeAudioUrl(url, playbackHeaders) {
   const fetchImpl = electronFetch || globalThis.fetch;
   if (typeof fetchImpl !== 'function') throw new Error('LX_AUDIO_PROBE_UNAVAILABLE');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10000);
   try {
+    const headers = sanitizeHeaders(Object.assign({
+      Range: 'bytes=0-131071',
+      'User-Agent': 'Mozilla/5.0 Mineradio/1.5',
+      Accept: 'audio/*,*/*;q=0.8',
+    }, playbackHeaders || {}));
+    headers.Range = 'bytes=0-131071';
     const response = await fetchImpl(url, {
       redirect: 'follow',
       signal: controller.signal,
-      headers: {
-        Range: 'bytes=0-131071',
-        'User-Agent': 'Mozilla/5.0 Mineradio/1.5',
-        Accept: 'audio/*,*/*;q=0.8',
-      },
+      headers,
     });
     if (!response.ok && response.status !== 206) throw new Error(`LX_AUDIO_PROBE_HTTP_${response.status}`);
     const bytes = new Uint8Array(await response.arrayBuffer());
@@ -875,16 +982,22 @@ async function resolveMusicUrl(source, musicInfo, quality, options) {
           `LX_SOURCE_TIMEOUT_${candidate}`
         );
         let url = extractHttpUrl(result);
+        const playbackHeaders = extractPlaybackHeaders(result);
         if (/^http:\/\/mcp\.nianxinxz\.com\//i.test(url)) {
           url = url.replace(/^http:/i, 'https:');
         }
         if (url) {
-          const probe = await probeAudioUrl(url);
-          if (!audioProbeSatisfiesQuality(probe, requested)) {
-            errors.push(`${candidate}:LX_AUDIO_QUALITY_DOWNGRADED_${probe.codec}_${probe.bitrate || 0}`);
-            continue;
+          let probe = null;
+          try {
+            probe = await probeAudioUrl(url, playbackHeaders);
+            if (!audioProbeSatisfiesQuality(probe, requested)) {
+              errors.push(`${candidate}:LX_AUDIO_QUALITY_DOWNGRADED_${probe.codec}_${probe.bitrate || 0}`);
+              if (requested && !['master', 'flac24bit', 'hires', 'flac'].includes(requested)) continue;
+            }
+          } catch (probeErr) {
+            errors.push(`${candidate}:${probeErr && probeErr.message ? probeErr.message : 'LX_AUDIO_PROBE_FAILED'}_ACCEPTED`);
           }
-          return { url, quality: candidate, actual: probe, resolver: host.name };
+          return { url, headers: playbackHeaders, quality: candidate, actual: probe, resolver: host.name };
         }
         errors.push(`${candidate}:LX_SOURCE_URL_INVALID`);
       } catch (err) {

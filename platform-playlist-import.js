@@ -158,6 +158,33 @@ function uniqueBy(items, getKey) {
   });
 }
 
+function stableImportKey(parts, prefix) {
+  const text = (parts || []).map(value => String(value || '').trim().toLowerCase()).filter(Boolean).join('|');
+  return text ? `${prefix || 'row'}_${crypto.createHash('sha1').update(text).digest('hex').slice(0, 16)}` : '';
+}
+
+function ensureImportSongId(song, prefix, index) {
+  if (!song) return song;
+  const existing = String(song.songmid || song.id || '').trim();
+  if (existing) {
+    if (/^(?:tx|wy|kw|kg|mg|song|row)_[0-9a-f]{12,}$/i.test(existing)) song.importFallbackId = true;
+    song.id = song.id || existing;
+    song.songmid = song.songmid || existing;
+    return song;
+  }
+  const generated = stableImportKey([song.name, song.singer, song.albumName, song.interval, index], prefix || song.source || 'song');
+  song.id = generated || `${prefix || song.source || 'song'}_${index}`;
+  song.songmid = song.id;
+  song.importFallbackId = true;
+  return song;
+}
+
+function finalizeImportedSongs(songs, prefix) {
+  return (songs || [])
+    .map((song, index) => ensureImportSongId(song, prefix, index))
+    .filter(song => song && song.name && song.songmid);
+}
+
 function parseAssignedJson(html, marker) {
   const markerIndex = String(html || '').indexOf(marker);
   if (markerIndex < 0) return null;
@@ -424,6 +451,15 @@ function extractJsonRedirect(body, baseUrl) {
 function detect(input, preferredSource) {
   const text = String(input || '').trim();
   const source = normalizeSource(preferredSource);
+  const preferredPlaylistId = source && extractPlatformPlaylistId(source, text);
+  if (preferredPlaylistId) return { source, kind:'playlist', id:preferredPlaylistId, input:text };
+  const preferredAlbumId = source && extractPlatformAlbumId(source, text);
+  if (preferredAlbumId) return { source, kind:'album', id:preferredAlbumId, input:text };
+  const albumLike = /(?:\/|[?&#])album(?:Detail|_detail)?(?:[/?&#=_-]|$)|(?:albumId|albumid|albumMid|albummid)\s*=/i.test(text);
+  if (source && albumLike) {
+    if (['tx', 'wy', 'kw'].includes(source)) throw new Error('已识别为专辑链接，但没有取得专辑编号；请重新复制专辑分享链接');
+    throw new Error('当前平台暂不支持专辑导入，请使用歌单分享链接');
+  }
 
   if (source === 'kgc') {
     const pureConceptGCID = text.match(/^gcid_[a-z0-9]+$/i);
@@ -445,13 +481,16 @@ function detect(input, preferredSource) {
   if (kugouId && (/kugou\.(?:com|cn)/i.test(text) || source === 'kg')) return { source:'kg', id:kugouId, input:text };
 
   const rules = [
-    ['tx', /(?:y\.qq\.com|i\d*\.y\.qq\.com|c\d*\.y\.qq\.com|m\.qq\.com)[^\s]*?(?:playlist(?:\.html)?[/?]|[?&#](?:id|disstid)=)(\d+)/i],
-    ['wy', /(?:music\.163\.com|y\.music\.163\.com|m\.music\.163\.com|163cn\.tv)[^\s]*?(?:playlist(?:\?id=|\/)|[?&#](?:playlistId|id)=)(\d+)/i],
-    ['kw', /(?:kuwo\.cn|kuwo\.com|h5app\.kuwo\.cn|m\.kuwo\.cn)[^\s]*?(?:playlist(?:_detail)?[/?_-]|[?&#](?:pid|playlistId|id)=)(\d+)/i],
+    ['tx', 'album', /(?:y\.qq\.com|i\d*\.y\.qq\.com|c\d*\.y\.qq\.com|m\.qq\.com)[^\s]*?(?:album(?:Detail)?[/?]|[?&#](?:albumId|albumid|albumMid|albummid)=)([a-z0-9_-]+)/i],
+    ['wy', 'album', /(?:music\.163\.com|y\.music\.163\.com|m\.music\.163\.com|163cn\.tv)[^\s]*?(?:album(?:\?id=|\/)|[?&#]albumId=)(\d+)/i],
+    ['kw', 'album', /(?:kuwo\.cn|kuwo\.com|h5app\.kuwo\.cn|m\.kuwo\.cn)[^\s]*?(?:album(?:_detail)?[/?_-]|[?&#](?:albumId|albumid)=)(\d+)/i],
+    ['tx', 'playlist', /(?:y\.qq\.com|i\d*\.y\.qq\.com|c\d*\.y\.qq\.com|m\.qq\.com)[^\s]*?(?:playlist(?:\.html)?[/?]|[?&#](?:id|disstid)=)(\d+)/i],
+    ['wy', 'playlist', /(?:music\.163\.com|y\.music\.163\.com|m\.music\.163\.com|163cn\.tv)[^\s]*?(?:playlist(?:\?id=|\/)|[?&#](?:playlistId|id)=)(\d+)/i],
+    ['kw', 'playlist', /(?:kuwo\.cn|kuwo\.com|h5app\.kuwo\.cn|m\.kuwo\.cn)[^\s]*?(?:playlist(?:_detail)?[/?_-]|[?&#](?:pid|playlistId|id)=)(\d+)/i],
   ];
-  for (const [ruleSource, rx] of rules) {
+  for (const [ruleSource, ruleKind, rx] of rules) {
     const match = text.match(rx);
-    if (match) return { source:ruleSource, id:match[1], input:text };
+    if (match) return { source:ruleSource, kind:ruleKind, id:match[1], input:text };
   }
   const prefixed = text.match(/^(tx|qq|wy|163|kw|kg|kgc|kglite|mg|小秋|小芸|小蜗|小枸|小狗|小菇|小枸概念版|酷狗概念版|概念版)\s*[:：]\s*([a-z0-9_-]+)$/i);
   if (prefixed) return { source:normalizeSource(prefixed[1]), id:prefixed[2], input:text };
@@ -463,6 +502,30 @@ function detect(input, preferredSource) {
     if (matches.length) return { source, id:matches[matches.length - 1][1], input:text };
   }
   throw new Error('无法识别链接；请选择平台并粘贴歌单分享链接，或直接输入数字歌单 ID');
+}
+
+function extractPlatformAlbumId(source, value) {
+  const text = decodeHtmlEntities(String(value || ''));
+  const sourcePatterns = {
+    tx: [
+      /(?:albumMid|albummid|albumId|albumid)["'\s:=/&?#-]+([a-z0-9_-]{4,})/i,
+      /\/album(?:Detail)?\/([a-z0-9_-]{4,})/i,
+    ],
+    wy: [
+      /\/album\/(\d{4,})/i,
+      /album[^"'<>]*[?&#]id=(\d{4,})/i,
+      /(?:albumId|album_id)["'\s:=/&?#-]+(\d{4,})/i,
+    ],
+    kw: [
+      /\/album(?:_detail)?\/(\d{4,})/i,
+      /(?:albumId|albumid)["'\s:=/&?#-]+(\d{4,})/i,
+    ],
+  };
+  for (const pattern of sourcePatterns[source] || []) {
+    const match = text.match(pattern);
+    if (match) return match[1];
+  }
+  return '';
 }
 
 function extractPlatformPlaylistId(source, value) {
@@ -641,7 +704,8 @@ async function expandShareLink(input) {
 
 async function importQQ(id) {
   const headers = { Origin:'https://y.qq.com', Referer:`https://y.qq.com/n/ryqq/playlist/${id}` };
-  const rowKey = item => String(item && (item.mid || item.songmid || item.id || item.songid || item.songId) || '').trim();
+  const rowKey = item => String(item && (item.mid || item.songmid || item.id || item.songid || item.songId) || '').trim()
+    || stableImportKey([item?.title || item?.name || item?.songname, singerText(item?.singer), item?.album?.name || item?.albumname, item?.interval], 'tx');
   const normalizeRows = rows => (rows || []).map(item => item?.songInfo || item?.songinfo || item).filter(Boolean);
   const legacyPage = async (begin, count) => {
     const query = `type=1&json=1&utf8=1&onlysong=0&new_format=1&disstid=${encodeURIComponent(id)}&song_begin=${encodeURIComponent(begin)}&song_num=${encodeURIComponent(count)}&loginUin=0&hostUin=0&format=json&platform=yqq.json&needNewCode=0`;
@@ -739,7 +803,7 @@ async function importQQ(id) {
   return {
     name:baseInfo.dissname || baseInfo.title || baseInfo.name || `小秋歌单 ${id}`,
     cover:baseInfo.logo || baseInfo.picurl || baseInfo.cover || '',
-    songs:rows.map(item => ({
+    songs:finalizeImportedSongs(rows.map(item => ({
       id:item.id || item.songid || item.songId,
       songmid:item.mid || item.songmid,
       name:item.title || item.name || item.songname || '',
@@ -752,7 +816,64 @@ async function importQQ(id) {
       interval:durationText(item.interval),
       source:'tx',
       types:['flac','320k','128k'],
-    })),
+    })), 'tx'),
+  };
+}
+
+async function importQQAlbum(id) {
+  const albumId = String(id || '').trim();
+  const headers = { Origin:'https://y.qq.com', Referer:`https://y.qq.com/n/ryqq/albumDetail/${albumId}` };
+  const rows = [];
+  let info = {};
+  for (let begin = 0; begin < 3000; begin += 200) {
+    const isNumeric = /^\d+$/.test(albumId);
+    const body = {
+      comm:{ ct:24, cv:0 },
+      req_0:{
+        module:'music.musichallAlbum.AlbumSongList',
+        method:'GetAlbumSongList',
+        param:{
+          albumMid:isNumeric ? '' : albumId,
+          albumID:isNumeric ? Number(albumId) : 0,
+          begin,
+          num:200,
+          order:2,
+        },
+      },
+    };
+    const data = await fetchJson('https://u.y.qq.com/cgi-bin/musicu.fcg', {
+      method:'POST',
+      retryAttempts:2,
+      headers:{ ...headers, 'content-type':'application/json' },
+      body:JSON.stringify(body),
+    });
+    const payload = data?.req_0?.data || {};
+    info = info && Object.keys(info).length ? info : (payload.album || payload.albumInfo || payload.info || {});
+    const pageRows = (payload.songList || payload.songlist || payload.list || [])
+      .map(item => item?.songInfo || item?.songinfo || item)
+      .filter(Boolean);
+    rows.push(...pageRows);
+    const total = Number(payload.totalNum || payload.total || info.total || rows.length);
+    if (!pageRows.length || (total && rows.length >= total)) break;
+  }
+  if (!rows.length) throw new Error('QQ album import failed');
+  return {
+    name:info.name || info.title || info.Falbum_name || `QQ Album ${albumId}`,
+    cover:(info.mid || info.albumMid || albumId) ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${info.mid || info.albumMid || albumId}.jpg` : '',
+    songs:finalizeImportedSongs(rows.map(item => ({
+      id:item.id || item.songid || item.songId,
+      songmid:item.mid || item.songmid,
+      name:item.title || item.name || item.songname || '',
+      singer:singerText(item.singer),
+      albumName:item.album?.name || item.albumname || info.name || info.title || '',
+      albumId:item.album?.mid || item.albummid || info.mid || info.albumMid || albumId,
+      albumMid:item.album?.mid || item.albummid || info.mid || info.albumMid || albumId,
+      strMediaMid:item.file?.media_mid || item.strMediaMid || item.mid || item.songmid || '',
+      picUrl:(item.album?.mid || item.albummid || info.mid || info.albumMid || albumId) ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${item.album?.mid || item.albummid || info.mid || info.albumMid || albumId}.jpg` : '',
+      interval:durationText(item.interval),
+      source:'tx',
+      types:['flac','320k','128k'],
+    })), 'tx'),
   };
 }
 
@@ -775,7 +896,7 @@ async function importWY(id) {
   }
   const byId = new Map([...initialTracks, ...extraTracks].map(item => [String(item.id), item]));
   const tracks = trackIds.length
-    ? trackIds.map(trackId => byId.get(trackId)).filter(Boolean)
+    ? trackIds.map(trackId => byId.get(trackId) || { id:trackId, name:`网易云歌曲 ${trackId}`, ar:[], al:{} })
     : initialTracks;
   return {
     name:list.name || `小芸歌单 ${id}`, cover:list.coverImgUrl || '',
@@ -788,6 +909,23 @@ async function importWY(id) {
   };
 }
 
+async function importWYAlbum(id) {
+  const data = await fetchJson(`https://music.163.com/api/album/${encodeURIComponent(id)}`, { headers:{ Referer:'https://music.163.com/' } });
+  const album = data?.album || {};
+  const songs = Array.isArray(data?.songs) ? data.songs : (Array.isArray(album.songs) ? album.songs : []);
+  if (!songs.length) throw new Error('Netease album import failed');
+  return {
+    name:album.name || `Netease Album ${id}`,
+    cover:album.picUrl || '',
+    songs:songs.map(item => ({
+      id:item.id, songmid:item.id, name:item.name || '', singer:singerText(item.ar || item.artists),
+      albumName:(item.al || item.album)?.name || album.name || '', albumId:(item.al || item.album)?.id || album.id || '',
+      picUrl:(item.al || item.album)?.picUrl || album.picUrl || '', interval:durationText((item.dt || item.duration || 0) / 1000),
+      source:'wy', types:['flac','320k','128k'],
+    })),
+  };
+}
+
 async function importKW(id) {
   const pageSize = 200;
   const makeUrl = page => `https://nplserver.kuwo.cn/pl.svc?op=getlistinfo&pid=${id}&pn=${page}&rn=${pageSize}&encode=utf8&keyset=pl2012&identity=kuwo&pcmp4=1&vipver=MUSIC_9.0.5.0_W1&newver=1`;
@@ -795,7 +933,7 @@ async function importKW(id) {
   if (data?.result !== 'ok') throw new Error(`酷我歌单读取失败${data?.reason ? `：${data.reason}` : ''}`);
   const rows = [...(data.musiclist || [])];
   const total = Number(data.total || data.validtotal || rows.length);
-  const seen = new Set(rows.map(item => String(item.musicrid || item.id || '').replace('MUSIC_', '')).filter(Boolean));
+  const seen = new Set(rows.map(item => String(item.musicrid || item.id || '').replace('MUSIC_', '') || stableImportKey([item.name || item.songname, item.artist, item.album, item.duration], 'kw')).filter(Boolean));
   let stagnantPages = 0;
   for (let page = 1; page < 300 && (!total || seen.size < total); page += 1) {
     const pageData = await fetchJson(makeUrl(page));
@@ -803,7 +941,7 @@ async function importKW(id) {
     if (!pageRows.length) break;
     let added = 0;
     for (const item of pageRows) {
-      const key = String(item.musicrid || item.id || '').replace('MUSIC_', '');
+      const key = String(item.musicrid || item.id || '').replace('MUSIC_', '') || stableImportKey([item.name || item.songname, item.artist, item.album, item.duration], 'kw');
       if (!key || seen.has(key)) continue;
       seen.add(key);
       rows.push(item);
@@ -812,16 +950,34 @@ async function importKW(id) {
     stagnantPages = added ? 0 : stagnantPages + 1;
     if (stagnantPages >= 2) break;
   }
-  const musiclist = uniqueBy(rows, item => String(item.musicrid || item.id || '').replace('MUSIC_', ''));
+  const musiclist = uniqueBy(rows, item => String(item.musicrid || item.id || '').replace('MUSIC_', '') || stableImportKey([item.name || item.songname, item.artist, item.album, item.duration], 'kw'));
   return {
     name:data.title || `小蜗歌单 ${id}`, cover:data.pic || '',
-    songs:musiclist.map(item => ({
+    songs:finalizeImportedSongs(musiclist.map(item => ({
       id:String(item.musicrid || item.id || '').replace('MUSIC_', ''),
       songmid:String(item.musicrid || item.id || '').replace('MUSIC_', ''),
       name:item.name || item.songname || '', singer:item.artist || '', albumName:item.album || '',
       albumId:item.albumid || '', interval:durationText(item.duration), source:'kw',
       types:['flac24bit','flac','320k','128k'],
-    })),
+    })), 'kw'),
+  };
+}
+
+async function importKWAlbum(id) {
+  const url = `https://search.kuwo.cn/r.s?stype=albuminfo&albumid=${encodeURIComponent(id)}&show_copyright_off=1&alflac=1&vipver=MUSIC_9.0.5.0_W1&encoding=utf8`;
+  const data = await fetchJson(url, { headers:{ Referer:'https://www.kuwo.cn/' } });
+  const rows = data.musiclist || data.songlist || data.songs || data.musicList || [];
+  if (!Array.isArray(rows) || !rows.length) throw new Error('Kuwo album import failed');
+  return {
+    name:data.title || data.album || data.name || `Kuwo Album ${id}`,
+    cover:data.pic || data.img || data.cover || '',
+    songs:finalizeImportedSongs(rows.map(item => ({
+      id:String(item.musicrid || item.id || item.rid || '').replace('MUSIC_', ''),
+      songmid:String(item.musicrid || item.id || item.rid || '').replace('MUSIC_', ''),
+      name:item.name || item.songname || '', singer:item.artist || item.singer || '', albumName:item.album || data.title || '',
+      albumId:item.albumid || id, interval:durationText(item.duration), source:'kw',
+      types:['flac24bit','flac','320k','128k'],
+    })), 'kw'),
   };
 }
 
@@ -931,7 +1087,7 @@ async function fetchKugouGlobalNoFilterRows(globalId) {
     total = Math.max(total, Number(data.count || data.total || payload?.count || payload?.total || 0));
     let added = 0;
     for (const item of pageRows) {
-      const key = String(item.audio_id || item.audioid || item.rp_id || item.album_audio_id || item.album_audioid || item.id || item.hash || item.HASH || item.FileHash || '');
+      const key = kugouRowKey(item, rows.length + added);
       if (!key || seen.has(key)) continue;
       seen.add(key);
       rows.push(item);
@@ -977,16 +1133,29 @@ function kugouRowsFromPayload(payload) {
   return candidates.find(Array.isArray) || [];
 }
 
+function kugouRowKey(item, index) {
+  return String(item?.audio_id || item?.audioid || item?.rp_id || item?.album_audio_id || item?.album_audioid || item?.id || item?.hash || item?.HASH || item?.FileHash || '')
+    || stableImportKey([
+      item?.songname || item?.SongName || item?.song_name || item?.audio_name || item?.AudioName || item?.name || item?.filename || item?.FileName,
+      item?.singername || item?.SingerName || item?.author_name || item?.AuthorName || item?.authorName || singerText(item?.singerinfo || item?.authors),
+      item?.album_name || item?.AlbumName || item?.albumname,
+      item?.duration || item?.Duration || item?.timelength || item?.timelen || item?.time_length,
+    ], 'kg');
+}
+
 function mapKugouSongs(rows) {
-  return (rows || []).map(item => {
+  return (rows || []).map((item, index) => {
     const singer = item.singername || item.SingerName || item.author_name || item.AuthorName || item.authorName || singerText(item.singerinfo || item.authors)
       || String(item.filename || item.name || '').split(' - ')[0] || '';
     let name = item.songname || item.SongName || item.song_name || item.audio_name || item.AudioName || item.ori_audio_name || item.OriSongName || item.name || String(item.filename || item.FileName || '').split(' - ').slice(1).join(' - ');
     if (singer && name.startsWith(`${singer} - `)) name = name.slice(singer.length + 3);
     const hash = item.hash || item.HASH || item.FileHash || item.file_hash || item.audio_info?.hash || item.audio_info?.hash_128 || '';
-    const id = item.audio_id || item.audioid || item.rp_id || item.album_audio_id || item.album_audioid || item.id || hash;
+    const strongId = item.audio_id || item.audioid || item.rp_id || item.album_audio_id || item.album_audioid || item.id || hash;
+    const id = strongId ||
+      stableImportKey([name, singer, item.album_name || item.AlbumName || item.albumname, item.duration || item.Duration || item.timelength], 'kg');
     return {
       id, songmid:id, name, singer,
+      importFallbackId:!strongId,
       albumName:item.album_name || item.AlbumName || item.albumname || item.albuminfo?.name || '',
       albumId:item.album_id || item.AlbumID || item.albumid || item.albuminfo?.id || '',
       hash,
@@ -1027,7 +1196,7 @@ async function importKugouPagedRows(specialId) {
     total = Math.max(total, Number(payload?.data?.count || payload?.data?.total || 0));
     let added = 0;
     for (const item of pageRows) {
-      const key = String(item.audio_id || item.audioid || item.rp_id || item.album_audio_id || item.album_audioid || item.id || item.hash || item.HASH || item.FileHash || '');
+      const key = kugouRowKey(item, rows.length + added);
       if (!key || seen.has(key)) continue;
       seen.add(key);
       rows.push(item);
@@ -1148,7 +1317,7 @@ async function fetchKugouGlobalRows(globalId) {
     total = Math.max(total, Number(payload?.data?.total || payload?.data?.count || 0));
     let added = 0;
     for (const item of pageRows) {
-      const key = String(item.audio_id || item.audioid || item.rp_id || item.album_audio_id || item.album_audioid || item.id || item.hash || item.HASH || item.FileHash || '');
+      const key = kugouRowKey(item, rows.length + added);
       if (!key || seen.has(key)) continue;
       seen.add(key);
       rows.push(item);
@@ -1182,7 +1351,7 @@ async function fetchKugouGlobalLegacyRows(globalId) {
     total = Math.max(total, Number(payload?.data?.total || payload?.data?.count || payload?.total || payload?.count || 0));
     let added = 0;
     for (const item of pageRows) {
-      const key = String(item.audio_id || item.audioid || item.rp_id || item.album_audio_id || item.album_audioid || item.id || item.hash || item.HASH || item.FileHash || '');
+      const key = kugouRowKey(item, rows.length + added);
       if (!key || seen.has(key)) continue;
       seen.add(key);
       rows.push(item);
@@ -1243,7 +1412,7 @@ async function importKugouConceptFallback(globalId) {
     total = Math.max(total, Number(data.count || data.total || payload?.count || payload?.total || 0));
     let added = 0;
     for (const item of pageRows) {
-      const key = String(item.audio_id || item.audioid || item.rp_id || item.album_audio_id || item.album_audioid || item.id || item.hash || item.HASH || item.FileHash || '');
+      const key = kugouRowKey(item, rows.length + added);
       if (!key || seen.has(key)) continue;
       seen.add(key);
       rows.push(item);
@@ -1547,8 +1716,49 @@ async function importKG(id, originalInput, context = {}) {
 
 function miguRows(payload) {
   const data = payload?.data || {};
-  const rows = data.songList || data.contentItemList || data.items || payload?.songList || payload?.contentItemList || [];
+  const rows = data.songList || data.contentItemList || data.items || data.list || data.records || data.result ||
+    data.songs || data.musicList || payload?.songList || payload?.contentItemList || payload?.items ||
+    payload?.songs || payload?.list || payload?.records || [];
   return (Array.isArray(rows) ? rows : []).map(item => item?.objectInfo || item?.song || item?.music || item).filter(Boolean);
+}
+
+function miguSongId(item) {
+  return String(
+    item?.contentId || item?.songId || item?.copyrightId || item?.resourceId ||
+    item?.musicId || item?.id || item?.songID || item?.song_id || item?.cid || ''
+  ).trim();
+}
+
+function miguSongName(item) {
+  return String(item?.name || item?.songName || item?.title || item?.contentName || item?.musicName || item?.song_name || '').trim();
+}
+
+function miguSongSinger(item) {
+  return singerText(item?.singerList || item?.singers || item?.singer || item?.artists || item?.artist || item?.singerName || item?.artistName);
+}
+
+function miguSongKey(item, index) {
+  const strong = miguSongId(item);
+  if (strong) return 'id:' + strong;
+  const weak = [
+    miguSongName(item).toLowerCase(),
+    miguSongSinger(item).toLowerCase(),
+    String(item?.album || item?.albumName || item?.albums?.[0]?.name || '').toLowerCase(),
+    String(item?.duration || item?.length || item?.totalTime || ''),
+  ].join('|').replace(/\s+/g, ' ').trim();
+  return weak.replace(/\|+$/g, '') || ('row:' + index);
+}
+
+function uniqueMiguRows(rows) {
+  const seen = new Set();
+  const out = [];
+  (rows || []).forEach((item, index) => {
+    const key = miguSongKey(item, index);
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(item);
+  });
+  return out;
 }
 
 async function importMG(id, originalInput, context = {}) {
@@ -1575,8 +1785,28 @@ async function importMG(id, originalInput, context = {}) {
     'user-agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 Version/13.0.3 Mobile/15E148 Safari/604.1',
   };
   const pageSize = 50;
-  const songUrl = page => `https://app.c.nf.migu.cn/MIGUM3.0/resource/playlist/song/v2.0?pageNo=${page}&pageSize=${pageSize}&playlistId=${encodeURIComponent(playlistId)}`;
-  const songsData = await fetchJson(songUrl(1), { headers });
+  const songUrls = page => [
+    `https://app.c.nf.migu.cn/MIGUM3.0/resource/playlist/song/v2.0?pageNo=${page}&pageSize=${pageSize}&playlistId=${encodeURIComponent(playlistId)}`,
+    `https://c.musicapp.migu.cn/MIGUM3.0/resource/playlist/song/v2.0?pageNo=${page}&pageSize=${pageSize}&playlistId=${encodeURIComponent(playlistId)}`,
+    `https://app.c.nf.migu.cn/resource/playlist/song/v2.0?pageNo=${page}&pageSize=${pageSize}&playlistId=${encodeURIComponent(playlistId)}`,
+    `https://c.musicapp.migu.cn/resource/playlist/song/v2.0?pageNo=${page}&pageSize=${pageSize}&playlistId=${encodeURIComponent(playlistId)}`,
+    `https://app.c.nf.migu.cn/MIGUM2.0/v1.0/content/resourceinfo.do?resourceType=2021&resourceId=${encodeURIComponent(playlistId)}&pageNo=${page}&pageSize=${pageSize}`,
+  ];
+  async function fetchMiguSongPage(page) {
+    let lastError = null;
+    for (const candidateUrl of songUrls(page)) {
+      try {
+        const payload = await fetchJson(candidateUrl, { headers, retryAttempts:2 });
+        const rows = miguRows(payload);
+        if (rows.length || page === 1) return payload;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (page === 1 && lastError) throw lastError;
+    return {};
+  }
+  const songsData = await fetchMiguSongPage(1);
   let infoData = {};
   for (const infoUrl of [
     `https://c.musicapp.migu.cn/MIGUM3.0/resource/playlist/v2.0?playlistId=${encodeURIComponent(playlistId)}`,
@@ -1588,33 +1818,39 @@ async function importMG(id, originalInput, context = {}) {
     } catch (_error) {}
   }
   const rows = [...miguRows(songsData)];
-  const total = Number(songsData?.data?.totalCount || songsData?.data?.total || songsData?.totalCount || infoData?.data?.musicNum || infoData?.data?.songCount || rows.length);
-  let uniqueCount = uniqueBy(rows, item => item.contentId || item.songId || item.id || item.copyrightId).length;
+  const total = Number(
+    songsData?.data?.totalCount || songsData?.data?.total || songsData?.data?.count ||
+    songsData?.totalCount || songsData?.total || songsData?.count ||
+    infoData?.data?.musicNum || infoData?.data?.songCount || infoData?.data?.totalCount || rows.length
+  );
+  let uniqueCount = uniqueMiguRows(rows).length;
   let stagnantPages = 0;
   for (let page = 2; page <= 500 && (!total || uniqueCount < total); page += 1) {
-    const pageData = await fetchJson(songUrl(page), { headers });
+    const pageData = await fetchMiguSongPage(page);
     const pageRows = miguRows(pageData);
     if (!pageRows.length) break;
     const before = uniqueCount;
     rows.push(...pageRows);
-    uniqueCount = uniqueBy(rows, item => item.contentId || item.songId || item.id || item.copyrightId).length;
+    uniqueCount = uniqueMiguRows(rows).length;
     stagnantPages = uniqueCount > before ? 0 : stagnantPages + 1;
     if (stagnantPages >= 2) break;
   }
-  const songs = uniqueBy(rows, item => item.contentId || item.songId || item.id || item.copyrightId);
+  const songs = uniqueMiguRows(rows);
   if (!songs.length) throw new Error('小菇歌单读取失败；请确认歌单已公开并在中国大陆网络环境下重试');
   const info = infoData?.data || infoData || {};
   return {
     name:info.title || info.name || info.playListName || `小菇歌单 ${playlistId}`,
     cover:info?.imgItem?.img || info?.imgItems?.[0]?.img || info?.img || info?.cover || info?.image || '',
-    songs:songs.map(item => {
-      const songId = item.contentId || item.songId || item.id || item.copyrightId;
+    songs:songs.map((item, index) => {
+      const strongId = miguSongId(item);
+      const songId = strongId || ('mg_' + crypto.createHash('sha1').update(miguSongKey(item, index)).digest('hex').slice(0, 16));
       let duration = Number(item.duration || item.length || item.totalTime || 0);
       if (duration > 36000) duration /= 1000;
       return {
         id:songId, songmid:songId, contentId:item.contentId || songId, copyrightId:item.copyrightId || '',
-        name:item.name || item.songName || item.title || item.contentName || '',
-        singer:singerText(item.singerList || item.singers || item.singer || item.artists || item.artist),
+        importFallbackId:!strongId,
+        name:miguSongName(item),
+        singer:miguSongSinger(item),
         albumName:item.album || item.albumName || item?.albums?.[0]?.name || '', albumId:item.albumId || item?.albums?.[0]?.id || '',
         picUrl:item.img3 || item.img2 || item.img1 || item.img || item.image || item?.albumImgs?.[0]?.img || item?.imgItems?.[0]?.img || '',
         lrcUrl:item.lrcUrl || item.lyricUrl || '', mrcUrl:item.mrcurl || item.mrcUrl || '', trcUrl:item.trcUrl || '',
@@ -1625,6 +1861,7 @@ async function importMG(id, originalInput, context = {}) {
 }
 
 const IMPORTERS = { tx:importQQ, wy:importWY, kw:importKW, kg:importKG, kgc:importKGC, mg:importMG };
+const ALBUM_IMPORTERS = { tx:importQQAlbum, wy:importWYAlbum, kw:importKWAlbum };
 async function importPlaylist(input, preferredSource) {
   const originalInput = String(input || '').trim();
   const firstUrl = extractFirstUrl(originalInput);
@@ -1654,23 +1891,29 @@ async function importPlaylist(input, preferredSource) {
       const id = extractKugouConceptIdentity(`${resolution.url}\n${resolution.html}`);
       if (id) parsed = { source:'kgc', id, input:resolution.url };
     } else if (['tx', 'wy', 'kw'].includes(source)) {
-      const id = extractPlatformPlaylistId(source, `${resolution.url}\n${resolution.html}\n${originalInput}`);
-      if (id) parsed = { source, id, input:resolution.url };
+      const playlistId = extractPlatformPlaylistId(source, `${resolution.url}\n${resolution.html}\n${originalInput}`);
+      const albumId = playlistId ? '' : extractPlatformAlbumId(source, `${resolution.url}\n${resolution.html}\n${originalInput}`);
+      const id = playlistId || albumId;
+      if (id) parsed = { source, kind:playlistId ? 'playlist' : 'album', id, input:resolution.url };
     }
   }
   if (!parsed) {
     const source = normalizeSource(preferredSource);
     if (['tx', 'wy', 'kw'].includes(source)) {
-      const id = extractPlatformPlaylistId(source, `${resolution.url}\n${resolution.html}\n${originalInput}`);
-      if (id) parsed = { source, id, input:resolution.url || originalInput };
+      const playlistId = extractPlatformPlaylistId(source, `${resolution.url}\n${resolution.html}\n${originalInput}`);
+      const albumId = playlistId ? '' : extractPlatformAlbumId(source, `${resolution.url}\n${resolution.html}\n${originalInput}`);
+      const id = playlistId || albumId;
+      if (id) parsed = { source, kind:playlistId ? 'playlist' : 'album', id, input:resolution.url || originalInput };
     }
   }
   if (!parsed) throw lastDetectError || new Error('无法识别链接；请选择平台并粘贴歌单分享链接，或直接输入数字歌单 ID');
 
-  const result = await IMPORTERS[parsed.source](parsed.id, parsed.input, {
+  const importer = parsed.kind === 'album' ? ALBUM_IMPORTERS[parsed.source] : IMPORTERS[parsed.source];
+  if (!importer) throw new Error('当前平台暂不支持专辑导入，请使用歌单分享链接');
+  const result = await importer(parsed.id, parsed.input, {
     originalInput, resolvedUrl:resolution.url, html:resolution.html, redirectChain:resolution.chain,
   });
-  result.songs = (result.songs || []).filter(song => song.name && song.songmid);
+  result.songs = finalizeImportedSongs(result.songs || [], parsed.source);
   if (!result.songs.length) throw new Error('歌单中没有可导入的歌曲');
   return {
     ok:true,
@@ -1680,6 +1923,7 @@ async function importPlaylist(input, preferredSource) {
       cover:result.cover,
       source:parsed.source,
       sourceListId:parsed.id,
+      sourceInput:parsed.input || originalInput || parsed.id,
       imported:true,
       songs:result.songs,
     },

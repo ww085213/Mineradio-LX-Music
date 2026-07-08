@@ -225,6 +225,8 @@ body.splash-active.splash-revealing #top-right{opacity:1;transition:opacity 1100
 .search-mode-tabs.is-collapsed .playlist-select-btn{display:none}
 .search-mode-tabs.is-collapsed .search-mode-toggle::before{content:'+'}
 .search-mode-tabs.is-collapsed::after{display:none!important}
+.search-mode-tabs.is-collapsed{width:max-content!important;max-width:max-content!important;padding:0!important;gap:0!important;background:transparent!important;border-color:transparent!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+.search-mode-tabs.is-collapsed .search-mode-toggle{margin:0!important}
 .search-mode-tabs button[data-search-source="local"]{margin-left:7px;border-left:1px solid rgba(255,255,255,.12);border-radius:8px 999px 999px 8px;color:rgba(210,220,232,.58)}
 .search-mode-tabs button[data-search-source="local"].active{color:#fff;background:rgba(157,184,207,.14);box-shadow:inset 0 0 0 1px rgba(157,184,207,.26)}
 .search-mode-tabs .source-import-btn{margin-left:3px;color:#f4d28a;border:1px solid rgba(244,210,138,.18)}
@@ -235,6 +237,13 @@ body.splash-active.splash-revealing #top-right{opacity:1;transition:opacity 1100
 .search-mode-tabs .playlist-link-import-btn:hover{color:#fff;border-color:rgba(157,184,207,.44);background:rgba(157,184,207,.10)}
 .search-mode-tabs .playlist-select-btn{margin-left:3px;color:#d9cbff;border:1px solid rgba(190,168,255,.20)}
 .search-mode-tabs .playlist-select-btn:hover{color:#fff;border-color:rgba(190,168,255,.44);background:rgba(190,168,255,.10)}
+.search-mode-tabs{width:100%;gap:3px;overflow:visible;scroll-snap-type:none}
+.search-mode-tabs button{padding:0 9px;font-size:10px;letter-spacing:.2px}
+.search-mode-tabs .search-mode-toggle{margin-right:2px}
+.search-mode-tabs button[data-search-source="local"]{margin-left:3px}
+.search-mode-tabs .playlist-link-import-btn,
+.search-mode-tabs .playlist-select-btn{padding:0 10px}
+@media (max-width:720px){#search-stack{width:100%}.search-mode-tabs{overflow-x:auto}}
 .source-toolbar{display:flex;align-items:center;gap:5px;width:100%;max-width:100%;margin:0 0 22px;padding:8px;border-radius:12px;background:rgba(5,7,10,.34);border:1px solid rgba(244,210,138,.14);box-shadow:inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);transition:opacity .2s,transform .2s,border-color .2s;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scrollbar-width:none;scroll-snap-type:x proximity}
 .source-toolbar::-webkit-scrollbar{display:none}
 .source-toolbar button,.source-toolbar summary{height:24px;padding:0 12px;border:0;border-radius:999px;background:transparent;color:rgba(255,255,255,.58);font-family:inherit;font-size:10.5px;font-weight:650;letter-spacing:.7px;cursor:pointer;transition:background .22s,color .22s,box-shadow .22s,transform .22s;white-space:nowrap}
@@ -271,16 +280,11 @@ body.splash-active.splash-revealing #top-right{opacity:1;transition:opacity 1100
 .playlist-import-submit{min-width:116px}
 .playlist-import-submit[disabled]{opacity:.48;cursor:wait}
 @media (max-width:560px){.playlist-import-platforms{grid-template-columns:repeat(3,1fr)}}
-body.local-only-mode #user-btn,
-body.local-only-mode #user-capsule-hide-btn,
 body.local-only-mode #tab-podcast,
 body.local-only-mode #podcast-pane,
 body.local-only-mode #heart-btn,
 body.local-only-mode #trial-banner,
-body.local-only-mode #login-modal,
-body.local-only-mode #user-modal,
-body.local-only-mode #login-guide-canvas,
-body.local-only-mode .login-link{display:none!important}
+body.local-only-mode .import-link{display:none!important}
 body.local-only-mode .tag-source.local{color:#e6edf3;border-color:rgba(157,184,207,.34);background:rgba(157,184,207,.12)}
 body.empty-home-active.diy-mode #search-area:not(.has-results) #search-mode-tabs{display:flex}
 #search-results{margin-top:8px;background:rgba(12,12,18,0.55);border:1px solid rgba(255,255,255,0.06);border-radius:14px;max-height:360px;overflow-y:auto;overscroll-behavior:contain;backdrop-filter:blur(40px) saturate(1.4);-webkit-backdrop-filter:blur(40px) saturate(1.4);display:none}
@@ -346,6 +350,12 @@ body.simple-mode #controls{grid-template-columns:minmax(310px,1.05fr) minmax(344
 body.simple-mode .control-meta{max-width:420px}
 body.simple-mode .mini-queue-popover{width:min(380px,calc(100vw - 32px))}
 @media (max-width:720px){body.simple-mode #search-area{width:calc(100vw - 28px)}body.desktop-shell.simple-mode #search-area.peek{top:58px}body.simple-mode #search-area.peek{top:24px}}
+body.simple-mode #search-area{width:min(620px,calc(100vw - 56px))}
+body.simple-mode #search-mode-tabs{flex-wrap:nowrap;overflow:visible;scroll-snap-type:none}
+body.simple-mode #search-mode-tabs button{padding:0 9px;font-size:10px;letter-spacing:.2px}
+body.simple-mode #search-mode-tabs .playlist-link-import-btn,
+body.simple-mode #search-mode-tabs .playlist-select-btn{padding:0 10px}
+@media (max-width:720px){body.simple-mode #search-area{width:calc(100vw - 28px)}body.simple-mode #search-mode-tabs{overflow-x:auto}}
 
 /* ---------- 空场 Home ---------- */
 #empty-home{position:fixed;z-index:4;left:50%;top:158px;bottom:58px;width:min(1240px,calc(100vw - 72px));transform:translateX(-50%) translateY(18px) scale(.992);opacity:0;pointer-events:none;transition:opacity .72s cubic-bezier(.16,1,.3,1),transform .72s cubic-bezier(.16,1,.3,1)}
@@ -557,13 +567,6 @@ body.desktop-shell.desktop-fullscreen #upload-actions{margin-top:0}
 .upload-tip-title{display:block;color:#fff0bf;font-weight:700;margin-bottom:2px}
 .upload-tip-close{position:absolute;right:9px;top:8px;width:18px;height:18px;border:0;border-radius:50%;background:transparent;color:rgba(255,255,255,.38);cursor:pointer;font-size:15px;line-height:18px;padding:0;font-family:inherit}
 .upload-tip-close:hover{background:rgba(255,255,255,.08);color:#fff}
-#user-btn{padding:0 16px;width:auto;min-width:58px;height:44px;border-radius:24px;gap:8px;font-size:12px;letter-spacing:.4px}
-.user-capsule-hide-btn{width:18px;height:28px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.035);color:rgba(255,255,255,.34);font-size:11px;line-height:1;opacity:0;transform:translateX(6px) scale(.92);transition:opacity .18s,transform .18s,background .18s,color .18s,border-color .18s;cursor:pointer}
-#top-right:hover .user-capsule-hide-btn,.user-capsule-hide-btn.on{opacity:1;transform:translateX(0) scale(1)}
-.user-capsule-hide-btn:hover,.user-capsule-hide-btn.on{border-color:rgba(var(--fc-accent-rgb),.34);background:rgba(var(--fc-accent-rgb),.10);color:#fff}
-body.user-capsule-auto-hide #top-right{right:-96px;opacity:0;visibility:hidden;pointer-events:none;transition:right .28s cubic-bezier(.16,1,.3,1),opacity .18s,visibility 0s linear .18s,transform .24s}
-body.user-capsule-auto-hide #top-right:hover,body.user-capsule-auto-hide.user-capsule-peek #top-right{right:18px;opacity:1;visibility:visible;pointer-events:auto;transition:right .28s cubic-bezier(.16,1,.3,1),opacity .16s,transform .24s}
-body.user-capsule-auto-hide #top-right::before{content:'';position:absolute;right:100%;top:-18px;width:82px;height:80px}
 #home-btn{width:44px;min-width:44px;border-color:rgba(0,245,212,.18);background:rgba(255,255,255,.04);color:rgba(232,236,239,.78)}
 #home-btn:hover{border-color:rgba(0,245,212,.44);background:rgba(0,245,212,.075);color:#fff;box-shadow:0 14px 38px rgba(0,245,212,.08)}
 body.empty-home-active #home-btn{border-color:rgba(255,83,103,.36);background:rgba(255,83,103,.11);color:#fff}
@@ -643,24 +646,6 @@ body.desktop-shell.desktop-fullscreen .home-mosaic-cell.has-cover,html:fullscree
 }
 body.desktop-shell.empty-home-active.controls-visible #empty-home{bottom:126px}
 @media (max-height:760px){body.desktop-shell.empty-home-active.controls-visible #empty-home{bottom:106px}}
-#user-btn.logged-out{justify-content:center;padding:0 17px;min-width:60px;color:rgba(255,255,255,.78);font-size:13px;font-weight:650;letter-spacing:.08em;border-color:rgba(244,210,138,.28);background:rgba(255,255,255,.045);box-shadow:0 12px 34px rgba(0,0,0,.24),inset 0 1px 0 rgba(255,255,255,.08)}
-#user-btn.logged-out:hover{color:#fff2bd;border-color:rgba(244,210,138,.56);background:rgba(244,210,138,.11);box-shadow:0 16px 42px rgba(244,210,138,.10),inset 0 1px 0 rgba(255,255,255,.10)}
-#user-btn .login-word{display:block;line-height:1;transform:translateY(.5px)}
-#user-btn.logged-in{padding:0 16px 0 4px;min-width:0;color:#fff;border-color:rgba(244,210,138,0.52);background:rgba(244,210,138,0.07);box-shadow:0 0 0 1px rgba(244,210,138,.08),0 14px 42px rgba(0,0,0,.28)}
-#user-btn.multi-account{height:auto;min-width:0;padding:0;flex-direction:column;align-items:flex-end;gap:7px;border:0;background:transparent;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
-#user-btn.multi-account:hover{background:transparent;border-color:transparent;box-shadow:none;transform:none;color:#fff}
-#user-avatar{width:34px;height:34px;border-radius:50%;object-fit:cover;background:rgba(255,255,255,0.1)}
-#user-vip-tag{font-size:9px;padding:2px 6px;border-radius:3px;background:linear-gradient(135deg,#fff3c2,var(--champagne),#c9963d);color:#201303;font-weight:800;letter-spacing:.5px;box-shadow:0 0 12px rgba(244,210,138,.24)}
-#user-vip-tag.qq{background:linear-gradient(135deg,#e7fff9,#00f5d4,#61a8ff);color:#03100f;box-shadow:0 0 12px rgba(0,245,212,.22)}
-.account-source-dot{width:7px;height:7px;border-radius:50%;background:var(--source-local);box-shadow:0 0 12px currentColor;flex-shrink:0}
-.account-source-dot.netease{background:var(--source-netease);color:var(--source-netease)}
-.account-source-dot.qq{background:var(--source-qq);color:var(--source-qq)}
-.top-account-pill{height:44px;min-width:0;display:flex;align-items:center;gap:8px;padding:0 14px 0 4px;border-radius:24px;border:1px solid rgba(244,210,138,.52);background:rgba(244,210,138,.07);box-shadow:0 0 0 1px rgba(244,210,138,.08),0 14px 42px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.08);transition:background .22s,border-color .22s,box-shadow .22s,transform .22s}
-#user-btn.multi-account:hover .top-account-pill{background:rgba(244,210,138,.10);border-color:rgba(244,210,138,.62);box-shadow:0 0 0 1px rgba(244,210,138,.10),0 16px 44px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.10)}
-.top-account-pill img{width:34px;height:34px;border-radius:50%;object-fit:cover;background:rgba(255,255,255,.08);flex-shrink:0}
-.top-account-name{max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:650;color:rgba(255,255,255,.92)}
-.top-account-vip{font-size:9px;padding:2px 6px;border-radius:3px;background:linear-gradient(135deg,#fff3c2,var(--champagne),#c9963d);color:#201303;font-weight:800;letter-spacing:.5px;box-shadow:0 0 12px rgba(244,210,138,.24);flex-shrink:0}
-.top-account-vip.qq{background:linear-gradient(135deg,#e7fff9,#00f5d4,#61a8ff);color:#03100f;box-shadow:0 0 12px rgba(0,245,212,.22)}
 .update-entry{position:relative;display:none;width:44px;height:44px;border-radius:50%;border:1px solid rgba(244,210,138,.26);background:radial-gradient(circle at 50% 36%,rgba(244,210,138,.14),rgba(255,255,255,.030) 58%,rgba(157,184,207,.020));color:rgba(255,239,190,.94);align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(22px) saturate(1.25);-webkit-backdrop-filter:blur(22px) saturate(1.25);box-shadow:0 14px 38px rgba(0,0,0,.30),0 0 22px rgba(244,210,138,.08),0 0 0 1px rgba(255,255,255,.026),inset 0 1px 0 rgba(255,255,255,.09);transition:border-color .22s,background .22s,color .22s,box-shadow .22s,transform .22s;overflow:visible}
 .update-entry.available{display:flex}
 .update-entry:hover{color:#fff8df;border-color:rgba(244,210,138,.58);background:radial-gradient(circle at 50% 34%,rgba(244,210,138,.22),rgba(255,255,255,.045) 58%,rgba(157,184,207,.028));box-shadow:0 16px 44px rgba(0,0,0,.34),0 0 26px rgba(244,210,138,.18),0 0 18px rgba(157,184,207,.08),inset 0 1px 0 rgba(255,255,255,.13)}
@@ -959,7 +944,6 @@ body.immersive-mode #hint,
 body.immersive-mode #upload-tip,
 body.immersive-mode #drop-overlay,
 body.immersive-mode #idle-guide-canvas,
-body.immersive-mode #login-guide-canvas,
 body.immersive-mode #toast,
 body.immersive-mode #source-fallback-notice,
 body.immersive-mode .modal-mask{opacity:0!important;visibility:hidden!important;pointer-events:none!important}
@@ -974,67 +958,19 @@ body.immersive-mode::after{content:'';position:fixed;left:0;right:0;bottom:0;hei
 #trial-banner{position:fixed;z-index:8;top:80px;left:50%;transform:translateX(-50%) translateY(-10px);background:rgba(244,210,138,0.11);border:1px solid rgba(244,210,138,0.40);color:var(--champagne);padding:10px 18px 10px 14px;border-radius:12px;font-size:12px;letter-spacing:.3px;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);display:flex;align-items:center;gap:10px;opacity:0;pointer-events:none;transition:opacity .5s,transform .5s;max-width:90vw}
 #trial-banner.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
 #trial-banner .ic{flex-shrink:0;color:var(--champagne)}
-#trial-banner .login-link{margin-left:6px;color:#fff;background:rgba(255,255,255,0.1);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:11px;transition:background .2s;border:1px solid rgba(255,255,255,0.15)}
-#trial-banner .login-link:hover{background:rgba(255,255,255,0.18)}
+#trial-banner .import-link{margin-left:6px;color:#fff;background:rgba(255,255,255,0.1);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:11px;transition:background .2s;border:1px solid rgba(255,255,255,0.15)}
+#trial-banner .import-link:hover{background:rgba(255,255,255,0.18)}
 #trial-banner .close{cursor:pointer;color:rgba(255,255,255,0.5);padding:2px 4px;margin-left:4px;transition:color .2s}
 #trial-banner .close:hover{color:#fff}
 
 /* ---------- 模态 ---------- */
-#login-guide-canvas{position:fixed;inset:0;z-index:49;width:100%;height:100%;opacity:0;pointer-events:none;transition:opacity .24s ease}
-body.login-guide-active #login-guide-canvas{opacity:1}
 .modal-mask{position:fixed;inset:0;z-index:50;background:radial-gradient(circle at 50% 48%,rgba(244,210,138,.07),transparent 34%),rgba(0,0,0,0.78);display:none;align-items:center;justify-content:center;opacity:0;visibility:hidden}
 .modal-mask.show{display:flex;opacity:1;visibility:visible}
 .modal-mask::before{content:none}
 .modal{position:relative;background:linear-gradient(180deg,rgba(24,23,26,0.96),rgba(12,11,12,0.92));border:1px solid rgba(244,210,138,0.16);border-radius:18px;padding:32px;max-width:380px;width:90vw;text-align:center;box-shadow:0 26px 90px rgba(0,0,0,.56),0 0 0 1px rgba(255,255,255,.035),inset 0 1px 0 rgba(255,255,255,.07);will-change:opacity,transform,filter}
 .modal h2{font-size:18px;font-weight:500;letter-spacing:.5px;margin-bottom:18px;color:rgba(255,255,255,0.95)}
 .modal .desc{font-size:12.5px;color:rgba(255,255,255,0.5);margin-bottom:20px;line-height:1.6}
-.dual-login-modal,.dual-user-modal{width:min(470px,92vw);max-width:min(470px,92vw)}
-.login-intro{margin:-6px 0 16px;padding:14px 15px;border-radius:14px;border:1px solid rgba(255,255,255,.075);background:linear-gradient(135deg,rgba(255,83,103,.09),rgba(244,210,138,.055),rgba(255,255,255,.025));text-align:left}
-.login-intro-kicker{font-size:10px;font-weight:780;letter-spacing:.18em;color:rgba(244,210,138,.72);text-transform:uppercase;margin-bottom:6px}
-.login-intro-title{font-size:18px;font-weight:760;line-height:1.18;color:rgba(255,255,255,.95);letter-spacing:0;margin-bottom:6px}
-.login-intro-body{font-size:12px;line-height:1.58;color:rgba(255,255,255,.56)}
-.login-platform-tabs,.user-platform-tabs{display:flex;gap:8px;margin:0 auto 18px;padding:4px;border-radius:999px;border:1px solid rgba(255,255,255,.075);background:rgba(255,255,255,.035)}
-.login-platform-tabs button,.user-platform-tabs button{flex:1;min-width:0;height:32px;border:0;border-radius:999px;background:transparent;color:rgba(255,255,255,.48);font-family:inherit;font-size:11.5px;font-weight:700;letter-spacing:.45px;cursor:pointer;transition:background .22s,color .22s,box-shadow .22s,transform .22s;white-space:nowrap}
-.login-platform-tabs button:hover,.user-platform-tabs button:hover{color:rgba(255,255,255,.82)}
-.login-platform-tabs button.active,.user-platform-tabs button.active{color:#fff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),0 10px 26px rgba(0,0,0,.20)}
-.login-platform-tabs button.netease.active,.user-platform-tabs button.netease.active{background:rgba(217,91,103,.16);color:#ffd7dc}
-.login-platform-tabs button.qq.active,.user-platform-tabs button.qq.active{background:rgba(191,214,107,.16);color:#f3ffd1}
-.user-platform-tabs button.both.active{background:rgba(244,210,138,.14);color:#fff0bf}
-.qr-shell{position:relative;width:200px;height:200px;margin:0 auto 16px;border-radius:16px}
-#qr-img{width:200px;height:200px;background:#fff;border-radius:14px;margin:0 auto 16px;display:block;padding:10px;box-shadow:0 16px 42px rgba(0,0,0,.32),0 0 0 1px rgba(244,210,138,.18)}
-.qr-shell #qr-img{margin:0}
-.qr-shell.web-login-preview{display:flex;align-items:center;justify-content:center;padding:14px;background:radial-gradient(circle at 50% 42%,rgba(191,214,107,.22),transparent 46%),rgba(255,255,255,.035);border:1px solid rgba(191,214,107,.26);box-shadow:0 16px 42px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.08)}
-.qr-shell.web-login-preview.netease-preview{background:radial-gradient(circle at 50% 42%,rgba(217,91,103,.22),transparent 46%),rgba(255,255,255,.035);border-color:rgba(217,91,103,.28)}
-.qr-shell.web-login-preview #qr-img{display:none}
-.qq-login-mark{display:none;width:100%;height:100%;border-radius:12px;border:1px solid rgba(191,214,107,.30);align-items:center;justify-content:center;flex-direction:column;gap:8px;color:rgba(243,255,209,.88);background:linear-gradient(135deg,rgba(191,214,107,.10),rgba(157,184,207,.05));cursor:pointer;font-family:inherit;outline:none;transition:transform .22s,border-color .22s,background .22s,box-shadow .22s}
-.qr-shell.web-login-preview .qq-login-mark{display:flex}
-.qq-login-mark:hover{transform:translateY(-1px);border-color:rgba(191,214,107,.54);background:linear-gradient(135deg,rgba(191,214,107,.16),rgba(157,184,207,.08));box-shadow:inset 0 1px 0 rgba(255,255,255,.10),0 16px 38px rgba(0,0,0,.22)}
-.qr-shell.netease-preview .qq-login-mark{border-color:rgba(217,91,103,.34);color:#ffd7dc;background:linear-gradient(135deg,rgba(217,91,103,.10),rgba(244,210,138,.05))}
-.qr-shell.netease-preview .qq-login-mark:hover{border-color:rgba(217,91,103,.58);background:linear-gradient(135deg,rgba(217,91,103,.16),rgba(244,210,138,.08))}
-.qq-login-mark:disabled{opacity:.66;cursor:wait;transform:none}
-.qq-login-mark b{font-size:22px;letter-spacing:.08em}
-.qq-login-mark span{font-size:10.5px;color:rgba(255,255,255,.46);letter-spacing:.5px}
-.qq-cookie-panel{display:none;margin-top:12px;padding:12px;border-radius:14px;border:1px solid rgba(191,214,107,.18);background:rgba(255,255,255,.035)}
-.qq-cookie-panel.show{display:block}
-.qq-cookie-input{width:100%;height:74px;resize:none;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(0,0,0,.22);color:rgba(255,255,255,.82);padding:10px 11px;font-family:inherit;font-size:11px;line-height:1.45;outline:none}
-.qq-cookie-input:focus{border-color:rgba(191,214,107,.42);box-shadow:0 0 0 1px rgba(191,214,107,.10)}
-.qq-cookie-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:9px}
-.qq-cookie-note{font-size:10.5px;color:rgba(255,255,255,.36);line-height:1.45;text-align:left}
-.qq-cookie-panel .modal-btn{padding:8px 12px;white-space:nowrap}
-#qq-cookie-toggle-btn{display:none;padding:8px 13px}
-#qq-cookie-toggle-btn.show{display:inline-flex;align-items:center;justify-content:center}
-#qr-status{font-size:12px;color:rgba(255,255,255,0.7);min-height:18px;margin-bottom:14px;letter-spacing:.3px}
-#qr-status.scan{color:#7ee2a8}
-#qr-status.fail{color:#f08080}
-#qr-status.preview{color:rgba(191,214,107,.86)}
-.account-provider-chip{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px;margin-bottom:10px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.035);font-size:10.5px;letter-spacing:.5px;color:rgba(255,255,255,.58)}
-.account-provider-chip.netease{border-color:rgba(217,91,103,.26);color:#ffd7dc;background:rgba(217,91,103,.08)}
-.account-provider-chip.qq{border-color:rgba(191,214,107,.26);color:#f3ffd1;background:rgba(191,214,107,.08)}
-.account-modal-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
-.account-modal-actions .modal-btn{padding:8px 10px}
-.account-hint{margin-top:10px;font-size:11px;line-height:1.45;color:rgba(255,255,255,.38)}
 .modal .btn-row{display:flex;gap:10px;justify-content:center;margin-top:16px}
-.dual-login-modal .btn-row{flex-wrap:wrap}
 .modal-btn{padding:8px 20px;font-size:12.5px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.05);color:#fff;cursor:pointer;letter-spacing:.5px;transition:all .2s;font-family:inherit}
 .modal-btn:hover{background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.3)}
 .modal-btn.primary{background:rgba(244,210,138,0.14);border-color:rgba(244,210,138,0.50);color:var(--champagne)}
@@ -1590,14 +1526,14 @@ html.control-glass-svg-ok #search-box,html.control-glass-svg-ok #search-results,
   backdrop-filter:var(--saved-panel-glass-svg-filter)!important;
   -webkit-backdrop-filter:var(--saved-panel-glass-svg-filter)!important;
 }
-.icon-btn,#fx-fab,.user-capsule-hide-btn,.fx-mini-btn,.fx-toggle,.fx-seg button,.panel-tab,.preset-card,.lyric-color-row,.fx-slider,.fx-fold,.quality-option,.modal-btn,.visual-guide-actions button,.home-chip,.pl-card,.queue-item,.mini-queue-item,.pl-detail-row,.pl-detail-play,.local-beat-tab,.search-history-chip,.search-result .add-btn,.song-action-btn,.qi-act button,.mini-queue-remove{
+.icon-btn,#fx-fab,.fx-mini-btn,.fx-toggle,.fx-seg button,.panel-tab,.preset-card,.lyric-color-row,.fx-slider,.fx-fold,.quality-option,.modal-btn,.visual-guide-actions button,.home-chip,.pl-card,.queue-item,.mini-queue-item,.pl-detail-row,.pl-detail-play,.local-beat-tab,.search-history-chip,.search-result .add-btn,.song-action-btn,.qi-act button,.mini-queue-remove{
   background:var(--saved-button-glass-bg)!important;
   border-color:transparent!important;
   box-shadow:var(--saved-button-glass-shadow)!important;
   backdrop-filter:var(--saved-button-glass-filter)!important;
   -webkit-backdrop-filter:var(--saved-button-glass-filter)!important;
 }
-html.control-glass-svg-ok .icon-btn,html.control-glass-svg-ok #fx-fab,html.control-glass-svg-ok .user-capsule-hide-btn,html.control-glass-svg-ok .fx-mini-btn,html.control-glass-svg-ok .fx-toggle,html.control-glass-svg-ok .fx-seg button,html.control-glass-svg-ok .panel-tab,html.control-glass-svg-ok .preset-card,html.control-glass-svg-ok .lyric-color-row,html.control-glass-svg-ok .fx-slider,html.control-glass-svg-ok .fx-fold,html.control-glass-svg-ok .quality-option,html.control-glass-svg-ok .modal-btn,html.control-glass-svg-ok .visual-guide-actions button,html.control-glass-svg-ok .home-chip,html.control-glass-svg-ok .pl-card,html.control-glass-svg-ok .queue-item,html.control-glass-svg-ok .mini-queue-item,html.control-glass-svg-ok .pl-detail-row,html.control-glass-svg-ok .pl-detail-play,html.control-glass-svg-ok .local-beat-tab,html.control-glass-svg-ok .search-history-chip,html.control-glass-svg-ok .search-result .add-btn,html.control-glass-svg-ok .song-action-btn,html.control-glass-svg-ok .qi-act button,html.control-glass-svg-ok .mini-queue-remove{
+html.control-glass-svg-ok .icon-btn,html.control-glass-svg-ok #fx-fab,html.control-glass-svg-ok .fx-mini-btn,html.control-glass-svg-ok .fx-toggle,html.control-glass-svg-ok .fx-seg button,html.control-glass-svg-ok .panel-tab,html.control-glass-svg-ok .preset-card,html.control-glass-svg-ok .lyric-color-row,html.control-glass-svg-ok .fx-slider,html.control-glass-svg-ok .fx-fold,html.control-glass-svg-ok .quality-option,html.control-glass-svg-ok .modal-btn,html.control-glass-svg-ok .visual-guide-actions button,html.control-glass-svg-ok .home-chip,html.control-glass-svg-ok .pl-card,html.control-glass-svg-ok .queue-item,html.control-glass-svg-ok .mini-queue-item,html.control-glass-svg-ok .pl-detail-row,html.control-glass-svg-ok .pl-detail-play,html.control-glass-svg-ok .local-beat-tab,html.control-glass-svg-ok .search-history-chip,html.control-glass-svg-ok .search-result .add-btn,html.control-glass-svg-ok .song-action-btn,html.control-glass-svg-ok .qi-act button,html.control-glass-svg-ok .mini-queue-remove{
   backdrop-filter:var(--saved-button-glass-svg-filter)!important;
   -webkit-backdrop-filter:var(--saved-button-glass-svg-filter)!important;
 }
@@ -1681,13 +1617,24 @@ html.control-glass-svg-ok #search-box,html.control-glass-svg-ok #search-results,
   backdrop-filter:var(--panel-glass-filter)!important;
   -webkit-backdrop-filter:var(--panel-glass-filter)!important;
 }
-.icon-btn:not(.ctrl-btn),#fx-fab,.user-capsule-hide-btn,.fx-mini-btn,.fx-toggle,.fx-seg button,.panel-tab,.preset-card,.lyric-color-row,.fx-slider,.fx-fold,.quality-option,.modal-btn,.visual-guide-actions button,.home-chip,.local-beat-tab,.search-history-chip,.search-result .add-btn,.song-action-btn{
+#search-mode-tabs.is-collapsed,
+html.control-glass-svg-ok #search-mode-tabs.is-collapsed{
+  width:max-content!important;
+  max-width:max-content!important;
+  padding:0!important;
+  background:transparent!important;
+  border-color:transparent!important;
+  box-shadow:none!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+}
+.icon-btn:not(.ctrl-btn),#fx-fab,.fx-mini-btn,.fx-toggle,.fx-seg button,.panel-tab,.preset-card,.lyric-color-row,.fx-slider,.fx-fold,.quality-option,.modal-btn,.visual-guide-actions button,.home-chip,.local-beat-tab,.search-history-chip,.search-result .add-btn,.song-action-btn{
   background:var(--panel-button-bg)!important;
   border-color:rgba(255,255,255,.070)!important;
   backdrop-filter:blur(16px) saturate(1.18)!important;
   -webkit-backdrop-filter:blur(16px) saturate(1.18)!important;
 }
-html.control-glass-svg-ok .icon-btn:not(.ctrl-btn),html.control-glass-svg-ok #fx-fab,html.control-glass-svg-ok .user-capsule-hide-btn,html.control-glass-svg-ok .fx-mini-btn,html.control-glass-svg-ok .fx-toggle,html.control-glass-svg-ok .fx-seg button,html.control-glass-svg-ok .panel-tab,html.control-glass-svg-ok .preset-card,html.control-glass-svg-ok .lyric-color-row,html.control-glass-svg-ok .fx-slider,html.control-glass-svg-ok .fx-fold,html.control-glass-svg-ok .quality-option,html.control-glass-svg-ok .modal-btn,html.control-glass-svg-ok .visual-guide-actions button,html.control-glass-svg-ok .home-chip,html.control-glass-svg-ok .local-beat-tab,html.control-glass-svg-ok .search-history-chip,html.control-glass-svg-ok .search-result .add-btn,html.control-glass-svg-ok .song-action-btn{
+html.control-glass-svg-ok .icon-btn:not(.ctrl-btn),html.control-glass-svg-ok #fx-fab,html.control-glass-svg-ok .fx-mini-btn,html.control-glass-svg-ok .fx-toggle,html.control-glass-svg-ok .fx-seg button,html.control-glass-svg-ok .panel-tab,html.control-glass-svg-ok .preset-card,html.control-glass-svg-ok .lyric-color-row,html.control-glass-svg-ok .fx-slider,html.control-glass-svg-ok .fx-fold,html.control-glass-svg-ok .quality-option,html.control-glass-svg-ok .modal-btn,html.control-glass-svg-ok .visual-guide-actions button,html.control-glass-svg-ok .home-chip,html.control-glass-svg-ok .local-beat-tab,html.control-glass-svg-ok .search-history-chip,html.control-glass-svg-ok .search-result .add-btn,html.control-glass-svg-ok .song-action-btn{
   backdrop-filter:blur(16px) saturate(1.18)!important;
   -webkit-backdrop-filter:blur(16px) saturate(1.18)!important;
 }
@@ -1733,7 +1680,7 @@ html.control-glass-svg-ok #search-box{
   backdrop-filter:url(#mineradio-search-box-glass-filter) saturate(1)!important;
   -webkit-backdrop-filter:url(#mineradio-search-box-glass-filter) saturate(1)!important;
 }
-#home-btn,#upload-btn,#visual-guide-btn,#fx-fab,.top-account-pill,#top-right .icon-btn{
+#home-btn,#upload-btn,#visual-guide-btn,#fx-fab,#top-right .icon-btn{
   background:var(--saved-button-glass-bg)!important;
   border-color:transparent!important;
   box-shadow:var(--saved-button-glass-shadow)!important;
@@ -1744,7 +1691,6 @@ html.control-glass-svg-ok #home-btn,
 html.control-glass-svg-ok #upload-btn,
 html.control-glass-svg-ok #visual-guide-btn,
 html.control-glass-svg-ok #fx-fab,
-html.control-glass-svg-ok .top-account-pill,
 html.control-glass-svg-ok #top-right .icon-btn{
   backdrop-filter:var(--saved-button-glass-svg-filter)!important;
   -webkit-backdrop-filter:var(--saved-button-glass-svg-filter)!important;
@@ -1790,6 +1736,18 @@ html.control-glass-svg-ok #search-results{
   background:rgba(0,0,0,.72)!important;
   border:1px solid rgba(255,255,255,.10)!important;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.07)!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+}
+#search-mode-tabs.is-collapsed,
+html.control-glass-svg-ok #search-mode-tabs.is-collapsed{
+  width:max-content!important;
+  max-width:max-content!important;
+  padding:0!important;
+  margin-top:8px!important;
+  background:transparent!important;
+  border:0!important;
+  box-shadow:none!important;
   backdrop-filter:none!important;
   -webkit-backdrop-filter:none!important;
 }
@@ -1888,7 +1846,6 @@ html.control-glass-svg-ok #home-btn,
 html.control-glass-svg-ok #upload-btn,
 html.control-glass-svg-ok #visual-guide-btn,
 html.control-glass-svg-ok #fx-fab,
-html.control-glass-svg-ok .top-account-pill,
 html.control-glass-svg-ok #top-right .icon-btn{
   backdrop-filter:var(--saved-button-glass-svg-filter)!important;
   -webkit-backdrop-filter:var(--saved-button-glass-svg-filter)!important;
@@ -2421,14 +2378,10 @@ body.player-lyric-drag-mode #stage-lyrics::after{content:'拖拽模式';position
   </div>
 </section>
 
-<!-- 顶部右侧 (只保留用户) -->
+<!-- 顶部右侧 -->
 <div id="top-right">
-  <button id="user-capsule-hide-btn" class="user-capsule-hide-btn" type="button" onclick="toggleUserCapsuleAutoHide(event)" title="自动隐藏账号胶囊">‹</button>
   <button id="home-btn" class="icon-btn" onclick="goHome()" title="回到 Home" aria-label="回到 Home">
     <svg width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path d="M3 10.8 12 3l9 7.8"/><path d="M5 10v10h14V10"/><path d="M9.5 20v-5h5v5"/></svg>
-  </button>
-  <button id="user-btn" class="icon-btn logged-out" onclick="onUserBtnClick()" title="登录账号">
-    <span class="login-word">登录</span>
   </button>
 </div>
 
@@ -2447,6 +2400,7 @@ body.player-lyric-drag-mode #stage-lyrics::after{content:'拖拽模式';position
   <div id="source-toolbar" class="source-toolbar" aria-label="音源工具">
     <div class="source-toolbar-items">
       <button id="lx-source-status-btn" class="source-status-btn" type="button" onclick="showCurrentLxSource()" title="查看当前音源">音源：读取中</button>
+      <button id="lx-source-oneclick-btn" class="source-import-btn" type="button" onclick="openLxSourceImport()" title="一次选择多个本地落雪音源脚本并批量导入">一键导入</button>
       <button id="lx-source-url-btn" class="source-import-btn" type="button" onclick="importLxSourceUrl()" title="通过链接导入落雪兼容音源">导入链接</button>
       <button class="source-import-btn" type="button" onclick="openLxSourceImport()" title="导入本地落雪音源脚本">导入文件</button>
     </div>
@@ -2840,7 +2794,7 @@ body.player-lyric-drag-mode #stage-lyrics::after{content:'拖拽模式';position
 <div id="trial-banner">
   <svg class="ic" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
   <span id="trial-text">仅播放试听片段</span>
-  <span id="trial-login-btn" class="login-link" onclick="openLocalFolderImport()">导入本地音乐</span>
+  <span id="trial-import-btn" class="import-link" onclick="openLocalFolderImport()">导入本地音乐</span>
   <span class="close" onclick="document.getElementById('trial-banner').classList.remove('show')">×</span>
 </div>
 
@@ -3002,17 +2956,12 @@ body.player-lyric-drag-mode #stage-lyrics::after{content:'拖拽模式';position
   </div>
 </div>
 
-<input type="file" id="file-input" accept=".mp3,.flac,.wav,.ogg,.m4a,.lrc,.txt,.jpg,.jpeg,.png,.webp" multiple style="display:none">
-<input type="file" id="local-folder-input" accept=".mp3,.flac,.wav,.ogg,.m4a,.lrc,.txt,.jpg,.jpeg,.png,.webp" webkitdirectory directory multiple style="display:none">
+<input type="file" id="file-input" accept=".mp3,.flac,.wav,.ogg,.opus,.m4a,.mp4,.aac,.webm,.ape,.wma,.aiff,.aif,.aifc,.caf,.amr,.awb,.oga,.mka,.mkv,.m4b,.alac,.ac3,.dts,.tta,.tak,.wv,.au,.snd,.ra,.rm,.lrc,.txt,.jpg,.jpeg,.png,.webp" multiple style="display:none">
+<input type="file" id="local-folder-input" accept=".mp3,.flac,.wav,.ogg,.opus,.m4a,.mp4,.aac,.webm,.ape,.wma,.aiff,.aif,.aifc,.caf,.amr,.awb,.oga,.mka,.mkv,.m4b,.alac,.ac3,.dts,.tta,.tak,.wv,.au,.snd,.ra,.rm,.lrc,.txt,.jpg,.jpeg,.png,.webp" webkitdirectory directory multiple style="display:none">
 <input type="file" id="background-image-input" accept=".jpg,.jpeg,.png,.webp,.mp4,.webm,.mov,image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime" style="display:none">
 <div id="drop-overlay"><div class="drop-text">拖放音乐或封面</div></div>
 <div id="free-camera-hint"><b>自由镜头</b> R 固定/退出 · WASD 移动 · 鼠标转向 · Shift 加速 · Space/Ctrl 升降 · Q/E 轻微旋转 · 滚轮景深 · K 回正</div>
 <div id="loading-overlay"><div class="spinner"></div></div>
-
-<canvas id="login-guide-canvas" aria-hidden="true"></canvas>
-
-<div id="login-modal" class="modal-mask"></div>
-<div id="user-modal" class="modal-mask"></div>
 
 <!-- 封面裁剪模态 -->
 <div id="cover-crop-modal" class="modal-mask">
@@ -3113,7 +3062,7 @@ body.player-lyric-drag-mode #stage-lyrics::after{content:'拖拽模式';position
         <div>
           <div class="update-kicker">MINERADIO</div>
           <div id="update-modal-title" class="update-title">New release</div>
-          <div id="update-modal-version" class="update-version">v1.5.1</div>
+          <div id="update-modal-version" class="update-version">v1.5.3</div>
         </div>
       </div>
       <div class="update-hero">
@@ -3229,8 +3178,6 @@ var lyricsLines = [], lyricsVisible = false, lyricsHasNativeKaraoke = false, lyr
 var playlist = [], playQueue = [], localLibrarySongs = [], localFolderPlaylists = [], currentIdx = -1, playing = false, playToggleBusy = false;
 var localLibraryPassiveQueue = false;
 var searchMode = 'all';
-var loginStatus = { loggedIn: false, vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, vipLabel: '本地模式' };
-var loginStatusChecked = false, loginStatusCheckFailed = false;
 var volumeTween = null, trackSwitchToken = 0;
 var audioFadeTimer = null, audioElementFadeFrame = 0, audioFadeSerial = 0;
 var AUDIO_FADE_IN_MS = 460;
@@ -3248,7 +3195,6 @@ var PLAYBACK_TUNING_STORE_KEY = 'mineradio-playback-tuning-v1';
 var UPLOAD_TIP_STORE_KEY = 'mineradio-upload-tip-seen';
 var DIY_MODE_STORE_KEY = 'mineradio-diy-player-mode-v1';
 var PLAYLIST_PANEL_PIN_STORE_KEY = 'mineradio-playlist-panel-pinned-v1';
-var USER_CAPSULE_AUTO_HIDE_STORE_KEY = 'mineradio-user-capsule-auto-hide-v1';
 var FX_FAB_AUTO_HIDE_STORE_KEY = 'mineradio-fx-fab-auto-hide-v1';
 var CONTROLS_AUTO_HIDE_STORE_KEY = 'mineradio-controls-auto-hide-v1';
 var FREE_CAMERA_STORE_KEY = 'mineradio-free-camera-v1';
@@ -3270,7 +3216,6 @@ var PERSISTENT_UI_STATE_KEYS = [
   PLAYBACK_TUNING_STORE_KEY,
   DIY_MODE_STORE_KEY,
   PLAYLIST_PANEL_PIN_STORE_KEY,
-  USER_CAPSULE_AUTO_HIDE_STORE_KEY,
   FX_FAB_AUTO_HIDE_STORE_KEY,
   CONTROLS_AUTO_HIDE_STORE_KEY,
   FREE_CAMERA_STORE_KEY,
@@ -3432,8 +3377,8 @@ var updatePreviewState = {
   installerPath: '',
   installerOpened: false,
   cached: false,
-  currentVersion: '1.5.1',
-  version: '1.1.0',
+  currentVersion: '1.5.3',
+  version: '1.5.3',
   configured: false,
   preview: true,
   updateAvailable: false,
@@ -3456,9 +3401,9 @@ var updatePreviewState = {
   patchFallbackTried: false,
   hero: '当前版本，更新检测已就绪。',
   notes: [
-    '安装包文字对比修复',
-    '安装目录可自由选择',
-    '单实例与快捷方式修复'
+    '当前版本信息已同步',
+    '可在设置里手动检查更新',
+    '发现新版本后可在应用内下载完整安装包'
   ]
 };
 function readSavedVolume() {
@@ -3487,30 +3432,6 @@ function readBooleanPreference(key, fallback) {
 }
 function saveBooleanPreference(key, on) {
   setPersistentLocalStorageItem(key, on ? '1' : '0');
-}
-function applyUserCapsuleAutoHideState() {
-  document.body.classList.toggle('user-capsule-auto-hide', !!userCapsuleAutoHide);
-  var btn = document.getElementById('user-capsule-hide-btn');
-  if (btn) {
-    btn.classList.toggle('on', !!userCapsuleAutoHide);
-    btn.textContent = userCapsuleAutoHide ? '›' : '‹';
-    btn.title = userCapsuleAutoHide ? '取消自动隐藏账号胶囊' : '自动隐藏账号胶囊';
-  }
-}
-function toggleUserCapsuleAutoHide(e) {
-  if (e && e.stopPropagation) e.stopPropagation();
-  userCapsuleAutoHide = !userCapsuleAutoHide;
-  saveBooleanPreference(USER_CAPSULE_AUTO_HIDE_STORE_KEY, userCapsuleAutoHide);
-  applyUserCapsuleAutoHideState();
-  showToast(userCapsuleAutoHide ? '账号胶囊已自动隐藏' : '账号胶囊已固定显示');
-}
-function updateUserCapsuleAutoHideFromPointer(x, y) {
-  if (!userCapsuleAutoHide || immersiveMode) {
-    document.body.classList.remove('user-capsule-peek');
-    return;
-  }
-  var nearTopRight = x > innerWidth - 112 && y < 126;
-  document.body.classList.toggle('user-capsule-peek', nearTopRight);
 }
 function applyFxFabAutoHideState(opts) {
   opts = opts || {};
@@ -3553,7 +3474,7 @@ function layoutFullscreenDiyZone() {
   var height = innerWidth < 720 ? 48 : 52;
   var left = innerWidth - 510;
   var top = 24;
-  var anchor = document.querySelector('#top-right .top-account-pill') || document.getElementById('user-btn') || document.getElementById('top-right');
+  var anchor = document.getElementById('top-right');
   if (anchor) {
     var rect = anchor.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) {
@@ -3592,7 +3513,7 @@ function updateFullscreenDiyPeekFromPointer(x, y) {
     return;
   }
   var rect = layoutFullscreenDiyZone();
-  var anchor = document.querySelector('#top-right .top-account-pill') || document.getElementById('user-btn') || document.getElementById('top-right');
+  var anchor = document.getElementById('top-right');
   var anchorRect = anchor ? anchor.getBoundingClientRect() : rect;
   var hitLeft = Math.min(rect.left, anchorRect.left) - 26;
   var hitRight = Math.max(rect.left + rect.width, anchorRect.right) + 26;
@@ -4441,7 +4362,6 @@ var cursorHideTimer = null;
 var CURSOR_HIDE_DELAY = 2500;
 var fxPanelPinned = false;
 var playlistPanelPinned = readBooleanPreference(PLAYLIST_PANEL_PIN_STORE_KEY, false);
-var userCapsuleAutoHide = readBooleanPreference(USER_CAPSULE_AUTO_HIDE_STORE_KEY, false);
 var fxFabAutoHide = readBooleanPreference(FX_FAB_AUTO_HIDE_STORE_KEY, false);
 var fxFabAutoHideRevealArmed = true;
 
@@ -18524,7 +18444,6 @@ function runHomeSearch(query, mode) {
   else renderLocalLibraryResults('');
 }
 function skipLoginAndFocusSearch() {
-  closeLoginModal();
   setTimeout(function(){ runHomeSearch(''); }, 180);
 }
 function openHomeLocalImport() {
@@ -18535,7 +18454,6 @@ function openHomeLocalImport() {
   openLocalFolderImport();
 }
 function openHomeProductGuide() {
-  closeLoginModal();
   setTimeout(function(){ startVisualGuide({ manual: true, source: 'home' }); }, 160);
 }
 async function waitForHomeDiscoverIdle(timeout) {
@@ -18889,7 +18807,28 @@ function localAudioFormatLabel(song) {
   if (ext === 'mp3') return 'MP3';
   if (ext === 'wav') return 'WAV';
   if (ext === 'm4a') return 'M4A';
+  if (ext === 'mp4') return 'MP4';
+  if (ext === 'aac') return 'AAC';
   if (ext === 'ogg') return 'OGG';
+  if (ext === 'opus') return 'OPUS';
+  if (ext === 'webm') return 'WEBM';
+  if (ext === 'ape') return 'APE';
+  if (ext === 'wma') return 'WMA';
+  if (ext === 'aiff' || ext === 'aif' || ext === 'aifc') return 'AIFF';
+  if (ext === 'caf') return 'CAF';
+  if (ext === 'amr') return 'AMR';
+  if (ext === 'awb') return 'AMR-WB';
+  if (ext === 'oga') return 'OGA';
+  if (ext === 'mka' || ext === 'mkv') return 'Matroska';
+  if (ext === 'm4b') return 'M4B';
+  if (ext === 'alac') return 'ALAC';
+  if (ext === 'ac3') return 'AC3';
+  if (ext === 'dts') return 'DTS';
+  if (ext === 'tta') return 'TTA';
+  if (ext === 'tak') return 'TAK';
+  if (ext === 'wv') return 'WavPack';
+  if (ext === 'au' || ext === 'snd') return 'AU';
+  if (ext === 'ra' || ext === 'rm') return 'RealAudio';
   return ext ? ext.toUpperCase() : 'LOCAL';
 }
 function localAudioFileBytes(song) {
@@ -19841,7 +19780,7 @@ async function refreshLxSourceBadge() {
     var notConfigured = /LX_SOURCE_NOT_CONFIGURED|LX_SOURCE_NOT_FOUND|ENOENT[^\n]*user_api\.json/i.test(sourceError);
     if (button) {
       button.textContent = notConfigured ? '音源：未配置' : '音源：不可用';
-      button.title = notConfigured ? '尚未配置播放音源，点击“导入”选择音源文件' : '当前音源加载失败';
+      button.title = notConfigured ? '尚未配置播放音源，点击“一键导入”批量选择音源文件' : '当前音源加载失败';
     }
   }
 }
@@ -19849,12 +19788,14 @@ async function showCurrentLxSource() {
   if (!currentLxSourceInfo) await refreshLxSourceBadge();
   var info = currentLxSourceInfo;
   if (!info) {
-    showToast('尚未配置播放音源，请点击顶部“导入文件”选择音源文件');
+    showToast('尚未配置播放音源，正在打开音源文件选择');
+    openLxSourceImport();
     return;
   }
   var installed = Array.isArray(info.installed) ? info.installed : [];
   if (!installed.length) {
-    showToast('尚未导入播放音源');
+    showToast('尚未导入播放音源，正在打开音源文件选择');
+    openLxSourceImport();
     return;
   }
   var old = document.getElementById('lx-source-manager-mask');
@@ -19970,9 +19911,7 @@ function openLxSourceImport() {
     input = document.createElement('input');
     input.id = 'lx-source-import-input';
     input.type = 'file';
-    // Android DocumentsUI treats a multi-file request as selection mode and
-    // does not return after a normal tap. Sources are validated one at a time.
-    input.multiple = false;
+    input.multiple = true;
     input.accept = '.js,application/javascript,text/javascript,text/plain';
     input.style.display = 'none';
     input.addEventListener('change', async function(){
@@ -20066,6 +20005,61 @@ function normalizeLxSourceUrlInput(value) {
     return '';
   }
 }
+function setLxSourceImportBusy(busy) {
+  ['lx-source-oneclick-btn', 'lx-source-url-btn'].forEach(function(id){
+    var button = document.getElementById(id);
+    if (button) button.disabled = !!busy;
+  });
+}
+async function importLxSourceFromUrlValue(sourceUrl, label) {
+  sourceUrl = normalizeLxSourceUrlInput(sourceUrl);
+  if (!sourceUrl) throw new Error('INVALID_SOURCE_URL');
+  showToast(label || '正在下载并验证音源...');
+  var result = await apiJson('/api/lx-source/import', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body:JSON.stringify({ url:sourceUrl }),
+    timeoutMs:30000
+  });
+  if (!result || !result.ok) throw new Error(result && result.error || 'IMPORT_FAILED');
+  currentLxSourceInfo = result;
+  await refreshLxSourceBadge();
+  return result;
+}
+async function readLxSourceClipboardText() {
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.readText === 'function') {
+      return String(await navigator.clipboard.readText() || '').trim();
+    }
+  } catch (e) {
+    console.warn('[LXSourceClipboard]', e);
+  }
+  return '';
+}
+async function oneClickImportLxSource() {
+  if (oneClickImportLxSource.busy) return;
+  oneClickImportLxSource.busy = true;
+  setLxSourceImportBusy(true);
+  try {
+    var clipboardText = await readLxSourceClipboardText();
+    var sourceUrl = normalizeLxSourceUrlInput(clipboardText);
+    if (!sourceUrl) {
+      showToast('请先复制音源链接或 64 位 APIKEY；也可以在弹窗中粘贴');
+      await importLxSourceUrl();
+      return;
+    }
+    var result = await importLxSourceFromUrlValue(sourceUrl, '正在一键导入音源...');
+    closeLxSourceUrlModal();
+    showToast('已导入并启用音源：' + result.name + ' ' + (result.version || ''));
+  } catch (e) {
+    console.warn('[LXSourceOneClickImport]', e);
+    showToast('一键导入失败：' + (e && e.message === 'INVALID_SOURCE_URL' ? '音源链接无效' : (e && e.message || '未知错误')));
+    await importLxSourceUrl();
+  } finally {
+    oneClickImportLxSource.busy = false;
+    setLxSourceImportBusy(false);
+  }
+}
 async function submitLxSourceUrl() {
   var input = document.getElementById('lx-source-url-static-value') || document.getElementById('lx-source-url-value');
   var rawSourceUrl = input ? String(input.value || '').trim() : '';
@@ -20075,16 +20069,8 @@ async function submitLxSourceUrl() {
     return;
   }
   try {
-    showToast('正在下载并验证音源…');
-    var result = await apiJson('/api/lx-source/import', {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json' },
-      body:JSON.stringify({ url:sourceUrl }),
-      timeoutMs:30000
-    });
-    if (!result || !result.ok) throw new Error(result && result.error || 'IMPORT_FAILED');
-    currentLxSourceInfo = result;
-    await refreshLxSourceBadge();
+    setLxSourceImportBusy(true);
+    var result = await importLxSourceFromUrlValue(sourceUrl, '正在下载并验证音源…');
     closeLxSourceUrlModal();
     var details = document.getElementById('lx-source-url-details');
     if (details) details.removeAttribute('open');
@@ -20092,6 +20078,8 @@ async function submitLxSourceUrl() {
   } catch (e) {
     console.warn('[LXSourceUrlImport]', e);
     showToast('音源链接导入失败：' + (e && e.message || '链接不可用'));
+  } finally {
+    setLxSourceImportBusy(false);
   }
 }
 var lxSourceUrlButton = document.getElementById('lx-source-url-btn');
@@ -20230,6 +20218,71 @@ async function submitPlatformPlaylistImport() {
     showToast('歌单导入失败：' + message);
   } finally {
     if (submit && document.body.contains(submit)) { submit.disabled = false; submit.textContent = '开始导入'; }
+  }
+}
+function platformPlaylistSyncInput(list) {
+  list = list || {};
+  return String(list.sourceInput || list.importInput || list.sourceListId || '').trim();
+}
+function isSyncablePlatformPlaylist(list) {
+  var sourceName = normalizeLxSourceName(list && list.source);
+  return !!(list && list.imported && /^(tx|wy|kw|kg|kgc|mg)$/.test(sourceName) && platformPlaylistSyncInput(list));
+}
+async function syncImportedPlatformPlaylist(lxIndex) {
+  var current = (lxMirrorPlaylists || [])[Number(lxIndex)];
+  if (!isSyncablePlatformPlaylist(current)) {
+    showToast('这个歌单没有可同步的平台来源');
+    return false;
+  }
+  var sourceName = normalizeLxSourceName(current.source);
+  var input = platformPlaylistSyncInput(current);
+  var oldCount = (current.songs || []).length;
+  try {
+    showToast('正在同步歌单：' + (current.name || '平台歌单'));
+    var result = await apiJson('/api/platform-playlist/import', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body:JSON.stringify({ input:input, source:sourceName }),
+      timeoutMs:45000
+    });
+    if (!result || !result.ok || !result.playlist) throw new Error(result && result.error || 'PLAYLIST_SYNC_FAILED');
+    var updated = Object.assign({}, result.playlist, {
+      id:current.id || result.playlist.id,
+      imported:true,
+      source:result.playlist.source || sourceName,
+      sourceListId:result.playlist.sourceListId || current.sourceListId || input,
+      sourceInput:result.playlist.sourceInput || current.sourceInput || input
+    });
+    var replaced = false;
+    lxImportedPlaylists = (lxImportedPlaylists || []).map(function(list){
+      if (String(list.id) === String(current.id)) {
+        replaced = true;
+        return updated;
+      }
+      return list;
+    });
+    if (!replaced) lxImportedPlaylists.unshift(updated);
+    writeHiddenPlaylistKeys(readHiddenPlaylistKeys().filter(function(key){ return key !== playlistVisibilityKey(updated); }));
+    saveImportedLxPlaylists();
+    lxMirrorPlaylists = applyRemovedLxPlaylistSongs(mergeLxPlaylistSources(
+      (lxMirrorPlaylists || []).filter(function(list){ return !list || !list.imported || String(list.id) === SEARCH_PLAYED_PLAYLIST_ID; }),
+      lxImportedPlaylists
+    ));
+    var nextIndex = lxMirrorPlaylists.findIndex(function(list){ return String(list && list.id) === String(updated.id); });
+    if (nextIndex >= 0) lxMirrorActivePlaylist = nextIndex;
+    renderHomeDiscover();
+    if (queueViewTab === 'playlists') renderLocalLibraryPlaylistPanel({ animate:false });
+    var newCount = (updated.songs || []).length;
+    var diff = newCount - oldCount;
+    showToast('已同步：' + (updated.name || current.name || '平台歌单') + ' · ' + newCount + ' 首' + (diff > 0 ? '，新增 ' + diff + ' 首' : ''));
+    return true;
+  } catch (e) {
+    console.warn('[PlatformPlaylistSync]', e);
+    var message = e && e.message || '同步失败';
+    if (/HTTP_40[13]/.test(message)) message = '平台拒绝访问，请确认原歌单仍为公开';
+    else if (/abort|timeout/i.test(message)) message = '读取超时，请检查网络后重试';
+    showToast('歌单同步失败：' + message);
+    return false;
   }
 }
 async function openPlaylistSelection() {
@@ -21189,18 +21242,22 @@ function normalizeLxSourceName(value) {
 function lxSongPlayPayload(song) {
   song = song || {};
   var sourceName = normalizeLxSourceName(song.source || song.provider || song.type);
-  var primaryId = song.songmid != null && song.songmid !== '' ? song.songmid
+  var fallbackIdPattern = /^(?:tx|wy|kw|kg|mg|song|row)_[0-9a-f]{12,}$/i;
+  var hasFallbackId = song.importFallbackId === true ||
+    fallbackIdPattern.test(String(song.songmid || '')) ||
+    fallbackIdPattern.test(String(song.id || ''));
+  var primaryId = hasFallbackId ? '' : (song.songmid != null && song.songmid !== '' ? song.songmid
     : (song.id != null && song.id !== '' ? song.id
-    : (song.hash || song.FileHash || song.copyrightId || song.rid || song.mid || ''));
+    : (song.hash || song.FileHash || song.copyrightId || song.rid || song.mid || '')));
   var payload = {
     name: song.name || '',
     singer: song.singer || song.artist || '',
     source: sourceName,
-    id: song.id != null && song.id !== '' ? song.id : primaryId,
-    songmid: song.songmid != null && song.songmid !== '' ? song.songmid : primaryId,
-    mid: song.mid || song.songmid || primaryId,
-    songId: song.songId || song.id || primaryId,
-    rid: song.rid || song.songmid || song.id || primaryId,
+    id: hasFallbackId ? '' : (song.id != null && song.id !== '' ? song.id : primaryId),
+    songmid: hasFallbackId ? '' : (song.songmid != null && song.songmid !== '' ? song.songmid : primaryId),
+    mid: hasFallbackId ? '' : (song.mid || song.songmid || primaryId),
+    songId: hasFallbackId ? '' : (song.songId || song.id || primaryId),
+    rid: hasFallbackId ? '' : (song.rid || song.songmid || song.id || primaryId),
     img: song.picUrl || song.img || song.cover || '',
     picUrl: song.picUrl || song.img || song.cover || '',
     albumId: song.albumId || '',
@@ -21210,25 +21267,26 @@ function lxSongPlayPayload(song) {
     meta: Object.assign({}, song.meta || {})
   };
   ['hash', 'FileHash', 'fileHash', 'strMediaMid', 'albumMid', 'copyrightId', 'copyrightid', 'lrcUrl', 'trcUrl', 'mrcUrl'].forEach(function(key){
+    if (hasFallbackId && !/Url$/i.test(key)) return;
     if (song[key] != null && song[key] !== '') payload[key] = song[key];
   });
   if (sourceName === 'tx') {
     payload.meta.qq = Object.assign({}, payload.meta.qq || {}, {
-      mid: song.songmid || song.mid || primaryId,
-      songmid: song.songmid || song.mid || primaryId,
-      songid: song.id || song.songId || ''
+      mid: hasFallbackId ? '' : (song.songmid || song.mid || primaryId),
+      songmid: hasFallbackId ? '' : (song.songmid || song.mid || primaryId),
+      songid: hasFallbackId ? '' : (song.id || song.songId || '')
     });
   } else if (sourceName === 'wy') {
-    payload.meta.wy = Object.assign({}, payload.meta.wy || {}, { id: song.id || song.songmid || primaryId });
+    payload.meta.wy = Object.assign({}, payload.meta.wy || {}, { id: hasFallbackId ? '' : (song.id || song.songmid || primaryId) });
   } else if (sourceName === 'kw') {
-    payload.meta.kw = Object.assign({}, payload.meta.kw || {}, { rid: song.rid || song.songmid || song.id || primaryId });
+    payload.meta.kw = Object.assign({}, payload.meta.kw || {}, { rid: hasFallbackId ? '' : (song.rid || song.songmid || song.id || primaryId) });
   } else if (sourceName === 'kg') {
-    var kgHash = song.hash || song.FileHash || song.fileHash || song.songmid || primaryId;
+    var kgHash = hasFallbackId ? '' : (song.hash || song.FileHash || song.fileHash || song.songmid || primaryId);
     payload.hash = payload.hash || kgHash;
     payload.FileHash = payload.FileHash || kgHash;
     payload.meta.kg = Object.assign({}, payload.meta.kg || {}, { hash:kgHash, FileHash:kgHash });
   } else if (sourceName === 'mg') {
-    var mgId = song.copyrightId || song.copyrightid || song.songmid || song.id || primaryId;
+    var mgId = hasFallbackId ? '' : (song.copyrightId || song.copyrightid || song.songmid || song.id || primaryId);
     payload.copyrightId = payload.copyrightId || mgId;
     payload.meta.mg = Object.assign({}, payload.meta.mg || {}, { copyrightId:mgId });
   }
@@ -21342,12 +21400,12 @@ async function resolveCrossPlatformAudioFallback(song, failedSource) {
           body:JSON.stringify({ source:sourceName, quality:qualities[0] || '320k', musicInfo:candidatePayload }),
           timeoutMs:30000
         });
-        if (resolved && resolved.ok && /^https?:\/\//i.test(String(resolved.url || ''))) {
+        if (resolved && resolved.ok && (/^https?:\/\//i.test(String(resolved.url || '')) || /^\/api\/audio\?/i.test(String(resolved.proxyUrl || '')))) {
           showSourceFallbackNotice(
             '已自动换源',
             (sourceNames[failedSource] || failedSource || '原平台') + '版本不可播放，已切换到' + (sourceNames[sourceName] || sourceName)
           );
-          return String(resolved.url);
+          return String(resolved.proxyUrl || resolved.url);
         }
       } catch (_candidateError) {}
     }
@@ -21387,9 +21445,9 @@ async function resolveImportedLxAudio(song, excludedResolvers) {
       throw e;
     }
     console.info('[LXSourceResolveResponse]', result);
-    if (result && result.ok && /^https?:\/\//i.test(String(result.url || ''))) {
+    if (result && result.ok && (/^https?:\/\//i.test(String(result.url || '')) || /^\/api\/audio\?/i.test(String(result.proxyUrl || '')))) {
       song._lastLxResolver = String(result.resolver || '');
-      return String(result.url);
+      return String(result.proxyUrl || result.url);
     }
     throw new Error(String(result && (result.error || result.message) || '音源未返回播放地址'));
   })();
@@ -21527,8 +21585,9 @@ function waitForImportedAudioUsable(media, timeoutMs) {
   });
 }
 async function startImportedAudioUrl(audioUrl) {
-  var proxyAudioUrl = (window.MOBILE_API_ORIGIN || '') + '/api/audio?url=' + encodeURIComponent(audioUrl);
-  var candidates = [proxyAudioUrl, audioUrl];
+  var directProxy = /^\/api\/audio\?/i.test(String(audioUrl || ''));
+  var proxyAudioUrl = directProxy ? audioUrl : ((window.MOBILE_API_ORIGIN || '') + '/api/audio?url=' + encodeURIComponent(audioUrl));
+  var candidates = directProxy ? [audioUrl] : [proxyAudioUrl, audioUrl];
   var lastError = null;
   for (var i = 0; i < candidates.length; i++) {
     try {
@@ -21703,7 +21762,7 @@ async function playLxMirrorSong(playlistIndex, songIndex, directSong) {
     console.warn('[LXMirrorPlay]', e);
     var message = String(e && e.message || '未知错误');
     if (/LX_SOURCE_NOT_CONFIGURED|LX_SOURCE_NOT_FOUND|ENOENT[^\n]*user_api\.json/i.test(message)) {
-      message = '尚未配置播放音源，请点击顶部“导入文件”选择音源文件';
+      message = '尚未配置播放音源，请点击顶部“一键导入”批量选择音源文件';
       refreshLxSourceBadge();
     } else if (/All promises were rejected|AggregateError/i.test(message)) {
       message = '这首歌的所有可用音源和音质都无法播放，请稍后重试或更换音源';
@@ -22912,9 +22971,33 @@ function localAudioMimeType(song) {
   if (/\.mp3$/.test(name)) return 'audio/mpeg';
   if (/\.flac$/.test(name)) return 'audio/flac';
   if (/\.wav$/.test(name)) return 'audio/wav';
-  if (/\.ogg$/.test(name)) return 'audio/ogg';
-  if (/\.m4a$/.test(name)) return 'audio/mp4';
+  if (/\.(ogg|opus)$/.test(name)) return 'audio/ogg';
+  if (/\.(m4a|mp4)$/.test(name)) return 'audio/mp4';
+  if (/\.aac$/.test(name)) return 'audio/aac';
+  if (/\.webm$/.test(name)) return 'audio/webm';
+  if (/\.ape$/.test(name)) return 'audio/x-ape';
+  if (/\.wma$/.test(name)) return 'audio/x-ms-wma';
+  if (/\.(aiff|aif|aifc)$/.test(name)) return 'audio/aiff';
+  if (/\.caf$/.test(name)) return 'audio/x-caf';
+  if (/\.amr$/.test(name)) return 'audio/amr';
+  if (/\.awb$/.test(name)) return 'audio/amr-wb';
+  if (/\.oga$/.test(name)) return 'audio/ogg';
+  if (/\.(mka|mkv)$/.test(name)) return 'audio/x-matroska';
+  if (/\.m4b$/.test(name)) return 'audio/mp4';
+  if (/\.alac$/.test(name)) return 'audio/alac';
+  if (/\.ac3$/.test(name)) return 'audio/ac3';
+  if (/\.dts$/.test(name)) return 'audio/vnd.dts';
+  if (/\.tta$/.test(name)) return 'audio/x-tta';
+  if (/\.tak$/.test(name)) return 'audio/x-tak';
+  if (/\.wv$/.test(name)) return 'audio/x-wavpack';
+  if (/\.(au|snd)$/.test(name)) return 'audio/basic';
+  if (/\.ra$/.test(name)) return 'audio/vnd.rn-realaudio';
+  if (/\.rm$/.test(name)) return 'application/vnd.rn-realmedia';
   return 'application/octet-stream';
+}
+function localAudioNeedsDecodedFallback(song) {
+  var name = String(song && (song.localPath || song.localFilePathAbsolute || song.name) || '').toLowerCase();
+  return /\.(flac|ape|wma|aiff|aif|aifc|caf|amr|awb|mka|mkv|alac|ac3|dts|tta|tak|wv|au|snd|ra|rm)$/.test(name);
 }
 function localParentDirectory(fullPath) {
   return String(fullPath || '').replace(/[\\/][^\\/]+$/, '');
@@ -22958,6 +23041,11 @@ async function prepareLocalAudioForPlayback(song) {
   var result = await api.prepareLocalAudio(fullPath);
   song._localAudioInspection = result && (result.inspection || result);
   if (!result || !result.ok) {
+    if (result && result.code !== 'ENCRYPTED_AUDIO') {
+      song._localAudioPrepareWarning = result;
+      console.warn('[LocalAudioPrepareSoftFail]', result);
+      return result;
+    }
     var error = new Error(String(result && (result.message || result.error || result.code) || '本地音频检查失败'));
     error.code = result && result.code || 'LOCAL_AUDIO_PREPARE_FAILED';
     throw error;
@@ -23050,6 +23138,25 @@ function applyLocalOriginalLyricsState(song) {
   setOriginalLyricsState(withLyricFallback(lines), false, timingSource);
   applyPreferredLyricsForCurrent(true);
 }
+function localSongFileNameForEmbeddedAsset(song) {
+  if (!song) return '';
+  var file = song.localFile || null;
+  return String(
+    song.localPath ||
+    song.localFilePathAbsolute ||
+    localFilePath(file) ||
+    localFullPath(file) ||
+    song.name ||
+    ''
+  );
+}
+function canReadEmbeddedLyrics(song) {
+  try {
+    return !!(song && song.localFile && /\.(mp3|flac|wav|m4a|mp4)$/i.test(localSongFileNameForEmbeddedAsset(song)));
+  } catch (_error) {
+    return false;
+  }
+}
 function canReadEmbeddedFlacLyrics(song) {
   return canReadEmbeddedLyrics(song);
 }
@@ -23057,7 +23164,11 @@ function canReadEmbeddedFlacCover(song) {
   return canReadEmbeddedCover(song);
 }
 function canReadEmbeddedCover(song) {
-  return !!(song && song.localFile && /\.(mp3|flac|wav|m4a)$/i.test(localSongFileNameForEmbeddedAsset(song)));
+  try {
+    return !!(song && song.localFile && /\.(mp3|flac|wav|m4a)$/i.test(localSongFileNameForEmbeddedAsset(song)));
+  } catch (_error) {
+    return false;
+  }
 }
 function maybeApplyLocalLyricsForSong(song, opts) {
   opts = opts || {};
@@ -23198,6 +23309,8 @@ async function playLocalQueueItem(song, idx, opts, token, firstVisualPlay, bmKey
   if (!localUrl) localUrl = ensureLocalSongUrl(song);
   if (!localUrl) localUrl = await createLocalAudioBlobUrl(song);
   if (!localUrl) throw new Error('本地音频文件不可用');
+  var predecodedLocalUrl = localAudioNeedsDecodedFallback(song) ? await transcodeLocalAudioForPlayback(song) : '';
+  if (predecodedLocalUrl) localUrl = predecodedLocalUrl;
   currentLocalSong = song;
   applyLocalOriginalLyricsState(song);
   loadLocalLyricsForSong(song, token);
@@ -23278,6 +23391,21 @@ async function playLocalQueueItem(song, idx, opts, token, firstVisualPlay, bmKey
     }
   }
 
+  // FLAC files with large embedded pictures/lyrics can be valid but still fail
+  // Chromium's direct decoder. Prefer a stable WAV copy before the Blob retry.
+  var preferDecodedFallback = !playbackStarted && localAudioNeedsDecodedFallback(song);
+  if (preferDecodedFallback) {
+    var decodedUrl = await transcodeLocalAudioForPlayback(song);
+    if (decodedUrl) {
+      localUrl = decodedUrl;
+      audio.pause();
+      audio.src = localUrl;
+      syncAudioSingleLoopMode();
+      audio.load();
+      playbackStarted = await playAudio({ manual: !!opts.manual, silent: true });
+    }
+  }
+
   // Final in-memory fallback: read the local file through Electron IPC and create a Blob URL.
   if (!playbackStarted) {
     var blobUrl = await createLocalAudioBlobUrl(song);
@@ -23291,9 +23419,9 @@ async function playLocalQueueItem(song, idx, opts, token, firstVisualPlay, bmKey
     }
   }
 
-  // Optional deep fallback: use an adjacent/system ffmpeg.exe to decode a damaged
-  // but non-encrypted file into a stable WAV copy. DRM/platform encryption is never bypassed.
-  if (!playbackStarted) {
+  // Optional deep fallback for other non-encrypted formats. DRM/platform
+  // encryption is never bypassed.
+  if (!playbackStarted && !preferDecodedFallback) {
     var decodedUrl = await transcodeLocalAudioForPlayback(song);
     if (decodedUrl) {
       localUrl = decodedUrl;
@@ -25198,8 +25326,9 @@ function playlistPanelEntryHtml(entry) {
       renderLimit = Math.min(allFolderSongs.length, renderLimit);
       lxPlaylistDetailRenderLimits[detailKey] = renderLimit;
       var visibleSongs = allFolderSongs.slice(0, renderLimit);
+      var syncButton = isSyncablePlatformPlaylist(item) ? '<button class="fx-mini-btn ghost" type="button" data-lx-playlist-sync="' + lxIndex + '" title="从原平台重新读取这个歌单" style="height:28px;padding:0 10px;margin-left:6px">同步</button>' : '';
       lxHtml += '<div class="pl-inline-detail" style="margin:6px 0 12px">' +
-        '<div class="pl-detail-actions"><button class="pl-detail-play" type="button" data-lx-song-index="0" data-lx-song-playlist="' + lxIndex + '">播放歌单第一首</button></div>' +
+        '<div class="pl-detail-actions"><button class="pl-detail-play" type="button" data-lx-song-index="0" data-lx-song-playlist="' + lxIndex + '">播放歌单第一首</button>' + syncButton + '</div>' +
         '<div class="pl-detail-list">' + visibleSongs.map(function(song, songIndex){
           var songThumb = song.picUrl ? '<img src="' + escHtml(mobileRemoteCoverSrc(song.picUrl)) + '" alt="" loading="lazy" decoding="async" style="width:38px;height:38px;border-radius:7px;object-fit:cover;flex:0 0 auto" onerror="this.style.opacity=0.2">' : '';
           return '<div class="pl-detail-row" data-lx-song-index="' + songIndex + '" data-lx-song-playlist="' + lxIndex + '">' +
@@ -25305,8 +25434,9 @@ function renderLocalLibraryPlaylistPanel(opts) {
           renderLimit = Math.min(allFolderSongs.length, renderLimit);
           lxPlaylistDetailRenderLimits[detailKey] = renderLimit;
           var visibleSongs = allFolderSongs.slice(0, renderLimit);
+          var syncButton = isSyncablePlatformPlaylist(folder) ? '<button class="fx-mini-btn ghost" type="button" data-lx-playlist-sync="' + folderIndex + '" title="从原平台重新读取这个歌单" style="height:28px;padding:0 10px;margin-left:6px">同步</button>' : '';
           html += '<div class="pl-inline-detail" style="margin:6px 0 12px">' +
-            '<div class="pl-detail-actions"><button class="pl-detail-play" type="button" data-lx-song-index="0" data-lx-song-playlist="' + folderIndex + '">播放歌单第一首</button></div>' +
+            '<div class="pl-detail-actions"><button class="pl-detail-play" type="button" data-lx-song-index="0" data-lx-song-playlist="' + folderIndex + '">播放歌单第一首</button>' + syncButton + '</div>' +
             '<div class="pl-detail-list">' + visibleSongs.map(function(song, songIndex){
               var songThumb = song.picUrl ? '<img src="' + escHtml(mobileRemoteCoverSrc(song.picUrl)) + '" alt="" loading="lazy" decoding="async" style="width:38px;height:38px;border-radius:7px;object-fit:cover;flex:0 0 auto" onerror="this.style.opacity=0.2">' : '';
               return '<div class="pl-detail-row" data-lx-song-index="' + songIndex + '" data-lx-song-playlist="' + folderIndex + '">' +
@@ -25406,17 +25536,24 @@ document.getElementById('pl-list').addEventListener('click', function(e){
     return;
   }
     var loadMoreLxDetail = e.target && e.target.closest ? e.target.closest('[data-lx-detail-load-more]') : null;
-    if (loadMoreLxDetail) {
-      var moreIndex = Number(loadMoreLxDetail.dataset.lxDetailLoadMore || -1);
-      var folder = lxUserPlaylists[moreIndex];
-      if (folder && Array.isArray(folder.songs)) {
-        var detailKey = String(folder.id || folder.name || moreIndex);
-        var currentLimit = lxPlaylistDetailRenderLimits[detailKey] || PLAYLIST_DETAIL_INITIAL_RENDER;
-        lxPlaylistDetailRenderLimits[detailKey] = Math.min(folder.songs.length, currentLimit + PLAYLIST_DETAIL_BATCH_SIZE);
-        renderLocalLibraryPlaylistPanel({ animate: false });
-      }
-      return;
+  if (loadMoreLxDetail) {
+    var moreIndex = Number(loadMoreLxDetail.dataset.lxDetailLoadMore || -1);
+    var folder = lxUserPlaylists[moreIndex];
+    if (folder && Array.isArray(folder.songs)) {
+      var detailKey = String(folder.id || folder.name || moreIndex);
+      var currentLimit = lxPlaylistDetailRenderLimits[detailKey] || PLAYLIST_DETAIL_INITIAL_RENDER;
+      lxPlaylistDetailRenderLimits[detailKey] = Math.min(folder.songs.length, currentLimit + PLAYLIST_DETAIL_BATCH_SIZE);
+      renderLocalLibraryPlaylistPanel({ animate: false });
     }
+    return;
+  }
+  var lxPlaylistSync = e.target && e.target.closest ? e.target.closest('[data-lx-playlist-sync]') : null;
+  if (lxPlaylistSync) {
+    e.preventDefault();
+    e.stopPropagation();
+    syncImportedPlatformPlaylist(Number(lxPlaylistSync.getAttribute('data-lx-playlist-sync')) || 0);
+    return;
+  }
   var lxSong = e.target && e.target.closest ? e.target.closest('[data-lx-song-index]') : null;
   if (lxSong) {
     e.preventDefault();
@@ -25826,8 +25963,8 @@ setInterval(function(){
 // ============================================================
 //  文件拖放
 // ============================================================
-var LOCAL_AUDIO_FILE_RE = /\.(mp3|flac|wav|ogg|m4a|ncm|qmc0|qmc3|qmcflac|qmcogg|kgm|kgma|vpr|kwm|mflac|mgg)$/i;
-var LOCAL_FOLDER_AUDIO_FILE_RE = /\.(mp3|flac|wav|ogg|m4a|ncm|qmc0|qmc3|qmcflac|qmcogg|kgm|kgma|vpr|kwm|mflac|mgg)$/i;
+var LOCAL_AUDIO_FILE_RE = /\.(mp3|flac|wav|ogg|opus|m4a|mp4|aac|webm|ape|wma|aiff|aif|aifc|caf|amr|awb|oga|mka|mkv|m4b|alac|ac3|dts|tta|tak|wv|au|snd|ra|rm|ncm|qmc0|qmc3|qmcflac|qmcogg|kgm|kgma|vpr|kwm|mflac|mgg)$/i;
+var LOCAL_FOLDER_AUDIO_FILE_RE = /\.(mp3|flac|wav|ogg|opus|m4a|mp4|aac|webm|ape|wma|aiff|aif|aifc|caf|amr|awb|oga|mka|mkv|m4b|alac|ac3|dts|tta|tak|wv|au|snd|ra|rm|ncm|qmc0|qmc3|qmcflac|qmcogg|kgm|kgma|vpr|kwm|mflac|mgg)$/i;
 var LOCAL_LYRIC_FILE_RE = /\.(lrc|txt)$/i;
 var LOCAL_COVER_FILE_RE = /\.(jpg|jpeg|png|webp)$/i;
 var LOCAL_COVER_NAME_RE = /^(cover|folder|front|album|artwork|封面|专辑封面)$/i;
@@ -27337,7 +27474,7 @@ async function openLocalFolderImport() {
       input.removeAttribute('webkitdirectory');
       input.removeAttribute('directory');
       input.multiple = true;
-      input.accept = 'audio/*,.mp3,.flac,.wav,.ogg,.m4a';
+      input.accept = 'audio/*,.mp3,.flac,.wav,.ogg,.opus,.m4a,.mp4,.aac,.webm,.ape,.wma,.aiff,.aif,.aifc,.caf,.amr,.awb,.oga,.mka,.mkv,.m4b,.alac,.ac3,.dts,.tta,.tak,.wv,.au,.snd,.ra,.rm';
       showToast('请选择音乐文件；长按可多选');
     }
     input.click();
@@ -29780,18 +29917,37 @@ function shouldSuppressDefaultConfiguredHotkey(e) {
 function ensureHotkeySettingsButton() {
   var panel = document.getElementById('fx-panel');
   var head = panel && panel.querySelector('.fx-head');
-  if (!head || document.getElementById('hotkey-settings-btn')) return;
+  if (!head) return;
   if (head.firstElementChild) head.firstElementChild.classList.add('fx-head-main');
-  var actions = document.createElement('div');
-  actions.className = 'fx-head-actions';
-  var btn = document.createElement('button');
-  btn.id = 'hotkey-settings-btn';
-  btn.type = 'button';
-  btn.className = 'fx-mini-btn ghost';
-  btn.textContent = '热键';
-  btn.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); openHotkeySettings(); });
-  actions.appendChild(btn);
-  head.appendChild(actions);
+  var actions = head.querySelector('.fx-head-actions');
+  if (!actions) {
+    actions = document.createElement('div');
+    actions.className = 'fx-head-actions';
+    head.appendChild(actions);
+  }
+  if (!document.getElementById('update-settings-btn')) {
+    var updateBtn = document.createElement('button');
+    updateBtn.id = 'update-settings-btn';
+    updateBtn.type = 'button';
+    updateBtn.className = 'fx-mini-btn ghost';
+    updateBtn.textContent = '检查更新';
+    updateBtn.title = '检查 Mineradio 更新';
+    updateBtn.addEventListener('click', function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      openUpdateFromSettings();
+    });
+    actions.appendChild(updateBtn);
+  }
+  if (!document.getElementById('hotkey-settings-btn')) {
+    var btn = document.createElement('button');
+    btn.id = 'hotkey-settings-btn';
+    btn.type = 'button';
+    btn.className = 'fx-mini-btn ghost';
+    btn.textContent = '热键';
+    btn.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); openHotkeySettings(); });
+    actions.appendChild(btn);
+  }
 }
 function ensureHotkeyModal() {
   var modal = document.getElementById('hotkey-modal');
@@ -30512,8 +30668,6 @@ function closeImmersiveInterference() {
   closeMiniQueue();
   toggleFxPanel(false);
   closeUploadTip(false);
-  closeLoginModal();
-  closeUserModal();
   closeCollectModal();
   closeCoverCropModal();
   closeCustomLyricModal();
@@ -30525,7 +30679,6 @@ function closeImmersiveInterference() {
   });
   var fab = document.getElementById('fx-fab');
   if (fab) fab.classList.remove('active');
-  document.body.classList.remove('login-guide-active');
   setFocusZone(null, true);
 }
 function isMineradioFullscreenActive() {
@@ -30632,10 +30785,24 @@ function updateProgressDetailText() {
   if (updatePreviewState.etaSeconds > 0 && updatePreviewState.etaSeconds < 3600) parts.push('约 ' + updatePreviewState.etaSeconds + ' 秒');
   return parts.join(' · ');
 }
-function initUpdatePreview() {
+async function loadCurrentAppVersion() {
+  try {
+    var info = await apiJson('/api/app/version?t=' + Date.now(), { timeoutMs: 6000 });
+    if (info && info.version) {
+      updatePreviewState.currentVersion = String(info.version);
+      if (!updatePreviewState.updateAvailable) updatePreviewState.version = String(info.version);
+    }
+    return info;
+  } catch (_e) {
+    return null;
+  }
+}
+
+async function initUpdatePreview() {
+  await loadCurrentAppVersion();
   renderUpdatePreviewPanel();
   setUpdatePreviewVisible(true);
-  checkLatestUpdate();
+  await checkLatestUpdate();
   setTimeout(startUpdateIconBreathing, 760);
 }
 
@@ -30754,16 +30921,19 @@ function syncUpdatePreviewStateClass() {
   var btn = document.getElementById('update-primary-btn');
   var canDownloadUpdate = updatePreviewState.configured && updatePreviewState.updateAvailable && updatePreviewState.downloadUrl;
   var canOpenRelease = updatePreviewState.configured && updatePreviewState.updateAvailable && !updatePreviewState.downloadUrl && updatePreviewState.releaseUrl;
+  var noUpdateAvailable = updatePreviewState.configured && !updatePreviewState.updateAvailable;
   if (label) {
     if (isDownloading) label.textContent = (isPatch ? '快速补丁 ' : '正在下载 ') + Math.round(updatePreviewState.progress) + '%';
     else if (isOpening) label.textContent = '正在打开安装包';
     else if (isError && updatePreviewState.mode === 'patch' && updatePreviewState.downloadUrl) label.textContent = '下载完整安装包';
     else if (isError) label.textContent = updatePreviewState.mode === 'installer' ? '重试下载' : '重试更新';
+    else if (noUpdateAvailable) label.textContent = '重新检查更新';
     else if (isReady && isPatch && updatePreviewState.restartRequired) label.textContent = '重启生效';
     else if (isReady && isPatch) label.textContent = '补丁已应用';
     else if (isReady && updatePreviewState.installerOpened) label.textContent = '安装包已打开';
     else if (isReady && updatePreviewState.installerPath) label.textContent = updatePreviewState.cached ? '打开已下载安装包' : '打开安装包';
-    else if (isReady) label.textContent = updatePreviewState.configured ? '打开安装包' : '预览完成';
+    else if (isReady && canDownloadUpdate) label.textContent = '下载完整安装包';
+    else if (isReady) label.textContent = updatePreviewState.configured ? '重新检查更新' : '预览完成';
     else label.textContent = updatePreviewState.patchAvailable ? '安装快速补丁' : ((canDownloadUpdate || canOpenRelease) ? '下载完整安装包' : '立即更新');
   }
   if (btn) btn.disabled = false;
@@ -30771,8 +30941,11 @@ function syncUpdatePreviewStateClass() {
   if (foot) {
     if (isDownloading) foot.textContent = (updatePreviewState.message || (isPatch ? '正在下载快速补丁' : '正在下载完整安装包')) + (updateProgressDetailText() ? ' · ' + updateProgressDetailText() : '');
     else if (isError) foot.textContent = '下载失败：' + (updatePreviewState.errorReason || updatePreviewState.errorDetail || updatePreviewState.message || '请稍后重试') + (updatePreviewState.failedAttempts && updatePreviewState.failedAttempts.length ? ' · 已尝试 ' + updatePreviewState.failedAttempts.length + ' 条线路' : '');
+    else if (noUpdateAvailable) foot.textContent = '当前版本已是最新，无需下载安装包。';
     else if (isReady && isPatch) foot.textContent = updatePreviewState.restartRequired ? '快速补丁已应用，重启 Mineradio 后生效。' : '快速补丁已应用。';
-    else if (isReady) foot.textContent = updatePreviewState.cached ? '已复用上次校验通过的安装包，不会重复下载。' : '安装包已准备好，点击按钮后再打开安装。';
+    else if (isReady && updatePreviewState.installerPath) foot.textContent = updatePreviewState.cached ? '已复用上次校验通过的安装包，不会重复下载。' : '安装包已准备好，点击按钮后再打开安装。';
+    else if (isReady && canDownloadUpdate) foot.textContent = '还没有拿到本地安装包路径，点击按钮会重新下载完整安装包。';
+    else if (isReady) foot.textContent = '当前没有可打开的本地安装包。';
     else if (updatePreviewState.patchAvailable) foot.textContent = '优先使用轻量补丁，只更新缺失或变更的资源文件；不适用时可下载完整安装包。';
     else foot.textContent = updatePreviewState.updateAvailable ? '没有可用快速补丁时会下载完整安装包。' : '当前版本已是最新。';
   }
@@ -30801,6 +30974,15 @@ function openUpdatePanel() {
   openGsapModal(mask);
   updatePreviewState.open = true;
   animateUpdatePanelContents();
+}
+
+function openUpdateFromSettings() {
+  updatePreviewState.preview = true;
+  updatePreviewState.hero = '正在检查更新...';
+  updatePreviewState.notes = ['正在连接更新服务器', '会自动优先尝试国内加速线路'];
+  setUpdatePreviewVisible(true);
+  openUpdatePanel();
+  checkLatestUpdate().catch(function(){});
 }
 
 function closeUpdatePanel() {
@@ -31050,16 +31232,40 @@ async function openDownloadedUpdateInstaller(filePath) {
     throw new Error('DESKTOP_BRIDGE_MISSING');
   } catch (e) {
     updatePreviewState.status = 'ready';
+    updatePreviewState.installerPath = '';
+    updatePreviewState.installerOpened = false;
     syncUpdatePreviewStateClass();
-    if (updatePreviewState.releaseUrl) window.open(updatePreviewState.releaseUrl, '_blank');
-    showToast('无法自动打开安装包，已尝试打开更新页面');
+    if (updatePreviewState.updateAvailable && updatePreviewState.downloadUrl) {
+      showToast('本地安装包不可用，请重新下载完整安装包');
+    } else {
+      if (updatePreviewState.releaseUrl) window.open(updatePreviewState.releaseUrl, '_blank');
+      showToast('无法自动打开安装包，已尝试打开更新页面');
+    }
   }
 }
 
 function startUpdatePreviewDownload() {
   var releaseLink = updatePreviewState.downloadUrl || updatePreviewState.releaseUrl;
+  if (updatePreviewState.status === 'downloading' || updatePreviewState.status === 'opening') return;
   if (updatePreviewState.status === 'ready' && updatePreviewState.mode === 'patch') {
     restartForAppliedPatch();
+    return;
+  }
+  if (updatePreviewState.configured && !updatePreviewState.updateAvailable) {
+    updatePreviewState.hero = '正在重新检查更新...';
+    updatePreviewState.notes = ['正在确认当前是否为最新版本'];
+    updatePreviewState.installerPath = '';
+    updatePreviewState.installerOpened = false;
+    updateUpdatePreviewProgress(0);
+    checkLatestUpdate().then(function(){
+      showToast(updatePreviewState.updateAvailable ? '发现新版本' : '当前已是最新版本');
+    }).catch(function(e){
+      updatePreviewState.status = 'error';
+      updatePreviewState.errorReason = (e && e.message) || '更新检查失败';
+      updatePreviewState.message = updatePreviewState.errorReason;
+      updateUpdatePreviewProgress(0);
+      showToast('更新检查失败：' + updatePreviewState.errorReason);
+    });
     return;
   }
   if (updatePreviewState.configured && updatePreviewState.updateAvailable) {
@@ -31076,14 +31282,21 @@ function startUpdatePreviewDownload() {
     return;
   }
   if (updatePreviewState.status === 'ready') {
+    if (updatePreviewState.installerPath) {
+      openDownloadedUpdateInstaller(updatePreviewState.installerPath);
+      return;
+    }
+    if (updatePreviewState.configured && updatePreviewState.updateAvailable && updatePreviewState.downloadUrl) {
+      startRealUpdateDownload();
+      return;
+    }
     if (window.gsap) {
       var modal = document.querySelector('#update-modal .update-modal');
       if (modal) window.gsap.fromTo(modal, { boxShadow: '0 30px 100px rgba(0,0,0,.62),0 0 0 1px rgba(244,210,138,.16)' }, { boxShadow: '0 30px 100px rgba(0,0,0,.62),0 0 34px rgba(244,210,138,.18)', duration: 0.52, yoyo: true, repeat: 1, ease: 'sine.inOut' });
     }
-    showToast('正式接入后将重启并安装新版');
+    showToast(updatePreviewState.installerPath ? '点击打开安装包继续安装' : '请先下载完整安装包');
     return;
   }
-  if (updatePreviewState.status === 'downloading') return;
   if (updatePreviewState.timer) clearInterval(updatePreviewState.timer);
   updatePreviewState.status = 'downloading';
   updateUpdatePreviewProgress(0);
@@ -31122,7 +31335,7 @@ function pulseUpdateReady() {
 }
 
 // ============================================================
-//  登录系统
+//  弹窗系统
 // ============================================================
 function openGsapModal(mask) {
   if (!mask) return;
@@ -31180,8 +31393,6 @@ function closeGsapModal(mask, afterClose) {
 function bindModalBackdropClose() {
   [
     ['track-detail-modal', closeTrackDetailModal],
-    ['login-modal', closeLoginModal],
-    ['user-modal', closeUserModal],
     ['custom-lyric-modal', closeCustomLyricModal],
     ['update-modal', closeUpdatePanel]
   ].forEach(function(pair){
@@ -31194,207 +31405,13 @@ function bindModalBackdropClose() {
     });
   });
 }
-function onUserBtnClick() {
-  openHomeLocalImport();
-}
-function hasPlatformLogin(provider) {
-  return false;
-}
-function hasAnyPlatformLogin() {
-  return false;
-}
-function firstLoggedProvider() {
-  return 'local';
-}
-async function refreshLoginStatus(force) {
-  loginStatusChecked = true;
-  loginStatusCheckFailed = false;
-  loginStatus = { loggedIn: false, vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, vipLabel: '本地模式' };
-  renderUserBtn();
-  return loginStatus;
-}
-function renderUserBtn() {
-  var btn = document.getElementById('user-btn');
-  if (!btn) return;
-  btn.classList.remove('multi-account');
-  btn.classList.remove('logged-in');
-  btn.classList.add('logged-out');
-  btn.title = '导入本地音乐';
-  btn.innerHTML = '<span class="login-word">导入</span>';
-  updatePlaybackQualityUi();
-}
-async function showLoginModal(opts) {
-  closeLoginModal();
-  openHomeLocalImport();
-}
-function closeLoginModal() {
-  closeGsapModal(document.getElementById('login-modal'));
-}
-function setLoginProvider(provider, silent) {
-}
-function updateLoginProviderUi() {
-}
-async function refreshQr() {
-  openHomeLocalImport();
-}
-function startQrPoll() {}
-function stopQrPoll() {}
-async function checkQr() {
-}
-function updateUserModalUi() {
-}
-function showUserModal() {
-  openHomeLocalImport();
-}
-function closeUserModal() { closeGsapModal(document.getElementById('user-modal')); }
-function setActiveAccountProvider(provider) {
-  openHomeLocalImport();
-}
-function enableDualAccountView() {
-  openHomeLocalImport();
-}
-function requestDualLoginMode() {
-  enableDualAccountView();
-}
-function openProviderLogin(provider) {
-  closeUserModal();
-  closeLoginModal();
-  openHomeLocalImport();
-}
-async function logoutActiveAccount() {
-  doLogout();
-}
-async function doLogout() {
-  loginStatus = { loggedIn: false };
+async function clearLocalUserData() {
   userPlaylists = [];
   likedSongMap = {};
   closeCollectModal();
   updateLikeButtons();
-  safeRenderQueuePanel('logout', { scrollCurrent: miniQueueOpen });
-  renderUserBtn();
-  safeShelfRebuild('logout');
-  closeUserModal();
-}
-var startupLoginGuideShown = false;
-var loginGuideAnimating = false;
-var loginGuideRaf = null;
-function runLoginGuideParticles(done) {
-  var canvas = document.getElementById('login-guide-canvas');
-  if (!canvas || reduceSplashMotion) {
-    if (done) setTimeout(done, 120);
-    return;
-  }
-  if (loginGuideAnimating) {
-    if (done) setTimeout(done, 720);
-    return;
-  }
-  loginGuideAnimating = true;
-  document.body.classList.add('login-guide-active');
-  var ctx = canvas.getContext('2d');
-  var dpr = Math.min(window.devicePixelRatio || 1, 1.8);
-  var w = window.innerWidth, h = window.innerHeight;
-  canvas.width = Math.floor(w * dpr);
-  canvas.height = Math.floor(h * dpr);
-  canvas.style.width = w + 'px';
-  canvas.style.height = h + 'px';
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-  var cx = w * 0.5;
-  var cy = h * 0.5 - 10;
-  var maxR = Math.max(w, h);
-  var particles = [];
-  for (var i = 0; i < 92; i++) {
-    var ang = Math.random() * Math.PI * 2;
-    var ring = maxR * (0.30 + Math.random() * 0.35);
-    var arcBias = Math.random() < 0.42 ? Math.PI * 0.5 : 0;
-    particles.push({
-      sx: cx + Math.cos(ang + arcBias) * ring + (Math.random() - 0.5) * 80,
-      sy: cy + Math.sin(ang) * ring * 0.72 + (Math.random() - 0.5) * 80,
-      tx: cx + (Math.random() - 0.5) * 172,
-      ty: cy + (Math.random() - 0.5) * 172,
-      r: 0.8 + Math.random() * 1.9,
-      delay: Math.random() * 0.22,
-      hue: Math.random(),
-      spin: Math.random() * Math.PI * 2
-    });
-  }
-  var started = performance.now();
-  var duration = 1050;
-  if (loginGuideRaf) cancelAnimationFrame(loginGuideRaf);
-  function draw(now) {
-    var raw = Math.min(1, (now - started) / duration);
-    ctx.clearRect(0, 0, w, h);
-    ctx.globalCompositeOperation = 'lighter';
-    var centerPulse = Math.sin(Math.PI * raw);
-    var halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.min(w, h) * 0.28);
-    halo.addColorStop(0, 'rgba(255,255,255,' + (0.060 * centerPulse) + ')');
-    halo.addColorStop(0.55, 'rgba(255,255,255,' + (0.026 * centerPulse) + ')');
-    halo.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = halo;
-    ctx.fillRect(0, 0, w, h);
-
-    for (var j = 0; j < particles.length; j++) {
-      var p = particles[j];
-      var lt = Math.max(0, Math.min(1, (raw - p.delay) / (1 - p.delay)));
-      var e = 1 - Math.pow(1 - lt, 3);
-      var wobble = Math.sin(lt * Math.PI * 2 + p.spin) * (1 - lt) * 18;
-      var x = p.sx + (p.tx - p.sx) * e + Math.cos(p.spin) * wobble;
-      var y = p.sy + (p.ty - p.sy) * e + Math.sin(p.spin) * wobble * 0.6;
-      var alpha = Math.sin(Math.PI * lt) * (0.18 + p.hue * 0.18);
-      if (alpha <= 0) continue;
-      var warm = false;
-      ctx.beginPath();
-      ctx.arc(x, y, p.r * (0.75 + lt * 0.45), 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255,255,255,' + alpha + ')';
-      ctx.fill();
-      if (lt > 0.08 && lt < 0.92) {
-        var tx = p.sx + (p.tx - p.sx) * Math.max(0, e - 0.045);
-        var ty = p.sy + (p.ty - p.sy) * Math.max(0, e - 0.045);
-        ctx.strokeStyle = 'rgba(255,255,255,' + (alpha * 0.20) + ')';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(tx, ty);
-        ctx.lineTo(x, y);
-        ctx.stroke();
-      }
-    }
-    if (raw < 1) {
-      loginGuideRaf = requestAnimationFrame(draw);
-    } else {
-      function finish() {
-        ctx.clearRect(0, 0, w, h);
-        document.body.classList.remove('login-guide-active');
-        loginGuideAnimating = false;
-        loginGuideRaf = null;
-        if (done) done();
-      }
-      if (window.gsap) {
-        window.gsap.to(canvas, { opacity: 0, duration: 0.28, ease: 'power2.out', onComplete: function(){
-          finish();
-          window.gsap.set(canvas, { clearProps: 'opacity' });
-        }});
-      } else {
-        finish();
-      }
-    }
-  }
-  loginGuideRaf = requestAnimationFrame(draw);
-}
-function maybeRunStartupLoginGuide(source) {
-  if (LOCAL_ONLY_MODE) return;
-  if (startupLoginGuideShown || loginGuideAnimating) return;
-  if (visualGuideActive) return;
-  if (document.body.classList.contains('splash-active')) return;
-  if (immersiveMode) return;
-  if (!loginStatusChecked || loginStatusCheckFailed || loginStatus.loggedIn || playing) return;
-  var loginModal = document.getElementById('login-modal');
-  var userModal = document.getElementById('user-modal');
-  if ((loginModal && loginModal.classList.contains('show')) || (userModal && userModal.classList.contains('show'))) return;
-  startupLoginGuideShown = true;
-  setTimeout(function(){
-    if (loginStatus.loggedIn || playing || immersiveMode || document.body.classList.contains('splash-active')) return;
-    runLoginGuideParticles(function(){ showLoginModal({ guided: true, source: source || 'startup' }); });
-  }, source === 'splash' ? 6200 : 2600);
+  safeRenderQueuePanel('clear-local-user-data', { scrollCurrent: miniQueueOpen });
+  safeShelfRebuild('clear-local-user-data');
 }
 
 // ============================================================
@@ -31445,7 +31462,6 @@ function shouldShowIdleGuide() {
   if (document.body.classList.contains('splash-active')) return false;
   if (immersiveMode) return false;
   if (playing) return false;
-  if (loginGuideAnimating) return false;
   if (document.querySelector('.modal-mask.show')) return false;
   if (uniforms && uniforms.uHasCover && uniforms.uHasCover.value > 0.5) return false;
   return true;
@@ -31910,8 +31926,8 @@ var visualGuideSteps = [
     body: '播放、切歌、进度、队列和歌词都集中在底部，先把它当作一个正常播放器使用就可以。'
   },
   {
-    selector: '#user-btn',
-    kicker: '04 / Account',
+    selector: '#upload-btn',
+    kicker: '04 / Local',
     title: '导入本地音乐库',
     body: '选择本地音乐文件夹后会建立音乐库索引，歌曲、封面和歌词都优先从本机读取。'
   },
@@ -31977,7 +31993,6 @@ function markVisualGuideSeen() {
 }
 function maybeRunStartupVisualGuide(source) {
   if (visualGuideWasSeen() || visualGuideActive || immersiveMode || playing) return false;
-  if (source !== 'manual' && !hasAnyPlatformLogin()) return false;
   setTimeout(function(){
     if (!visualGuideWasSeen() || source === 'manual') startVisualGuide({ source: source || 'startup' });
   }, source === 'splash' ? 3600 : 1400);
@@ -32706,7 +32721,7 @@ document.addEventListener('keydown', function(e){
     }
     if (miniQueueOpen) { closeMiniQueue(); return; }
     if (shelfManager && shelfManager.hasOpenContent()) { safeShelfCloseContent('escape-key'); return; }
-    closeLoginModal(); closeUserModal(); toggleFxPanel(false); togglePlaylistPanel(false);
+    toggleFxPanel(false); togglePlaylistPanel(false);
   }
   else if (e.code === 'KeyL') { if (!immersiveMode) toggleLyricsPanel(); }
   else if (e.code === 'KeyP') {
@@ -32804,16 +32819,12 @@ function maybeShowUploadTipOnce() {
     setTimeout(maybeShowUploadTipOnce, 1800);
     return;
   }
-  if (document.body.classList.contains('splash-active') || loginGuideAnimating) {
+  if (document.body.classList.contains('splash-active')) {
     setTimeout(maybeShowUploadTipOnce, 900);
     return;
   }
-  var loginModal = document.getElementById('login-modal');
-  var userModal = document.getElementById('user-modal');
   var coverModal = document.getElementById('cover-crop-modal');
-  var hasModal = (loginModal && loginModal.classList.contains('show')) ||
-    (userModal && userModal.classList.contains('show')) ||
-    (coverModal && coverModal.classList.contains('show'));
+  var hasModal = coverModal && coverModal.classList.contains('show');
   if (hasModal) {
     uploadTipAttempts++;
     if (uploadTipAttempts < 18) setTimeout(maybeShowUploadTipOnce, 1800);
@@ -32916,7 +32927,6 @@ window.addEventListener('mousemove', function(e){
   var fp = document.getElementById('fx-panel');
   var pp = document.getElementById('playlist-panel');
   var ex = e.clientX, ey = e.clientY, W = innerWidth, H = innerHeight;
-  updateUserCapsuleAutoHideFromPointer(ex, ey);
   updateFxFabAutoHideFromPointer(ex, ey);
   updateFullscreenDiyPeekFromPointer(ex, ey);
   if (document.body.classList.contains('splash-active')) {
@@ -33580,8 +33590,6 @@ function dismissSplash() {
       }
       requestAnimationFrame(function(){
         var guideStarted = maybeRunStartupVisualGuide('splash');
-        if (!guideStarted && !hasAnyPlatformLogin()) maybeRunStartupLoginGuide('splash');
-        else if (!guideStarted && !homeShown) maybeRunStartupLoginGuide('splash');
         setTimeout(maybeShowUploadTipOnce, 5200);
       });
     });
@@ -34299,7 +34307,6 @@ scheduleUiWarmTask(function(){
     if (renderer && renderer.compile && scene && camera) renderer.compile(scene, camera);
   } catch (e) {}
 }, 900);
-applyUserCapsuleAutoHideState();
 applyFxFabAutoHideState();
 applyControlsAutoHidePreference();
 applyDesktopLyricsState(false);
@@ -34312,9 +34319,6 @@ if (fx.particleLyrics) createLyricsParticles();
 if (fx.backCover) createBackCoverLayer();
 initIdleGuideCanvas();
 if (LOCAL_ONLY_MODE) {
-  loginStatusChecked = true;
-  loginStatusCheckFailed = false;
-  loginStatus = { loggedIn: false, vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, vipLabel: '本地模式' };
   homeDiscoverState.loading = false;
   homeDiscoverState.loaded = true;
   homeDiscoverState.loggedIn = false;
@@ -34322,7 +34326,6 @@ if (LOCAL_ONLY_MODE) {
   homeDiscoverState.songs = [];
   homeDiscoverState.playlists = [];
   homeDiscoverState.podcasts = [];
-  renderUserBtn();
   if (!document.body.classList.contains('splash-active')) updateEmptyHomeVisibility({ forceLoad: false });
 }
 var collectNameInput = document.getElementById('collect-new-name');

@@ -30,6 +30,7 @@ const LOCAL_FILE_TOKEN = process.env.MINERADIO_LOCAL_FILE_TOKEN || '';
 const UPDATE_WORK_DIR = process.env.MINERADIO_UPDATE_DIR || path.join(__dirname, 'updates');
 const UPDATE_DOWNLOAD_DIR = process.env.MINERADIO_UPDATE_DOWNLOAD_DIR || path.join(UPDATE_WORK_DIR, 'downloads');
 const UPDATE_PATCH_BACKUP_DIR = process.env.MINERADIO_PATCH_BACKUP_DIR || path.join(UPDATE_WORK_DIR, 'backups', 'patches');
+const TEST_UPDATE_MANIFEST_FILE = path.join(UPDATE_WORK_DIR, 'test-update-manifest.json');
 const BEATMAP_CACHE_DIR = process.env.MINERADIO_BEAT_CACHE_DIR || 'D:\\MineradioCache\\beatmaps';
 const APP_PACKAGE = readPackageInfo();
 const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '0.9.11';
@@ -81,7 +82,33 @@ const LOCAL_FILE_MIME = {
   '.flac': 'audio/flac',
   '.wav': 'audio/wav',
   '.ogg': 'audio/ogg',
+  '.opus': 'audio/ogg',
   '.m4a': 'audio/mp4',
+  '.mp4': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.webm': 'audio/webm',
+  '.ape': 'audio/x-ape',
+  '.wma': 'audio/x-ms-wma',
+  '.aiff': 'audio/aiff',
+  '.aif': 'audio/aiff',
+  '.aifc': 'audio/aiff',
+  '.caf': 'audio/x-caf',
+  '.amr': 'audio/amr',
+  '.awb': 'audio/amr-wb',
+  '.oga': 'audio/ogg',
+  '.mka': 'audio/x-matroska',
+  '.mkv': 'audio/x-matroska',
+  '.m4b': 'audio/mp4',
+  '.alac': 'audio/alac',
+  '.ac3': 'audio/ac3',
+  '.dts': 'audio/vnd.dts',
+  '.tta': 'audio/x-tta',
+  '.tak': 'audio/x-tak',
+  '.wv': 'audio/x-wavpack',
+  '.au': 'audio/basic',
+  '.snd': 'audio/basic',
+  '.ra': 'audio/vnd.rn-realaudio',
+  '.rm': 'application/vnd.rn-realmedia',
   '.lrc': 'text/plain; charset=utf-8',
   '.txt': 'text/plain; charset=utf-8',
   '.jpg': 'image/jpeg',
@@ -117,6 +144,38 @@ function sendJSON(res, data, status) {
     'Expires': '0',
   });
   res.end(JSON.stringify(data));
+}
+
+function base64UrlJson(value) {
+  return Buffer.from(JSON.stringify(value || {}), 'utf8').toString('base64url');
+}
+
+function parseBase64UrlJson(value) {
+  try {
+    if (!value) return {};
+    return JSON.parse(Buffer.from(String(value), 'base64url').toString('utf8')) || {};
+  } catch (_err) {
+    return {};
+  }
+}
+
+function audioProxyHeadersFromQuery(value) {
+  const raw = parseBase64UrlJson(value);
+  const out = {};
+  const allowed = new Set(['accept', 'cookie', 'origin', 'referer', 'user-agent']);
+  for (const [rawKey, rawValue] of Object.entries(raw || {})) {
+    const key = String(rawKey || '').trim().toLowerCase();
+    if (!allowed.has(key) || rawValue == null) continue;
+    out[key] = String(rawValue).replace(/[\r\n]+/g, ' ');
+  }
+  return out;
+}
+
+function audioProxyUrl(originalUrl, headers) {
+  if (!originalUrl) return '';
+  const params = new URLSearchParams({ url: originalUrl });
+  if (headers && Object.keys(headers).length) params.set('h', base64UrlJson(headers));
+  return '/api/audio?' + params.toString();
 }
 
 const wallpaperMediaIndex = new Map();
@@ -528,7 +587,8 @@ function uniqueDownloadCandidates(urls, opts) {
     .map(url => String(url || '').trim())
     .filter(url => /^https?:\/\//i.test(url));
   const directSet = new Set(directUrls.map(url => url.toLowerCase()));
-  const mirrors = opts.useMirrors === false ? [] : (UPDATE_CONFIG.mirrors || []);
+  const allLocal = directUrls.length && directUrls.every(url => /^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::|\/)/i.test(url));
+  const mirrors = (opts.useMirrors === false || allLocal) ? [] : (UPDATE_CONFIG.mirrors || []);
   const mirrored = [];
   directUrls.forEach(source => {
     mirrors.forEach((mirror, index) => {
@@ -542,7 +602,9 @@ function uniqueDownloadCandidates(urls, opts) {
   });
   const direct = directUrls.map(url => ({
     url,
-    label: directSet.has(url.toLowerCase()) ? 'GitHub 直连' : '下载线路',
+    label: /^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::|\/)/i.test(url)
+      ? '本地测试包'
+      : (directSet.has(url.toLowerCase()) ? 'GitHub 直连' : '下载线路'),
     mirrored: false,
   }));
   const ordered = UPDATE_CONFIG.preferMirrors === false ? direct.concat(mirrored) : mirrored.concat(direct);
@@ -715,6 +777,30 @@ function normalizeManifestUpdateInfo(data) {
     },
     source: 'manifest',
   };
+}
+function localServerBaseUrl() {
+  const port = String(process.env.PORT || '').trim() || '3000';
+  return `http://127.0.0.1:${port}`;
+}
+function readLocalTestUpdateManifest() {
+  if (!fs.existsSync(TEST_UPDATE_MANIFEST_FILE)) return null;
+  const data = JSON.parse(fs.readFileSync(TEST_UPDATE_MANIFEST_FILE, 'utf8'));
+  if (!data || data.enabled === false) return null;
+  const localInstallerPath = data.localInstallerPath || (data.asset && data.asset.localFilePath) || '';
+  if (localInstallerPath && fs.existsSync(localInstallerPath)) {
+    const stat = fs.statSync(localInstallerPath);
+    data.release = data.release || {};
+    data.release.asset = data.release.asset || data.asset || {};
+    data.release.downloadUrl = data.release.downloadUrl || `${localServerBaseUrl()}/api/update/test-installer`;
+    data.release.asset.downloadUrl = data.release.asset.downloadUrl || data.release.downloadUrl;
+    data.release.asset.name = data.release.asset.name || `Mineradio.Setup.${normalizeVersion(data.latestVersion || data.version || 'test')}.exe`;
+    data.release.asset.size = Number(data.release.asset.size || stat.size || 0) || 0;
+    data.release.asset.sha256 = data.release.asset.sha256 || sha256Hex(fs.readFileSync(localInstallerPath));
+    data.release.asset.contentType = data.release.asset.contentType || 'application/x-msdownload';
+  }
+  data.preview = false;
+  data.updateAvailable = data.updateAvailable !== false;
+  return data;
 }
 async function readUpdateManifest(ref) {
   const value = String(ref || '').trim();
@@ -946,6 +1032,8 @@ async function fetchLatestYmlUpdateInfo(reason) {
   return parseLatestYmlUpdateInfo(result.text, reason);
 }
 async function fetchLatestUpdateInfo() {
+  const testManifest = readLocalTestUpdateManifest();
+  if (testManifest) return normalizeManifestUpdateInfo(testManifest);
   if (UPDATE_CONFIG.manifest) return fetchManifestUpdateInfo(UPDATE_CONFIG.manifest);
   if (!UPDATE_CONFIG.configured || UPDATE_CONFIG.provider !== 'github') return localUpdateFallback();
   const apiUrl = `https://api.github.com/repos/${encodeURIComponent(UPDATE_CONFIG.owner)}/${encodeURIComponent(UPDATE_CONFIG.repo)}/releases/latest`;
@@ -1669,7 +1757,7 @@ const server = http.createServer(async (req, res) => {
       const result = await lxSourceHost.resolveMusicUrl(source, musicInfo, String(body.quality || ''), {
         excludeResolvers: Array.isArray(body.excludeResolvers) ? body.excludeResolvers : [],
       });
-      sendJSON(res, { ok: true, source, ...result });
+      sendJSON(res, { ok: true, source, ...result, proxyUrl: audioProxyUrl(result && result.url, result && result.headers) });
     } catch (err) {
       console.warn('[LXSourceResolve]', err.message);
       sendJSON(res, { ok: false, error: err.message || 'LX_SOURCE_RESOLVE_FAILED' }, 502);
@@ -1770,6 +1858,14 @@ const server = http.createServer(async (req, res) => {
             .replace(/[\s·・•_—–\-‐‑‒―~～,，.。!！?？:：;；'"“”‘’`´/\\|]+/g, '')
             .replace(/[\[\]【】{}<>《》〈〉]/g, '')
             .toLowerCase();
+          const hasHangul = value => /[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/.test(String(value || ''));
+          const lyricLanguageStats = value => {
+            const text = String(value || '').replace(/\[[^\]]*\]/g, '');
+            const hangul = (text.match(/[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/g) || []).length;
+            const cjk = (text.match(/[\u3400-\u9fff]/g) || []).length;
+            const latin = (text.match(/[a-z]/ig) || []).length;
+            return { hangul, cjk, latin };
+          };
           const titleVariants = value => {
             const raw = String(value || '').normalize('NFKC').trim();
             const variants = new Set([raw]);
@@ -1795,6 +1891,7 @@ const server = http.createServer(async (req, res) => {
           const wantedTitles = titleVariants(name);
           const wantedNormalizedTitles = wantedTitles.map(normalizeMatchText).filter(Boolean);
           const wantedSingerParts = singerParts(singer);
+          const wantsHangulLyric = hasHangul(name) || hasHangul(singer);
           const searchQueries = [];
           wantedTitles.forEach(title => {
             if (singer) searchQueries.push(`${title} ${singer}`.trim());
@@ -1873,11 +1970,14 @@ const server = http.createServer(async (req, res) => {
               console.warn('[PlatformLyricCandidate]', candidateError.message || candidateError);
               continue;
             }
-            if (!lyric && !yrc) {
+            const stats = lyricLanguageStats(candidateLyric || candidateYrc);
+            const likelyWrongKoreanMatch = wantsHangulLyric && stats.cjk > Math.max(8, stats.hangul * 2) && stats.hangul < 4;
+            const canUseCandidatePrimary = entry.score >= 132 && !likelyWrongKoreanMatch;
+            if (!lyric && !yrc && canUseCandidatePrimary) {
               lyric = candidateLyric || lyric;
               yrc = candidateYrc || yrc;
             }
-            if (candidateTranslation) {
+            if ((lyric || yrc) && candidateTranslation && !likelyWrongKoreanMatch) {
               tlyric = candidateTranslation;
               break;
             }
@@ -1967,6 +2067,7 @@ const server = http.createServer(async (req, res) => {
       const fetchImpl = electronNet && typeof electronNet.fetch === 'function'
         ? electronNet.fetch.bind(electronNet)
         : globalThis.fetch;
+      const playbackHeaders = audioProxyHeadersFromQuery(url.searchParams.get('h'));
       const upstream = await fetchImpl(target.href, {
         method: req.method === 'HEAD' ? 'HEAD' : 'GET',
         redirect: 'follow',
@@ -1974,6 +2075,7 @@ const server = http.createServer(async (req, res) => {
         headers: {
           Accept: '*/*',
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          ...playbackHeaders,
           ...(req.headers.range ? { Range:req.headers.range } : {}),
           ...(req.headers['if-range'] ? { 'If-Range':req.headers['if-range'] } : {}),
         },
@@ -2150,6 +2252,28 @@ const server = http.createServer(async (req, res) => {
       res.end(data);
     } catch (err) {
       sendJSON(res, { ok: false, error: err.message || 'IMAGE_PROXY_FAILED' }, 502);
+    }
+    return;
+  }
+
+  if (pn === '/api/update/test-installer') {
+    try {
+      const data = readLocalTestUpdateManifest();
+      const localInstallerPath = data && (data.localInstallerPath || (data.asset && data.asset.localFilePath));
+      if (!localInstallerPath || !fs.existsSync(localInstallerPath)) {
+        sendJSON(res, { ok:false, error:'TEST_UPDATE_INSTALLER_MISSING' }, 404);
+        return;
+      }
+      const stat = fs.statSync(localInstallerPath);
+      res.writeHead(200, {
+        'Content-Type': 'application/x-msdownload',
+        'Content-Length': stat.size,
+        'Content-Disposition': `attachment; filename="${path.basename(localInstallerPath).replace(/"/g, '')}"`,
+        'Cache-Control': 'no-store',
+      });
+      fs.createReadStream(localInstallerPath).pipe(res);
+    } catch (err) {
+      sendJSON(res, { ok:false, error:err.message || 'TEST_UPDATE_INSTALLER_FAILED' }, 500);
     }
     return;
   }

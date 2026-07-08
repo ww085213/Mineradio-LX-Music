@@ -1,24 +1,87 @@
 {
   "name": "mineradio",
   "productName": "Mineradio",
-  "version": "1.5.2",
-  "description": "可独立运行的本地音乐播放器、跨平台歌单工具与桌面音乐可视化应用。",
-  "author": "Mineradio contributors",
-  "license": "MIT",
+  "version": "1.5.3",
+  "description": "Mineradio 桌面音乐播放器，支持本地播放、歌单导入同步、跨平台搜索、歌词与可视化效果。",
+  "author": "Mineradio",
   "main": "desktop/main.js",
-  "homepage": "https://github.com/ww085213/Mineradio-LX-Music",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/ww085213/Mineradio-LX-Music.git"
-  },
-  "bugs": {
-    "url": "https://github.com/ww085213/Mineradio-LX-Music/issues"
-  },
+  "private": true,
   "scripts": {
     "start": "electron .",
-    "dev": "electron .",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder"
+    "build:win": "electron-builder --win nsis",
+    "build:win:dir": "electron-builder --win dir"
+  },
+  "build": {
+    "appId": "com.mineradio.desktop",
+    "productName": "Mineradio",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "afterPack": "build/after-pack.js",
+    "toolsets": {
+      "winCodeSign": "1.1.0"
+    },
+    "files": [
+      "desktop/**/*",
+      "public/**/*",
+      "build/**/*",
+      "!build/after-pack.js",
+      "!build/installer.nsh",
+      "!build/installerHeader.bmp",
+      "!build/installerSidebar.bmp",
+      "!build/icon.png",
+      "!node_modules/**/coverage/**/*",
+      "!node_modules/**/.nyc_output/**/*",
+      "!**/*.bak-*",
+      "!**/*.backup*",
+      "!updates/**/*",
+      "!backups/**/*",
+      "server.js",
+      "dj-analyzer.js",
+      "lx-search.js",
+      "lx-source-host.js",
+      "platform-playlist-import.js",
+      "package.json",
+      "!public/index.*.html",
+      "public/index.html"
+    ],
+    "asar": false,
+    "win": {
+      "executableName": "Mineradio",
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Mineradio",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "uninstallerSidebar": "build/installerSidebar.bmp",
+      "installerHeader": "build/installerHeader.bmp",
+      "include": "build/installer.nsh",
+      "artifactName": "Mineradio.Setup.${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ww085213",
+        "repo": "Mineradio-LX-Music"
+      }
+    ]
   },
   "mineradio": {
     "update": {
@@ -36,38 +99,12 @@
   },
   "dependencies": {
     "gsap": "^3.15.0",
-    "mpg123-decoder": "^1.0.3"
+    "mpg123-decoder": "^1.0.3",
+    "NeteaseCloudMusicApi": "^4.32.0"
   },
   "devDependencies": {
-    "electron": "^37.2.0",
-    "electron-builder": "^26.0.0"
-  },
-  "build": {
-    "appId": "com.mineradio.app",
-    "productName": "Mineradio",
-    "artifactName": "Mineradio.Setup.${version}.${ext}",
-    "asar": false,
-    "directories": {
-      "buildResources": "build",
-      "output": "dist"
-    },
-    "files": [
-      "desktop/**/*",
-      "public/**/*",
-      "server.js",
-      "lx-source-host.js",
-      "lx-search.js",
-      "platform-playlist-import.js",
-      "package.json"
-    ],
-    "win": {
-      "target": "nsis",
-      "icon": "build/icon.ico"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "include": "build/installer.nsh"
-    }
+    "electron": "^42.4.1",
+    "electron-builder": "^26.15.3",
+    "rcedit": "^5.0.2"
   }
 }

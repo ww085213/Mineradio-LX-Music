@@ -157,13 +157,40 @@ function waitForServer(server) {
 }
 
 const ENCRYPTED_AUDIO_EXTS = new Set(['.ncm', '.qmc0', '.qmc3', '.qmcflac', '.qmcogg', '.kgm', '.kgma', '.vpr', '.kwm', '.mflac', '.mgg']);
-const LOCAL_LIBRARY_EXTS = new Set(['.mp3', '.flac', '.wav', '.ogg', '.m4a', ...ENCRYPTED_AUDIO_EXTS, '.lrc', '.txt', '.jpg', '.jpeg', '.png', '.webp']);
+const EXTRA_AUDIO_EXTS = ['.aiff', '.aif', '.aifc', '.caf', '.amr', '.awb', '.oga', '.mka', '.mkv', '.m4b', '.alac', '.ac3', '.dts', '.tta', '.tak', '.wv', '.au', '.snd', '.ra', '.rm'];
+const LOCAL_LIBRARY_EXTS = new Set(['.mp3', '.flac', '.wav', '.ogg', '.opus', '.m4a', '.mp4', '.aac', '.webm', '.ape', '.wma', ...EXTRA_AUDIO_EXTS, ...ENCRYPTED_AUDIO_EXTS, '.lrc', '.txt', '.jpg', '.jpeg', '.png', '.webp']);
 const LOCAL_LIBRARY_MIME = {
   '.mp3': 'audio/mpeg',
   '.flac': 'audio/flac',
   '.wav': 'audio/wav',
   '.ogg': 'audio/ogg',
+  '.opus': 'audio/ogg',
   '.m4a': 'audio/mp4',
+  '.mp4': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.webm': 'audio/webm',
+  '.ape': 'audio/x-ape',
+  '.wma': 'audio/x-ms-wma',
+  '.aiff': 'audio/aiff',
+  '.aif': 'audio/aiff',
+  '.aifc': 'audio/aiff',
+  '.caf': 'audio/x-caf',
+  '.amr': 'audio/amr',
+  '.awb': 'audio/amr-wb',
+  '.oga': 'audio/ogg',
+  '.mka': 'audio/x-matroska',
+  '.mkv': 'audio/x-matroska',
+  '.m4b': 'audio/mp4',
+  '.alac': 'audio/alac',
+  '.ac3': 'audio/ac3',
+  '.dts': 'audio/vnd.dts',
+  '.tta': 'audio/x-tta',
+  '.tak': 'audio/x-tak',
+  '.wv': 'audio/x-wavpack',
+  '.au': 'audio/basic',
+  '.snd': 'audio/basic',
+  '.ra': 'audio/vnd.rn-realaudio',
+  '.rm': 'application/vnd.rn-realmedia',
   '.ncm': 'application/x-encrypted-audio',
   '.qmc0': 'application/x-encrypted-audio',
   '.qmc3': 'application/x-encrypted-audio',
@@ -216,7 +243,7 @@ async function validateLocalAudioFile(filePath, ext) {
   if (ENCRYPTED_AUDIO_EXTS.has(ext)) {
     return { playable:false, encrypted:true, code:'ENCRYPTED_AUDIO', error:'检测到平台加密音频；MR 不进行破解，请先从平台导出合法的普通音频文件' };
   }
-  if (!['.mp3', '.flac', '.wav', '.ogg', '.m4a'].includes(ext)) return { playable:true, error:'' };
+  if (!['.mp3', '.flac', '.wav', '.ogg', '.opus', '.m4a', '.mp4', '.aac', '.webm'].includes(ext)) return { playable:true, error:'' };
   try {
     const handle = await fs.promises.open(filePath, 'r');
     const buffer = Buffer.alloc(256 * 1024);
@@ -224,10 +251,12 @@ async function validateLocalAudioFile(filePath, ext) {
     try { ({ bytesRead } = await handle.read(buffer, 0, buffer.length, 0)); } finally { await handle.close(); }
     const data = buffer.subarray(0, bytesRead);
     let valid = false;
-    if (ext === '.flac') valid = data.subarray(0, 4).toString('ascii') === 'fLaC';
+    if (ext === '.flac') valid = data.indexOf(Buffer.from('fLaC')) >= 0;
     else if (ext === '.wav') valid = data.subarray(0, 4).toString('ascii') === 'RIFF' && data.subarray(8, 12).toString('ascii') === 'WAVE';
-    else if (ext === '.ogg') valid = data.subarray(0, 4).toString('ascii') === 'OggS';
-    else if (ext === '.m4a') valid = data.subarray(4, 12).includes(Buffer.from('ftyp'));
+    else if (ext === '.ogg' || ext === '.opus') valid = data.subarray(0, 4).toString('ascii') === 'OggS';
+    else if (ext === '.m4a' || ext === '.mp4') valid = data.subarray(4, 12).includes(Buffer.from('ftyp'));
+    else if (ext === '.aac') valid = data.length >= 2 && data[0] === 0xff && (data[1] & 0xf6) === 0xf0;
+    else if (ext === '.webm') valid = data.length >= 4 && data[0] === 0x1a && data[1] === 0x45 && data[2] === 0xdf && data[3] === 0xa3;
     else {
       let start = 0;
       if (data.subarray(0, 3).toString('ascii') === 'ID3' && data.length >= 10) {
@@ -249,6 +278,8 @@ function findAudioSignature(data) {
   if (flac >= 0) candidates.push({ offset:flac, ext:'.flac' });
   const ogg = data.indexOf(Buffer.from('OggS'));
   if (ogg >= 0) candidates.push({ offset:ogg, ext:'.ogg' });
+  const webm = data.indexOf(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]));
+  if (webm >= 0) candidates.push({ offset:webm, ext:'.webm' });
   for (let i = 0; i + 12 <= data.length; i++) {
     if (data.subarray(i, i + 4).toString('ascii') === 'RIFF' && data.subarray(i + 8, i + 12).toString('ascii') === 'WAVE') {
       candidates.push({ offset:i, ext:'.wav' });
@@ -257,6 +288,12 @@ function findAudioSignature(data) {
   }
   const ftyp = data.indexOf(Buffer.from('ftyp'));
   if (ftyp >= 4) candidates.push({ offset:ftyp - 4, ext:'.m4a' });
+  for (let i = 0; i + 1 < data.length; i++) {
+    if (data[i] === 0xff && (data[i + 1] & 0xf6) === 0xf0) {
+      candidates.push({ offset:i, ext:'.aac' });
+      break;
+    }
+  }
   const id3 = data.indexOf(Buffer.from('ID3'));
   if (id3 >= 0) candidates.push({ offset:id3, ext:'.mp3' });
   for (let i = 0; i + 1 < data.length; i++) {
@@ -351,7 +388,7 @@ async function transcodeLocalAudioForPlayback(filePath) {
   const output = path.join(compatibleAudioCacheDir(), `${key}-decoded.wav`);
   if (!fs.existsSync(output)) {
     await new Promise((resolve, reject) => {
-      execFile(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', '-i', filePath, '-vn', '-acodec', 'pcm_s16le', output], {
+      execFile(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-err_detect', 'ignore_err', '-y', '-i', filePath, '-vn', '-acodec', 'pcm_s16le', output], {
         windowsHide:true,
         timeout:120000,
         maxBuffer:2 * 1024 * 1024,
@@ -2016,7 +2053,7 @@ ipcMain.handle('mineradio-local-music-choose-files', async (event) => {
       title: '选择本地音乐、歌词或封面文件',
       properties: ['openFile', 'multiSelections'],
       filters: [
-        { name: '音乐与配套文件', extensions: ['mp3', 'flac', 'wav', 'ogg', 'm4a', 'ncm', 'qmc0', 'qmc3', 'qmcflac', 'qmcogg', 'kgm', 'kgma', 'vpr', 'kwm', 'mflac', 'mgg', 'lrc', 'txt', 'jpg', 'jpeg', 'png', 'webp'] },
+        { name: '音乐与配套文件', extensions: ['mp3', 'flac', 'wav', 'ogg', 'opus', 'm4a', 'mp4', 'aac', 'webm', 'ape', 'wma', 'aiff', 'aif', 'aifc', 'caf', 'amr', 'awb', 'oga', 'mka', 'mkv', 'm4b', 'alac', 'ac3', 'dts', 'tta', 'tak', 'wv', 'au', 'snd', 'ra', 'rm', 'ncm', 'qmc0', 'qmc3', 'qmcflac', 'qmcogg', 'kgm', 'kgma', 'vpr', 'kwm', 'mflac', 'mgg', 'lrc', 'txt', 'jpg', 'jpeg', 'png', 'webp'] },
         { name: '所有文件', extensions: ['*'] },
       ],
     });
