@@ -4,6 +4,7 @@
   "version": "1.5.3",
   "description": "Mineradio 桌面音乐播放器，支持本地播放、歌单导入同步、跨平台搜索、歌词与可视化效果。",
   "author": "Mineradio",
+  "license": "GPL-3.0-only",
   "main": "desktop/main.js",
   "private": true,
   "scripts": {
