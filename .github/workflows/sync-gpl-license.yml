@@ -1,0 +1,32 @@
+name: Sync GPL-3.0 License
+
+on:
+  push:
+    paths:
+      - .github/workflows/sync-gpl-license.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync-license:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download official GPL-3.0 text
+        run: curl --fail --location --silent --show-error https://www.gnu.org/licenses/gpl-3.0.txt --output LICENSE
+
+      - name: Commit full license text
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add LICENSE
+          if git diff --cached --quiet; then
+            echo "LICENSE is already up to date."
+            exit 0
+          fi
+          git commit -m "docs: add complete GPL-3.0 license text"
+          git push
