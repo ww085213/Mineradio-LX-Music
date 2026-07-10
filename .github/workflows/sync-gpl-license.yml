@@ -16,8 +16,8 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Download official GPL-3.0 text
-        run: curl --fail --location --silent --show-error https://www.gnu.org/licenses/gpl-3.0.txt --output LICENSE
+      - name: Install official GPL-3.0 text
+        run: cp /usr/share/common-licenses/GPL-3 LICENSE
 
       - name: Commit full license text
         run: |
