@@ -49,9 +49,12 @@ let wallpaperControlsPointerCapture = false;
 let htmlFullscreenActive = false;
 let windowFullscreenActive = false;
 let mainWindowStateTimer = null;
+let mainWindowBoundsSaveTimer = null;
 let tray = null;
 let trayRightClickGuardUntil = 0;
 let trayPlaybackState = { title: '', artist: '', playing: false, volume: 80 };
+let trayCreateRetryTimer = null;
+let trayCreateAttempts = 0;
 let closeToTrayEnabled = true;
 let appQuitting = false;
 let mainWindowClosePersisting = false;
@@ -84,7 +87,7 @@ const WINDOWED_SCALE = 3 / 4;
 const WINDOWED_MARGIN = 32;
 const MIN_WINDOWED_WIDTH = 960;
 const MIN_WINDOWED_HEIGHT = 540;
-const APP_NAME = 'Mineradio';
+const APP_NAME = 'Mineradio二创版';
 const APP_USER_MODEL_ID = 'com.mineradio.desktop';
 const APP_TRAY_GUID = '7e6162ca-f43f-4d0a-b5bb-8b8fcd17a865';
 const APP_ICON_ICO = path.join(__dirname, '..', 'build', 'icon.ico');
@@ -918,14 +921,38 @@ function refreshTrayMenu() {
  * @returns {void}
  */
 function createTray() {
-  if (tray || process.platform !== 'win32') return;
-  const iconPath = fs.existsSync(APP_ICON_ICO)
-    ? APP_ICON_ICO
-    : (fs.existsSync(APP_TRAY_ICON_PNG) ? APP_TRAY_ICON_PNG : process.execPath);
-  let icon = nativeImage.createFromPath(iconPath);
-  if (icon.isEmpty() && iconPath !== process.execPath) icon = nativeImage.createFromPath(process.execPath);
-  if (!icon.isEmpty()) icon = icon.resize({ width: 16, height: 16, quality: 'best' });
-  tray = new Tray(icon.isEmpty() ? process.execPath : icon, APP_TRAY_GUID);
+  if (tray || process.platform !== 'win32' || !app.isReady()) return !!tray;
+  if (trayCreateRetryTimer) {
+    clearTimeout(trayCreateRetryTimer);
+    trayCreateRetryTimer = null;
+  }
+  const candidates = [APP_ICON_ICO, APP_TRAY_ICON_PNG, process.execPath].filter((item, index, list) => item && list.indexOf(item) === index && (item === process.execPath || fs.existsSync(item)));
+  let lastError = null;
+  for (const iconPath of candidates) {
+    try {
+      let icon = nativeImage.createFromPath(iconPath);
+      if (icon.isEmpty()) continue;
+      if (iconPath !== APP_ICON_ICO) icon = icon.resize({ width: 16, height: 16, quality: 'best' });
+      try {
+        tray = new Tray(icon, APP_TRAY_GUID);
+      } catch (guidError) {
+        lastError = guidError;
+        tray = new Tray(icon);
+      }
+      break;
+    } catch (error) {
+      lastError = error;
+      tray = null;
+    }
+  }
+  if (!tray) {
+    trayCreateAttempts += 1;
+    const delay = Math.min(15000, 1000 * Math.max(1, trayCreateAttempts));
+    console.warn('[Tray] creation failed; retrying in', delay, 'ms', lastError || 'no usable icon');
+    trayCreateRetryTimer = setTimeout(createTray, delay);
+    return false;
+  }
+  trayCreateAttempts = 0;
   tray.setToolTip(`${APP_NAME}（单击显示窗口）`);
   tray.on('click', focusMainWindow);
   tray.on('double-click', focusMainWindow);
@@ -933,7 +960,13 @@ function createTray() {
     trayRightClickGuardUntil = Date.now() + 900;
     if (tray) tray.popUpContextMenu();
   });
+  tray.on('destroyed', () => {
+    tray = null;
+    if (!appQuitting) trayCreateRetryTimer = setTimeout(createTray, 1200);
+  });
   refreshTrayMenu();
+  console.info('[Tray] ready');
+  return true;
 }
 
 function getUpdateDownloadDir() {
@@ -987,7 +1020,52 @@ function ensureDesktopShortcut() {
   }
 }
 
-function getWindowedBounds(win) {
+function savedWindowedBounds() {
+  const saved = readDesktopShellSettings().windowBounds;
+  if (!saved || typeof saved !== 'object') return null;
+  const bounds = {
+    x: Math.round(Number(saved.x)),
+    y: Math.round(Number(saved.y)),
+    width: Math.round(Number(saved.width)),
+    height: Math.round(Number(saved.height)),
+  };
+  if (!Object.values(bounds).every(Number.isFinite)) return null;
+  if (bounds.width < MIN_WINDOWED_WIDTH || bounds.height < MIN_WINDOWED_HEIGHT) return null;
+
+  // Keep a restored window reachable when a monitor was removed or its DPI changed.
+  const displays = screen.getAllDisplays();
+  const visible = displays.some(display => {
+    const area = display.workArea || display.bounds;
+    const overlapWidth = Math.max(0, Math.min(bounds.x + bounds.width, area.x + area.width) - Math.max(bounds.x, area.x));
+    const overlapHeight = Math.max(0, Math.min(bounds.y + bounds.height, area.y + area.height) - Math.max(bounds.y, area.y));
+    return overlapWidth >= 120 && overlapHeight >= 80;
+  });
+  if (!visible) return null;
+
+  const display = screen.getDisplayMatching(bounds);
+  const area = display.workArea || display.bounds;
+  bounds.width = Math.min(bounds.width, area.width);
+  bounds.height = Math.min(bounds.height, area.height);
+  bounds.x = Math.min(Math.max(bounds.x, area.x - bounds.width + 120), area.x + area.width - 120);
+  bounds.y = Math.min(Math.max(bounds.y, area.y), area.y + area.height - 80);
+  return bounds;
+}
+
+function scheduleMainWindowBoundsSave(win) {
+  if (!win || win.isDestroyed() || win.isFullScreen() || win.isMaximized() || win.isMinimized()) return;
+  if (mainWindowBoundsSaveTimer) clearTimeout(mainWindowBoundsSaveTimer);
+  mainWindowBoundsSaveTimer = setTimeout(() => {
+    mainWindowBoundsSaveTimer = null;
+    if (!win || win.isDestroyed() || win.isFullScreen() || win.isMaximized() || win.isMinimized()) return;
+    writeDesktopShellSettings({ windowBounds: win.getBounds() });
+  }, 250);
+}
+
+function getWindowedBounds(win, useSaved = true) {
+  if (useSaved) {
+    const saved = savedWindowedBounds();
+    if (saved) return saved;
+  }
   const display = win && !win.isDestroyed()
     ? screen.getDisplayMatching(win.getBounds())
     : screen.getPrimaryDisplay();
@@ -2041,9 +2119,9 @@ function closeOverlayWindows() {
 ipcMain.handle('desktop-window-minimize', (event) => {
   const win = getSenderWindow(event);
   if (!win || win.isDestroyed()) return;
-  // 最小化始终保留在 Windows 任务栏；只有关闭按钮才隐藏到托盘。
-  win.setSkipTaskbar(false);
-  win.minimize();
+  // The desktop shell's minimize button always sends the app to the tray.
+  // This keeps playback available without leaving a taskbar button behind.
+  hideMainWindowToTray({ pauseLinked: false });
 });
 
 ipcMain.handle('desktop-window-toggle-maximize', (event) => {
@@ -2704,9 +2782,13 @@ async function createWindow() {
     suspendDesktopLyricsForMainWindowMove();
     restoreDesktopLyricsAfterMainWindowMove(320);
     scheduleWindowStateSend(mainWindow);
+    scheduleMainWindowBoundsSave(mainWindow);
   });
   mainWindow.on('moved', () => restoreDesktopLyricsAfterMainWindowMove(80));
-  mainWindow.on('resize', () => scheduleWindowStateSend(mainWindow));
+  mainWindow.on('resize', () => {
+    scheduleWindowStateSend(mainWindow);
+    scheduleMainWindowBoundsSave(mainWindow);
+  });
   mainWindow.on('close', (event) => {
     if (mainWindowClosePersisting) return;
     event.preventDefault();
@@ -2733,6 +2815,10 @@ async function createWindow() {
     if (mainWindowStateTimer) {
       clearTimeout(mainWindowStateTimer);
       mainWindowStateTimer = null;
+    }
+    if (mainWindowBoundsSaveTimer) {
+      clearTimeout(mainWindowBoundsSaveTimer);
+      mainWindowBoundsSaveTimer = null;
     }
     closeOverlayWindows();
     mainWindowResizeStates.clear();
@@ -2804,6 +2890,7 @@ if (!gotSingleInstanceLock) {
     });
     createTray();
     await createWindow();
+    createTray();
     refreshTrayMenu();
   });
 
@@ -2817,6 +2904,10 @@ if (!gotSingleInstanceLock) {
   });
 
   app.on('before-quit', (event) => {
+    if (trayCreateRetryTimer) {
+      clearTimeout(trayCreateRetryTimer);
+      trayCreateRetryTimer = null;
+    }
     if (lxPlaybackLinked && !lxPauseBeforeQuitDone) {
       event.preventDefault();
       appQuitting = true;

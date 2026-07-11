@@ -135,6 +135,21 @@ npm run build:mac
 
 默认发布仓库为 `ww085213/Mineradio-LX-Music`。更新检查配置位于 `package.json` 的 `mineradio.update` 字段。
 
+## Mineradio二创版 v1.5.4.3
+
+本版本统一使用“Mineradio二创版”名称，主要更新如下：
+
+- 新增歌单批量导入，并优化本地音乐批量导入体验。
+- 新增窗口大小和位置记忆，重新启动后自动恢复。
+- 修复“莫奈”歌词动画遮挡 DIY 控制条的问题。
+- 全局升级液态玻璃视觉效果。
+- 加入小水、小果、小绿平台导入，并优化小绿公开歌单的读取速度和错误提示。
+- 左侧区域支持加入视频背景。
+- 最小化按钮支持隐藏到系统托盘。
+- 应用、快捷方式、卸载项和更新界面统一显示“Mineradio二创版”。
+
+安装包：`Mineradio二创版.Setup.1.5.4.3.exe`
+
 ## License
 
 本项目基于上游 GPL-3.0 项目修改，继续采用 **GNU General Public License v3.0（GPL-3.0-only）** 发布。详见 [LICENSE](./LICENSE)。

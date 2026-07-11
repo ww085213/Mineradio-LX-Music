@@ -5,7 +5,7 @@
   "name": "默认测试",
   "savedAt": 1782273019045,
   "snapshot": {
-    "visualPresetSchema": "skull-preset-v2",
+    "visualPresetSchema": "skull-preset-v4",
     "preset": 0,
     "intensity": 0.85,
     "cinemaShake": 0.5,
