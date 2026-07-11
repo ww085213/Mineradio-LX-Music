@@ -42,7 +42,10 @@ let desktopLyricsDragSettleTimer = null;
 let desktopLyricsRightDragOrigin = null;
 let desktopLyricsMainFocused = false;
 let wallpaperWindow = null;
+let wallpaperPointerCapture = false;
 let wallpaperState = {};
+let wallpaperControlsWindow = null;
+let wallpaperControlsPointerCapture = false;
 let htmlFullscreenActive = false;
 let windowFullscreenActive = false;
 let mainWindowStateTimer = null;
@@ -51,6 +54,7 @@ let trayRightClickGuardUntil = 0;
 let trayPlaybackState = { title: '', artist: '', playing: false, volume: 80 };
 let closeToTrayEnabled = true;
 let appQuitting = false;
+let mainWindowClosePersisting = false;
 let lxPlaybackLinked = false;
 let lxPauseBeforeQuitDone = false;
 const registeredGlobalHotkeys = new Map();
@@ -99,10 +103,13 @@ const DESKTOP_UI_STATE_KEYS = new Set([
   'mineradio-user-capsule-auto-hide-v1',
   'mineradio-fx-fab-auto-hide-v1',
   'mineradio-controls-auto-hide-v1',
+  'mineradio-ui-motion-v1',
   'mineradio-free-camera-v1',
   'mineradio-local-library-folder-v1',
   'mineradio-local-library-folders-v2',
   'mineradio-hidden-wallpapers-v1',
+  'mineradio-favorite-wallpapers-v1',
+  'mineradio-last-visual-preset-v1',
   'mineradio-playback-session-v1',
   'mineradio-user-fx-archives-v1',
   'mineradio-hotkey-settings-v1',
@@ -112,6 +119,13 @@ const DESKTOP_UI_STATE_KEYS = new Set([
 
 const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['autoplay-policy', 'no-user-gesture-required'],
+  // Prefer the discrete GPU on Windows hybrid-graphics systems. The driver/OS
+  // still owns the final decision, but this prevents Chromium from defaulting
+  // the WebGL compositor to the power-saving adapter whenever possible.
+  ['force_high_performance_gpu'],
+  ['enable-gpu-rasterization'],
+  ['enable-zero-copy'],
+  ['ignore-gpu-blocklist'],
   ['disable-background-timer-throttling'],
   ['disable-renderer-backgrounding'],
   ['disable-backgrounding-occluded-windows'],
@@ -704,6 +718,7 @@ function focusMainWindow() {
 
 function hideMainWindowToTray({ pauseLinked = false } = {}) {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
+  try { mainWindow.webContents.send('mineradio-tray-command', { command: 'persist-session' }); } catch (_e) {}
   if (pauseLinked) pauseLinkedLxPlayback();
   mainWindow.setSkipTaskbar(true);
   mainWindow.hide();
@@ -851,6 +866,16 @@ function refreshTrayMenu() {
     { type: 'separator' },
     { label: '显示 Mineradio', click: focusMainWindow },
     { label: '隐藏到托盘', click: hideMainWindowToTray },
+    {
+      label: '退出桌面播放器模式',
+      visible: !!wallpaperState.enabled,
+      click: () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('mineradio-wallpaper-command', { command: 'wallpaper-off' });
+        }
+        closeWallpaperWindow();
+      },
+    },
     {
       label: '关闭按钮隐藏到托盘',
       type: 'checkbox',
@@ -1080,15 +1105,16 @@ function desktopLyricsDefaultBounds(payload = desktopLyricsState) {
     ? screen.getDisplayMatching(desktopLyricsUserBounds)
     : screen.getPrimaryDisplay();
   const area = display.workArea || display.bounds;
+  const xRatio = clampNumber(payload.x, 0.02, 0.98, 0.5);
   const yRatio = clampNumber(payload.y, 0.08, 0.92, 0.76);
-  // V3: compact window + off-screen center allowance. The overlay is no longer a
-  // full-screen click-blocker, but its center can still be dragged almost anywhere
-  // on the monitor. This keeps Wallpaper Engine alive and keeps the desktop usable.
+  // V4: position is controlled from the DIY panel, not by dragging on the desktop.
+  // X/Y are ratios of the current work area so the lyric keeps its place across
+  // different screen resolutions and taskbar sizes.
   const metrics = desktopLyricsWindowMetrics(area, payload);
   const width = metrics.width;
   const height = metrics.height;
   return {
-    x: Math.round(area.x + (area.width - width) / 2),
+    x: Math.round(area.x + area.width * xRatio - width / 2),
     y: Math.round(area.y + area.height * yRatio - height / 2),
     width,
     height,
@@ -1150,11 +1176,9 @@ function applyDesktopLyricsMouseBehavior(options = {}) {
     desktopLyricsWindow.setFocusable(false);
   } catch (_error) {}
 
-  // 默认穿透：锁定状态、解锁但鼠标远离时，都不让桌面歌词接收鼠标。
-  // 只有鼠标靠近热区、或正在拖动/调整时，才临时取消穿透。
-  // 注意：这里故意不使用 { forward:true }，否则透明窗口仍可能持续收到 hover/move，
-  // 进而造成“像一直点击”、频闪、输入框失焦。
-  const shouldIgnore = !desktopLyricsDragging;
+  // 现在桌面歌词位置只通过 DIY 面板调整，不再依赖桌面直接拖动。
+  // 因此桌面歌词窗口始终穿透鼠标，避免未锁定时抢走点击，导致 DIY/关闭按钮点不了。
+  const shouldIgnore = true;
   if (shouldIgnore) {
     desktopLyricsPointerCapture = false;
     desktopLyricsExternalLeftDrag = false;
@@ -1293,18 +1317,9 @@ function stopDesktopLyricsProximityWatcher() {
 }
 
 function handleDesktopLyricsGlobalMiddleClick() {
-  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return;
-  if (!desktopLyricsState.enabled) return;
-  const now = Date.now();
-  if (now - desktopLyricsLastMiddleAt < 260) return;
-  const point = screen.getCursorScreenPoint();
-  if (!pointInBounds(point, desktopLyricsHotBoundsOnScreen())) return;
-  desktopLyricsLastMiddleAt = now;
-  const nextLocked = desktopLyricsState.clickThrough === false;
-  desktopLyricsState = { ...desktopLyricsState, clickThrough: nextLocked };
-  desktopLyricsPointerCapture = false;
-  applyDesktopLyricsMouseBehavior();
-  broadcastDesktopLyricsLockState();
+  // 关闭桌面中键解锁/拖动入口。位置、大小、透明度统一在 DIY 面板里调整，
+  // 这样桌面歌词不会再抢鼠标键盘，也不会误触主界面按钮。
+  return;
 }
 
 function stopDesktopLyricsGlobalDrag() {
@@ -1391,31 +1406,16 @@ function startDesktopLyricsGlobalDrag(point) {
   return true;
 }
 
-function handleDesktopLyricsGlobalLeftButton(down) {
-  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed() || !desktopLyricsState.enabled) {
-    desktopLyricsExternalLeftDrag = false;
-    return;
-  }
-  if (down) {
-    if (desktopLyricsDragging || desktopLyricsPointerCapture) return;
-    const point = screen.getCursorScreenPoint();
-    desktopLyricsExternalLeftDrag = false;
-    desktopLyricsPendingLeftDrag = null;
-    if (desktopLyricsState.clickThrough === false && pointInBounds(point, desktopLyricsHotBoundsOnScreen())) {
-      startDesktopLyricsGlobalDrag(point);
-      applyDesktopLyricsMouseBehavior({ force: true });
-    }
-    return;
-  } else {
-    desktopLyricsPendingLeftDrag = null;
-    if (desktopLyricsGlobalDragTimer) {
-      stopDesktopLyricsGlobalDrag();
-      applyDesktopLyricsMouseBehavior();
-      return;
-    }
-    desktopLyricsExternalLeftDrag = false;
-  }
-  applyDesktopLyricsMouseBehavior();
+function handleDesktopLyricsGlobalLeftButton(_down) {
+  // 安全修复：不要在主进程全局监听左键并把它当成桌面歌词拖动。
+  // 未锁定歌词时，这个逻辑会把用户点击 DIY/关闭/其它按钮误判成拖动，
+  // 造成“像一直在点击”、主界面无法操作。左键操作只允许 renderer 在真正拿到
+  // 指针事件时显式发起；默认状态保持 click-through。
+  desktopLyricsExternalLeftDrag = false;
+  desktopLyricsPendingLeftDrag = null;
+  desktopLyricsRightDragOrigin = null;
+  if (desktopLyricsGlobalDragTimer) stopDesktopLyricsGlobalDrag();
+  applyDesktopLyricsMouseBehavior({ force: true });
 }
 
 function handleDesktopLyricsGlobalRightButton(down) {
@@ -1434,21 +1434,14 @@ public class MineradioMousePoll {
 }
 "@
 $prevMiddle = $false
-$prevLeft = $false
 while ($true) {
   $middleDown = (([MineradioMousePoll]::GetAsyncKeyState(4) -band 0x8000) -ne 0)
-  $leftDown = (([MineradioMousePoll]::GetAsyncKeyState(1) -band 0x8000) -ne 0)
   if ($middleDown -and -not $prevMiddle) {
     [Console]::Out.WriteLine("MMB")
     [Console]::Out.Flush()
   }
-  if ($leftDown -ne $prevLeft) {
-    [Console]::Out.WriteLine($(if ($leftDown) { "LD" } else { "LU" }))
-    [Console]::Out.Flush()
-  }
   $prevMiddle = $middleDown
-  $prevLeft = $leftDown
-  Start-Sleep -Milliseconds 22
+  Start-Sleep -Milliseconds 55
 }
 `;
   try {
@@ -1463,8 +1456,6 @@ while ($true) {
       lines.forEach((line) => {
         const eventName = line.trim();
         if (eventName === 'MMB') handleDesktopLyricsGlobalMiddleClick();
-        else if (eventName === 'LD') handleDesktopLyricsGlobalLeftButton(true);
-        else if (eventName === 'LU') handleDesktopLyricsGlobalLeftButton(false);
       });
     });
     desktopLyricsMousePoller.on('exit', () => {
@@ -1576,11 +1567,10 @@ function keepDesktopLyricsWindowOpaqueAndTopMost(options = {}) {
   // 这里只在必要时强制执行，普通状态下做节流，拖动过程中直接跳过。
   const now = Date.now();
   const locked = desktopLyricsState.clickThrough !== false;
-  // 关键修复：当 MR 主窗口正在输入/获得焦点，桌面歌词锁定时不应该继续抢最高层级。
-  // 有些 Windows/Electron 组合里，即使 setIgnoreMouseEvents(true) 也会因为
-  // screen-saver 级别 + moveTop 让透明窗口反复压到主窗口上，表现成输入框失焦、像一直被点击。
-  // 所以锁定 + 主窗口聚焦时，桌面歌词退到普通层级，并强制鼠标穿透/禁用焦点。
-  if (locked && !desktopLyricsDragging && isMainWindowFocusedForDesktopLyrics()) {
+  // 关键修复：只要 MR 主窗口正在获得焦点，桌面歌词就退到普通层级并强制穿透。
+  // 之前只在“锁定”时这样处理；未锁定时，透明歌词窗口仍会保持 screen-saver 置顶，
+  // 再配合全局鼠标检测，容易表现成持续点击/抢焦点，导致 DIY、关闭按钮都点不了。
+  if (!desktopLyricsDragging && isMainWindowFocusedForDesktopLyrics()) {
     makeDesktopLyricsPassiveForTyping();
     try { desktopLyricsWindow.setAlwaysOnTop(false); } catch (_error) {}
     return;
@@ -1615,23 +1605,27 @@ function sendDesktopLyricsState() {
 }
 
 function createDesktopLyricsWindow(payload = {}) {
+  const previousX = desktopLyricsState.x;
   const previousY = desktopLyricsState.y;
   const previousOpacity = desktopLyricsState.opacity;
   const previousSize = desktopLyricsState.size;
   desktopLyricsState = { ...desktopLyricsState, ...payload, enabled: true };
+  const hasX = Object.prototype.hasOwnProperty.call(payload || {}, 'x');
   const hasY = Object.prototype.hasOwnProperty.call(payload || {}, 'y');
   const hasSize = Object.prototype.hasOwnProperty.call(payload || {}, 'size');
+  const nextX = clampNumber(desktopLyricsState.x, 0.02, 0.98, 0.5);
   const nextY = clampNumber(desktopLyricsState.y, 0.08, 0.92, 0.76);
+  const xChanged = hasX && Number.isFinite(Number(previousX)) && Math.abs(nextX - clampNumber(previousX, 0.02, 0.98, 0.5)) > 0.001;
   const yChanged = hasY && Number.isFinite(Number(previousY)) && Math.abs(nextY - clampNumber(previousY, 0.08, 0.92, 0.76)) > 0.001;
   const nextSizeValue = clampNumber(desktopLyricsState.size, 0.5, 4, 1);
   const previousSizeValue = clampNumber(previousSize, 0.5, 4, NaN);
   const sizeChanged = hasSize && (!Number.isFinite(previousSizeValue) || Math.abs(nextSizeValue - previousSizeValue) > 0.001);
   const opacityChanged = Object.prototype.hasOwnProperty.call(payload || {}, 'opacity')
     && Math.abs(clampNumber(desktopLyricsState.opacity, 0.28, 1, 0.92) - clampNumber(previousOpacity, 0.28, 1, 0.92)) > 0.001;
-  if (yChanged) desktopLyricsUserBounds = null;
+  if (xChanged || yChanged) desktopLyricsUserBounds = null;
   if (desktopLyricsWindow && !desktopLyricsWindow.isDestroyed()) {
-    if (yChanged) {
-      positionDesktopLyricsWindow(desktopLyricsState, { force: yChanged });
+    if (xChanged || yChanged) {
+      positionDesktopLyricsWindow(desktopLyricsState, { force: xChanged || yChanged });
       keepDesktopLyricsWindowOpaqueAndTopMost({ force: true });
     } else if (sizeChanged || desktopLyricsLastAppliedWindowSize === null) {
       resizeDesktopLyricsWindowForSize(nextSizeValue);
@@ -1682,7 +1676,7 @@ function createDesktopLyricsWindow(payload = {}) {
   startDesktopLyricsMousePoller();
   startDesktopLyricsProximityWatcher();
   applyDesktopLyricsMouseBehavior({ force: true });
-  positionDesktopLyricsWindow(desktopLyricsState, { force: yChanged || !desktopLyricsUserBounds });
+  positionDesktopLyricsWindow(desktopLyricsState, { force: xChanged || yChanged || !desktopLyricsUserBounds });
   desktopLyricsLastAppliedWindowSize = nextSizeValue;
   desktopLyricsWindow.once('ready-to-show', () => {
     if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return;
@@ -1766,7 +1760,7 @@ function nativeWindowHandleDecimal(win) {
   return String(handle.readUInt32LE(0));
 }
 
-function attachWallpaperToWorkerW(win) {
+function attachWallpaperToWorkerW(win, aboveDesktopIcons = false) {
   if (process.platform !== 'win32' || !win || win.isDestroyed()) return;
   const hwnd = nativeWindowHandleDecimal(win);
   const script = `
@@ -1790,10 +1784,12 @@ $progman = [MineradioNativeWin]::FindWindow("Progman", $null)
 $result = [IntPtr]::Zero
 [MineradioNativeWin]::SendMessageTimeout($progman, 0x052C, [IntPtr]::Zero, [IntPtr]::Zero, 0, 1000, [ref]$result) | Out-Null
 $script:workerw = [IntPtr]::Zero
+$script:iconHost = [IntPtr]::Zero
 $enum = [MineradioNativeWin+EnumWindowsProc]{
   param([IntPtr]$top, [IntPtr]$param)
   $shell = [MineradioNativeWin]::FindWindowEx($top, [IntPtr]::Zero, "SHELLDLL_DefView", $null)
   if ($shell -ne [IntPtr]::Zero) {
+    $script:iconHost = $top
     $script:workerw = [MineradioNativeWin]::FindWindowEx([IntPtr]::Zero, $top, "WorkerW", $null)
   }
   return $true
@@ -1801,8 +1797,10 @@ $enum = [MineradioNativeWin+EnumWindowsProc]{
 [MineradioNativeWin]::EnumWindows($enum, [IntPtr]::Zero) | Out-Null
 if ($script:workerw -eq [IntPtr]::Zero) { $script:workerw = $progman }
 $target = [IntPtr]::new([Int64]${hwnd})
-[MineradioNativeWin]::SetParent($target, $script:workerw) | Out-Null
-[MineradioNativeWin]::SetWindowPos($target, [IntPtr]::Zero, 0, 0, 0, 0, 0x0013) | Out-Null
+$parent = if (${aboveDesktopIcons ? '$true' : '$false'} -and $script:iconHost -ne [IntPtr]::Zero) { $script:iconHost } else { $script:workerw }
+[MineradioNativeWin]::SetParent($target, $parent) | Out-Null
+$z = if (${aboveDesktopIcons ? '$true' : '$false'}) { [IntPtr]::Zero } else { [IntPtr]::new(1) }
+[MineradioNativeWin]::SetWindowPos($target, $z, 0, 0, 0, 0, 0x0013) | Out-Null
 `;
   execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
     windowsHide: true,
@@ -1812,25 +1810,179 @@ $target = [IntPtr]::new([Int64]${hwnd})
   });
 }
 
+function wallpaperDesktopBounds() {
+  const displays = screen.getAllDisplays();
+  if (!displays.length) return screen.getPrimaryDisplay().bounds;
+  const bounds = displays.reduce((acc, display) => {
+    const b = display.bounds;
+    const left = Math.min(acc.x, b.x);
+    const top = Math.min(acc.y, b.y);
+    const right = Math.max(acc.x + acc.width, b.x + b.width);
+    const bottom = Math.max(acc.y + acc.height, b.y + b.height);
+    return { x: left, y: top, width: right - left, height: bottom - top };
+  }, { ...displays[0].bounds });
+  return {
+    x: bounds.x - 8,
+    y: bounds.y - 8,
+    width: bounds.width + 16,
+    height: bounds.height + 16,
+  };
+}
+
 function positionWallpaperWindow() {
   if (!wallpaperWindow || wallpaperWindow.isDestroyed()) return;
-  const bounds = screen.getPrimaryDisplay().bounds;
-  wallpaperWindow.setBounds(bounds, false);
+  wallpaperWindow.setBounds(wallpaperDesktopBounds(), false);
+}
+
+function positionWallpaperControlsWindow() {
+  if (!wallpaperControlsWindow || wallpaperControlsWindow.isDestroyed()) return;
+  wallpaperControlsWindow.setBounds(wallpaperControlsBounds(), false);
+}
+
+function wallpaperControlsBounds() {
+  const display = screen.getPrimaryDisplay();
+  const area = display.workArea || display.bounds;
+  const width = Math.max(720, Math.min(1120, area.width - 48));
+  const height = 116;
+  // Keep clear of both the Windows taskbar and common floating docks.
+  const lift = Math.max(104, Math.min(170, Math.round(area.height * 0.12)));
+  return {
+    x: Math.round(area.x + (area.width - width) / 2),
+    y: Math.round(area.y + area.height - height - lift),
+    width: Math.round(width),
+    height,
+  };
+}
+
+function refreshWallpaperDesktopPlacement() {
+  if (!wallpaperWindow || wallpaperWindow.isDestroyed()) return;
+  positionWallpaperWindow();
+  wallpaperWindow.showInactive();
+  attachWallpaperToWorkerW(wallpaperWindow);
+  applyWallpaperMouseBehavior();
+  if (wallpaperControlsWindow && !wallpaperControlsWindow.isDestroyed()) {
+    positionWallpaperControlsWindow();
+    wallpaperControlsWindow.showInactive();
+    attachWallpaperToWorkerW(wallpaperControlsWindow, true);
+    applyWallpaperControlsMouseBehavior();
+  }
+  sendWallpaperState();
+}
+
+function hookExplorerRestartForWallpaper(win) {
+  if (process.platform !== 'win32' || !win || win.isDestroyed() || typeof win.hookWindowMessage !== 'function') return;
+  const script = `
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class MineradioShellMessage {
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)]
+  public static extern uint RegisterWindowMessage(string lpString);
+}
+"@
+[MineradioShellMessage]::RegisterWindowMessage("TaskbarCreated")
+`;
+  execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+    windowsHide: true,
+    timeout: 5000,
+  }, (error, stdout) => {
+    if (error || !win || win.isDestroyed()) return;
+    const messageId = Number.parseInt(String(stdout || '').trim(), 10);
+    if (!Number.isInteger(messageId) || messageId <= 0) return;
+    try {
+      win.hookWindowMessage(messageId, () => {
+        setTimeout(() => refreshWallpaperDesktopPlacement(), 650);
+      });
+    } catch (e) {
+      console.warn('Explorer restart hook failed:', e && e.message || e);
+    }
+  });
 }
 
 function sendWallpaperState() {
   if (!wallpaperWindow || wallpaperWindow.isDestroyed()) return;
   wallpaperWindow.webContents.send('mineradio-wallpaper-state', wallpaperState);
+  if (wallpaperControlsWindow && !wallpaperControlsWindow.isDestroyed()) {
+    wallpaperControlsWindow.webContents.send('mineradio-wallpaper-state', wallpaperState);
+  }
+}
+
+function applyWallpaperMouseBehavior() {
+  if (!wallpaperWindow || wallpaperWindow.isDestroyed()) return;
+  try {
+    // The WorkerW render surface must never block Explorer desktop icons.
+    wallpaperPointerCapture = false;
+    wallpaperWindow.setIgnoreMouseEvents(true, { forward: true });
+  } catch (e) {
+    console.warn('Wallpaper mouse behavior failed:', e && e.message || e);
+  }
+}
+
+function applyWallpaperControlsMouseBehavior() {
+  if (!wallpaperControlsWindow || wallpaperControlsWindow.isDestroyed()) return;
+  try {
+    // This window only covers the visible control strip, so it can remain
+    // directly clickable without blocking icons elsewhere on the desktop.
+    wallpaperControlsPointerCapture = true;
+    wallpaperControlsWindow.setIgnoreMouseEvents(false);
+  } catch (e) {
+    console.warn('Wallpaper controls mouse behavior failed:', e && e.message || e);
+  }
+}
+
+function createWallpaperControlsWindow() {
+  if (wallpaperControlsWindow && !wallpaperControlsWindow.isDestroyed()) return wallpaperControlsWindow;
+  const bounds = wallpaperControlsBounds();
+  wallpaperControlsWindow = new BrowserWindow({
+    ...bounds,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
+    resizable: false,
+    movable: false,
+    focusable: false,
+    skipTaskbar: true,
+    show: false,
+    title: 'Mineradio Desktop Controls',
+    webPreferences: {
+      preload: path.join(__dirname, 'overlay-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      backgroundThrottling: false,
+    },
+  });
+  wallpaperControlsPointerCapture = true;
+  applyWallpaperControlsMouseBehavior();
+  wallpaperControlsWindow.once('ready-to-show', () => {
+    if (!wallpaperControlsWindow || wallpaperControlsWindow.isDestroyed()) return;
+    positionWallpaperControlsWindow();
+    wallpaperControlsWindow.showInactive();
+    attachWallpaperToWorkerW(wallpaperControlsWindow, true);
+    applyWallpaperControlsMouseBehavior();
+    sendWallpaperState();
+  });
+  wallpaperControlsWindow.webContents.once('did-finish-load', sendWallpaperState);
+  wallpaperControlsWindow.on('closed', () => {
+    wallpaperControlsPointerCapture = false;
+    wallpaperControlsWindow = null;
+  });
+  wallpaperControlsWindow.loadURL(overlayUrl('wallpaper-controls.html')).catch((e) => console.warn('Wallpaper controls load failed:', e.message));
+  return wallpaperControlsWindow;
 }
 
 function createWallpaperWindow(payload = {}) {
   wallpaperState = { ...wallpaperState, ...payload, enabled: true };
+  refreshTrayMenu();
   if (wallpaperWindow && !wallpaperWindow.isDestroyed()) {
+    createWallpaperControlsWindow();
     positionWallpaperWindow();
+    applyWallpaperMouseBehavior();
     sendWallpaperState();
     return wallpaperWindow;
   }
-  const bounds = screen.getPrimaryDisplay().bounds;
+  const bounds = wallpaperDesktopBounds();
   wallpaperWindow = new BrowserWindow({
     ...bounds,
     frame: false,
@@ -1851,16 +2003,16 @@ function createWallpaperWindow(payload = {}) {
       backgroundThrottling: false,
     },
   });
-  wallpaperWindow.setIgnoreMouseEvents(true, { forward: true });
+  wallpaperPointerCapture = true;
+  applyWallpaperMouseBehavior();
+  createWallpaperControlsWindow();
   wallpaperWindow.once('ready-to-show', () => {
     if (!wallpaperWindow || wallpaperWindow.isDestroyed()) return;
-    positionWallpaperWindow();
-    wallpaperWindow.showInactive();
-    attachWallpaperToWorkerW(wallpaperWindow);
-    sendWallpaperState();
+    refreshWallpaperDesktopPlacement();
   });
   wallpaperWindow.webContents.once('did-finish-load', sendWallpaperState);
   wallpaperWindow.on('closed', () => {
+    wallpaperPointerCapture = false;
     wallpaperWindow = null;
   });
   wallpaperWindow.loadURL(overlayUrl('wallpaper.html')).catch((e) => console.warn('Wallpaper load failed:', e.message));
@@ -1868,12 +2020,17 @@ function createWallpaperWindow(payload = {}) {
 }
 
 function closeWallpaperWindow() {
+  wallpaperPointerCapture = false;
+  wallpaperControlsPointerCapture = false;
   wallpaperState = { ...wallpaperState, enabled: false };
+  refreshTrayMenu();
   if (wallpaperWindow && !wallpaperWindow.isDestroyed()) {
     sendWallpaperState();
     wallpaperWindow.close();
   }
   wallpaperWindow = null;
+  if (wallpaperControlsWindow && !wallpaperControlsWindow.isDestroyed()) wallpaperControlsWindow.close();
+  wallpaperControlsWindow = null;
 }
 
 function closeOverlayWindows() {
@@ -2399,6 +2556,33 @@ ipcMain.handle('mineradio-wallpaper-update', async (_event, payload) => {
   }
 });
 
+ipcMain.handle('mineradio-wallpaper-set-pointer-capture', async (_event, active) => {
+  try {
+    wallpaperControlsPointerCapture = true;
+    applyWallpaperControlsMouseBehavior();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message || 'WALLPAPER_POINTER_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-wallpaper-command', async (_event, payload) => {
+  try {
+    const command = payload && payload.command;
+    if (command === 'show-main' && mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('mineradio-wallpaper-command', payload || {});
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message || 'WALLPAPER_COMMAND_FAILED' };
+  }
+});
+
 async function createWindow() {
   htmlFullscreenActive = false;
   windowFullscreenActive = false;
@@ -2452,6 +2636,7 @@ async function createWindow() {
     if (/^(https?:|mailto:)/i.test(String(url || ''))) shell.openExternal(url);
     return { action: 'deny' };
   });
+  hookExplorerRestartForWallpaper(mainWindow);
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
     const target = String(url || '');
@@ -2523,10 +2708,26 @@ async function createWindow() {
   mainWindow.on('moved', () => restoreDesktopLyricsAfterMainWindowMove(80));
   mainWindow.on('resize', () => scheduleWindowStateSend(mainWindow));
   mainWindow.on('close', (event) => {
-    if (!appQuitting && closeToTrayEnabled) {
-      event.preventDefault();
-      hideMainWindowToTray({ pauseLinked: true });
-    }
+    if (mainWindowClosePersisting) return;
+    event.preventDefault();
+    const shouldHideToTray = !appQuitting && closeToTrayEnabled;
+    const win = mainWindow;
+    mainWindowClosePersisting = true;
+    const persist = win && !win.isDestroyed()
+      ? Promise.race([
+          win.webContents.executeJavaScript('try { savePlaybackSession(true); true; } catch (e) { false; }', true),
+          new Promise((resolve) => setTimeout(resolve, 420)),
+        ]).catch(() => false)
+      : Promise.resolve(false);
+    persist.finally(() => {
+      mainWindowClosePersisting = false;
+      if (!win || win.isDestroyed()) return;
+      if (shouldHideToTray) {
+        hideMainWindowToTray({ pauseLinked: true });
+        return;
+      }
+      win.destroy();
+    });
   });
   mainWindow.on('closed', () => {
     if (mainWindowStateTimer) {
@@ -2593,8 +2794,14 @@ if (!gotSingleInstanceLock) {
       positionWallpaperWindow();
       scheduleWindowStateSend(mainWindow);
     });
-    screen.on('display-added', () => scheduleWindowStateSend(mainWindow));
-    screen.on('display-removed', () => scheduleWindowStateSend(mainWindow));
+    screen.on('display-added', () => {
+      refreshWallpaperDesktopPlacement();
+      scheduleWindowStateSend(mainWindow);
+    });
+    screen.on('display-removed', () => {
+      refreshWallpaperDesktopPlacement();
+      scheduleWindowStateSend(mainWindow);
+    });
     createTray();
     await createWindow();
     refreshTrayMenu();

@@ -19,6 +19,16 @@ function singers(value) {
   return value.map(item => item && (item.name || item.singerName)).filter(Boolean).join('、');
 }
 
+function kuwoCoverUrl(item) {
+  item = item || {};
+  let value = String(item.picUrl || item.pic || item.PIC || item.web_albumpic_short || item.web_album_pic || item.albumpic || item.hts_MVPIC || item.MVPIC || '').trim();
+  if (!value) return '';
+  value = value.replace(/^https?:\/\/[^/]+\/star\/albumcover\/\d+\//i, '');
+  value = value.replace(/^\d+\//, '');
+  if (/^https?:\/\//i.test(value)) return value;
+  return `https://img1.kuwo.cn/star/albumcover/500/${value.replace(/^\/+/, '')}`;
+}
+
 async function fetchJson(url, options = {}) {
   let lastError;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -72,6 +82,7 @@ async function searchKw(query, limit) {
     singer: item.ARTIST || '',
     albumName: item.ALBUM || '',
     albumId: item.ALBUMID || '',
+    picUrl: kuwoCoverUrl(item),
     interval: durationText(item.DURATION),
     source: 'kw',
     types: ['flac24bit', 'flac', '320k', '128k'],

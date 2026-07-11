@@ -1,72 +1,30 @@
-# 发布流程
-
-## 当前补充版
-
-```text
-1.5.3 supplement
-```
+# Mineradio 1.5.4.2 发布流程
 
 ## 发布前检查
 
-- `package.json` 和 `package-lock.json` 顶层版本号保持 `1.5.3`。
-- `build.appId` 为 `com.mineradio.desktop`。
-- `productName`、`executableName` 和快捷方式名均为 `Mineradio`。
-- `mineradio.update.owner/repo` 指向 `ww085213/Mineradio-LX-Music`。
-- `public/index.html` 的音源“一键导入”支持多选本地 `.js` 音源文件。
-- 前端内联脚本语法检查通过。
-- `desktop/main.js`、`server.js`、`lx-source-host.js` 语法检查通过。
+- `package.json` 和 `package-lock.json` 使用兼容 SemVer `1.5.4`；`mineradio.releaseVersion`、`build.buildVersion`、安装包文件名和 Release 标签使用 `1.5.4.2`。
+- 前端内联脚本以及 `desktop/*.js`、`server.js` 语法检查通过。
+- 软件界面动画关闭后，重启可直接跳过启动动画。
+- 新声境预设在未开启歌词拖拽时支持舞台旋转、缩放和右侧 3D 歌单滚动。
+- 软件内更新后的 HTML、JavaScript、CSS 和 JSON 不复用旧缓存。
 
-## 构建
+## Windows 构建
 
 ```bash
+npm install
 npm run build:win
 ```
 
-输出：
+构建产物：
 
-```text
-dist/Mineradio.Setup.1.5.3.exe
-dist/Mineradio.Setup.1.5.3.exe.blockmap
-dist/latest.yml
-```
-
-macOS DMG/ZIP 需要在 macOS 环境构建：
-
-```bash
-npm run build:mac
-```
-
-仓库提供手动触发的 GitHub Actions workflow：
-
-```text
-.github/workflows/build-macos-dmg.yml
-```
+- `dist/Mineradio.Setup.1.5.4.2.exe`
+- `dist/Mineradio.Setup.1.5.4.2.exe.blockmap`
+- `dist/latest.yml`
+- `dist/Mineradio.Setup.1.5.4.2.SHA256.txt`
 
 ## GitHub Release
 
-补充版独立发布，不覆盖原 `v1.5.3`：
-
-```text
-v1.5.3-supplement
-```
-
-标题：
-
-```text
-Mineradio 1.5.3 补充版
-```
-
-上传：
-
-- `dist/Mineradio.Setup.1.5.3.exe`
-- `dist/Mineradio.Setup.1.5.3.exe.blockmap`
-- `dist/latest.yml`
-- `dist/Mineradio.Setup.1.5.3.SHA256.txt`
-- `dist/Mineradio-1.5.3-mac-universal.dmg`
-- `dist/Mineradio-1.5.3-mac-universal.zip`
-- `dist/latest-mac.yml`
-- `dist/macos.SHA256.txt`
-
-## 说明
-
-补充版应用版本号仍为 `1.5.3`，不会被普通 `1.5.3` 通过检查更新自动发现。安装补充版后，后续发布 `1.5.4` 或更高版本时可直接在软件内检查更新。
+- 标签：`v1.5.4.2`
+- 标题：`Mineradio 1.5.4.2`
+- 上传 Windows 安装包、blockmap、`latest.yml` 和 SHA256 文件。
+- 发布后将安装包同步到百度网盘分享目录。
