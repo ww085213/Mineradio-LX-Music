@@ -92,6 +92,8 @@ macOS DMG 需要在 macOS 环境构建：
 
 ```bash
 npm run build:mac
+```
+
 ## 原项目与授权说明
 
 - 本项目基于 [XxHuberrr/Mineradio](https://github.com/XxHuberrr/Mineradio) 修改维护，是非官方二创版本。
@@ -121,7 +123,7 @@ npm run build:mac
 - 禁止将本项目用于盗版音乐、违规抓取、绕过平台限制、传播侵权内容或其他违法违规用途。
 - 因用户自行导入、配置、分享或违规使用第三方内容产生的版权争议、账号风险、法律责任，由使用者自行承担。
 
-## 当前版本```
+## 当前版本
 
 ## 发布仓库
 
