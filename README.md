@@ -1,46 +1,38 @@
-# Mineradio - LX Music / MR
+# Mineradio二创版 - LX Music / MR
 
-Mineradio 是一个 Windows 桌面音乐播放器、歌单工具和音乐可视化应用。它可以独立播放本地音乐，也支持导入歌单、显示歌词、桌面歌词、壁纸和可视化效果。
+Mineradio二创版是一个 Windows 桌面音乐播放器、歌单工具和音乐可视化应用。它可以独立播放本地音乐，也支持导入歌单、显示歌词、桌面歌词、壁纸和可视化效果。
 
 Mineradio 不内置音乐音源，不分发受版权保护的音频、歌词、封面或壁纸内容。涉及第三方平台、兼容音源脚本或用户本地文件时，请只导入和播放你有权使用的内容，并遵守相应服务条款。
 
 
 
-### Mineradio 1.5.4.2
+### Mineradio二创版 1.5.4.3
 
-[下载 1.5.4.2 安装包](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.2/Mineradio.Setup.1.5.4.2.exe) / [查看 1.5.4.2 Release](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.5.4.2)
+[下载 1.5.4.3 安装包](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.3/Mineradio%E4%BA%8C%E5%88%9B%E7%89%88.Setup.1.5.4.3.exe) / [查看 1.5.4.3 Release](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.5.4.3)
 
 国内下载较慢时，可以优先尝试下面的镜像入口：
 
 | 下载方式 | 链接 | 说明 |
 | --- | --- | --- |
-| 镜像下载 1 | [点击下载](https://gh.llkk.cc/https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.2/Mineradio.Setup.1.5.4.2.exe) | 国内用户推荐 |
-| 镜像下载 2 | [备用镜像](https://ghfast.top/https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.2/Mineradio.Setup.1.5.4.2.exe) | 镜像 1 慢时使用 |
-| 镜像下载 3 | [备用镜像](https://gh-proxy.com/https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.2/Mineradio.Setup.1.5.4.2.exe) | 公益加速服务 |
-| GitHub Release | [官方下载](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.2/Mineradio.Setup.1.5.4.2.exe) | 官方备用地址 |
+| 镜像下载 1 | [点击下载](https://gh.llkk.cc/https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.3/Mineradio%E4%BA%8C%E5%88%9B%E7%89%88.Setup.1.5.4.3.exe) | 国内用户推荐 |
+| 镜像下载 2 | [备用镜像](https://ghfast.top/https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.3/Mineradio%E4%BA%8C%E5%88%9B%E7%89%88.Setup.1.5.4.3.exe) | 镜像 1 慢时使用 |
+| 镜像下载 3 | [备用镜像](https://gh-proxy.com/https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.3/Mineradio%E4%BA%8C%E5%88%9B%E7%89%88.Setup.1.5.4.3.exe) | 公益加速服务 |
+| GitHub Release | [官方下载](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.3/Mineradio%E4%BA%8C%E5%88%9B%E7%89%88.Setup.1.5.4.3.exe) | 官方备用地址 |
 
-已安装旧版的用户，可以在软件内使用「检查更新」直接下载并安装 `1.5.4.2`。
+已安装旧版的用户，可以在软件内使用「检查更新」直接下载并安装 `1.5.4.3`。
 
-## 1.5.4.2 更新内容
+## 1.5.4.3 更新内容
 
-- 新增极光、霓虹雨夜、水墨、纯净舞台等声境视觉预设，并加入按 BPM、能量和曲风自动选择的智能声境。
-- 新预设统一旧预设的舞台操作：普通状态可拖动旋转、滚轮缩放，并可在右侧 3D 歌单架滚轮换歌；开启歌词拖拽后再调整歌词位置与大小。
-- 新增“软件界面动画”总开关，设置保存在“视觉控制台 → 高级”；关闭后同时跳过下次启动动画和提示音。
-- 完善歌词动画、歌词翻译与外语歌词匹配，补充桌面歌词和舞台歌词的布局、性能及交互控制。
-- 完善壁纸播放器与独立控制窗口，改进视频背景、Wallpaper Engine 和桌面覆盖层体验。
-- 改进本地音乐、跨平台歌单导入、LX 音源搜索与失败换源逻辑。
-- 修复快速补丁更新后 Chromium 仍读取旧页面缓存、导致更新成功但看不到新功能的问题。
-- 持久化歌词布局、动画开关、歌单面板等界面状态，降低更新后设置丢失的概率。
-- 播放首次失败时自动重试，并自动切换备用解析器与跨平台音源。
-- 播放中途断流时自动换源，最多重试 3 次，并恢复原播放进度。
-- 声境颜色和歌词颜色可随歌曲封面自动切换；纯色背景默认按歌曲主色自动适配。
-- 酷我歌单导入时自动补全封面并保留歌曲原始渠道，避免加入网易云歌单后显示渠道不可用。
-- 新增 TV 模式，并对 Spotify 单曲分享链接进行尽力适配。
-- 优化竖屏交互：左侧全高度区域（包括左上角和左下角）均可唤出歌单。
-- Electron / WebGL 已请求高性能独立显卡，以改善视觉渲染性能。
-- 退出时保存当前视觉预设、布局与播放会话，重启后不再随机切换预设。
-- 动态壁纸支持星标，已星标项目自动置顶。
-- 所有后端脚本及 4 个页面内脚本均已通过语法检查。
+- 本版本开始统一使用“Mineradio二创版”名称。
+- 新增歌单批量导入，并优化本地音乐批量导入体验。
+- 新增窗口大小和位置记忆，重新启动后自动恢复。
+- 修复“莫奈”歌词动画遮挡 DIY 控制条的问题。
+- 全局升级液态玻璃视觉效果。
+- 加入小水、小果、小绿平台导入。
+- 优化小绿公开歌单读取速度及网络错误提示。
+- 左侧区域支持加入视频背景。
+- 最小化按钮支持隐藏到系统托盘。
+- 应用、快捷方式、卸载项和更新界面统一显示“Mineradio二创版”。
 
 ## 作者支持
 
@@ -92,8 +84,8 @@ npm run build:win
 
 构建产物输出到 `dist/`：
 
-- `Mineradio.Setup.1.5.4.2.exe`
-- `Mineradio.Setup.1.5.4.2.exe.blockmap`
+- `Mineradio二创版.Setup.1.5.4.3.exe`
+- `Mineradio二创版.Setup.1.5.4.3.exe.blockmap`
 - `latest.yml`
 
 macOS DMG 需要在 macOS 环境构建：
