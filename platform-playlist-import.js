@@ -3,6 +3,7 @@
 const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
+const lxSearch = require('./lx-search');
 let networkFetch = globalThis.fetch;
 function setFetchImplementation(fn) {
   if (typeof fn === 'function') networkFetch = fn;
@@ -147,6 +148,15 @@ function singerText(value) {
   return String(value || '');
 }
 
+function kuwoCoverUrl(item, fallback) {
+  item = item || {};
+  let value = String(item.picUrl || item.pic || item.PIC || item.web_albumpic_short || item.web_album_pic || item.albumpic || item.hts_MVPIC || item.MVPIC || fallback || '').trim();
+  if (!value) return '';
+  if (/^https?:\/\//i.test(value)) return value.replace(/\/albumcover\/\d+\//i, '/albumcover/500/');
+  value = value.replace(/^\d+\//, '').replace(/^\/+/, '');
+  return `https://img1.kuwo.cn/star/albumcover/500/${value}`;
+}
+
 
 function uniqueBy(items, getKey) {
   const seen = new Set();
@@ -247,6 +257,7 @@ const SOURCE_ALIASES = {
   kg:'kg', kugou:'kg', '小枸':'kg', '小狗':'kg',
   kgc:'kgc', kglite:'kgc', concept:'kgc', '小枸概念版':'kgc', '酷狗概念版':'kgc', '概念版':'kgc',
   mg:'mg', migu:'mg', '小菇':'mg',
+  sp:'sp', spotify:'sp', '声田':'sp',
 };
 
 function normalizeSource(value) {
@@ -481,6 +492,8 @@ function detect(input, preferredSource) {
   if (kugouId && (/kugou\.(?:com|cn)/i.test(text) || source === 'kg')) return { source:'kg', id:kugouId, input:text };
 
   const rules = [
+    ['sp', 'track', /open\.spotify\.com\/(?:intl-[a-z-]+\/)?track\/([a-z0-9]+)/i],
+    ['sp', 'playlist', /open\.spotify\.com\/(?:intl-[a-z-]+\/)?playlist\/([a-z0-9]+)/i],
     ['tx', 'album', /(?:y\.qq\.com|i\d*\.y\.qq\.com|c\d*\.y\.qq\.com|m\.qq\.com)[^\s]*?(?:album(?:Detail)?[/?]|[?&#](?:albumId|albumid|albumMid|albummid)=)([a-z0-9_-]+)/i],
     ['wy', 'album', /(?:music\.163\.com|y\.music\.163\.com|m\.music\.163\.com|163cn\.tv)[^\s]*?(?:album(?:\?id=|\/)|[?&#]albumId=)(\d+)/i],
     ['kw', 'album', /(?:kuwo\.cn|kuwo\.com|h5app\.kuwo\.cn|m\.kuwo\.cn)[^\s]*?(?:album(?:_detail)?[/?_-]|[?&#](?:albumId|albumid)=)(\d+)/i],
@@ -492,7 +505,7 @@ function detect(input, preferredSource) {
     const match = text.match(rx);
     if (match) return { source:ruleSource, kind:ruleKind, id:match[1], input:text };
   }
-  const prefixed = text.match(/^(tx|qq|wy|163|kw|kg|kgc|kglite|mg|小秋|小芸|小蜗|小枸|小狗|小菇|小枸概念版|酷狗概念版|概念版)\s*[:：]\s*([a-z0-9_-]+)$/i);
+  const prefixed = text.match(/^(tx|qq|wy|163|kw|kg|kgc|kglite|mg|sp|spotify|小秋|小芸|小蜗|小枸|小狗|小菇|声田|小枸概念版|酷狗概念版|概念版)\s*[:：]\s*([a-z0-9_-]+)$/i);
   if (prefixed) return { source:normalizeSource(prefixed[1]), id:prefixed[2], input:text };
   if (source && /^\d+$/.test(text)) return { source, id:text, input:text };
   if (source === 'kg' && /^gcid_[a-z0-9_-]+$/i.test(text)) return { source, id:text.toLowerCase(), input:text };
@@ -958,6 +971,7 @@ async function importKW(id) {
       songmid:String(item.musicrid || item.id || '').replace('MUSIC_', ''),
       name:item.name || item.songname || '', singer:item.artist || '', albumName:item.album || '',
       albumId:item.albumid || '', interval:durationText(item.duration), source:'kw',
+      picUrl:kuwoCoverUrl(item, data.pic || ''),
       types:['flac24bit','flac','320k','128k'],
     })), 'kw'),
   };
@@ -976,6 +990,7 @@ async function importKWAlbum(id) {
       songmid:String(item.musicrid || item.id || item.rid || '').replace('MUSIC_', ''),
       name:item.name || item.songname || '', singer:item.artist || item.singer || '', albumName:item.album || data.title || '',
       albumId:item.albumid || id, interval:durationText(item.duration), source:'kw',
+      picUrl:kuwoCoverUrl(item, data.pic || data.img || data.cover || ''),
       types:['flac24bit','flac','320k','128k'],
     })), 'kw'),
   };
@@ -1860,7 +1875,28 @@ async function importMG(id, originalInput, context = {}) {
   };
 }
 
-const IMPORTERS = { tx:importQQ, wy:importWY, kw:importKW, kg:importKG, kgc:importKGC, mg:importMG };
+async function importSpotify(id, input, context = {}) {
+  const sourceUrl = context.resolvedUrl || extractFirstUrl(input) || `https://open.spotify.com/track/${encodeURIComponent(id)}`;
+  if (!/\/track\//i.test(sourceUrl)) {
+    throw new Error('Spotify 歌单曲目需要账户授权；当前尽力模式先支持单曲分享链接');
+  }
+  const metadata = await fetchJson(`https://open.spotify.com/oembed?url=${encodeURIComponent(sourceUrl)}`);
+  const rawTitle = String(metadata?.title || '').replace(/\s*\|\s*Spotify\s*$/i, '').trim();
+  if (!rawTitle) throw new Error('Spotify 未返回可匹配的单曲信息');
+  const titleParts = rawTitle.split(/\s+[–—-]\s+/);
+  const songName = titleParts[0] || rawTitle;
+  const artistHint = titleParts.slice(1).join(' ');
+  const found = await lxSearch.searchAll([songName, artistHint].filter(Boolean).join(' '), { sources:'tx,wy,kw,kg,mg', limit:8 });
+  const candidates = found && Array.isArray(found.songs) ? found.songs : [];
+  const song = candidates[0];
+  if (!song) throw new Error('Spotify 单曲已识别，但暂未在可播放渠道匹配到版本');
+  song.meta = Object.assign({}, song.meta || {}, { spotify:{ id:String(id), url:sourceUrl, title:rawTitle } });
+  song.spotifyUrl = sourceUrl;
+  if (!song.picUrl && metadata.thumbnail_url) song.picUrl = metadata.thumbnail_url;
+  return { name:'Spotify · ' + rawTitle, cover:metadata.thumbnail_url || song.picUrl || '', songs:[song] };
+}
+
+const IMPORTERS = { tx:importQQ, wy:importWY, kw:importKW, kg:importKG, kgc:importKGC, mg:importMG, sp:importSpotify };
 const ALBUM_IMPORTERS = { tx:importQQAlbum, wy:importWYAlbum, kw:importKWAlbum };
 async function importPlaylist(input, preferredSource) {
   const originalInput = String(input || '').trim();

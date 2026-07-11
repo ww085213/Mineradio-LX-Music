@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Mineradio Desktop Controls</title>
+  <style>
+    *{box-sizing:border-box}
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;color:#fff;font-family:"Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;user-select:none}
+    :root{--accent:#ffbf66;--accent2:#8fe8ff}
+    button{font:inherit}
+    #top{display:none}
+    #top:hover{opacity:1}
+    .glass{border:1px solid rgba(255,255,255,.14);background:rgba(8,10,16,.62);color:#fff;box-shadow:0 16px 50px rgba(0,0,0,.30),inset 0 1px 0 rgba(255,255,255,.12);backdrop-filter:blur(20px) saturate(1.15);-webkit-backdrop-filter:blur(20px) saturate(1.15)}
+    .topBtn{height:42px;min-width:46px;padding:0 14px;border-radius:15px;cursor:pointer;font-weight:900}
+    #hud{position:fixed;inset:5px 0 5px 0;width:100%;min-height:106px;border-radius:28px;display:grid;grid-template-columns:minmax(220px,1fr) auto minmax(260px,1fr);gap:14px;align-items:center;padding:11px 18px 16px;opacity:1;transition:transform .2s}
+    #hud:hover,#hud.active{transform:translateY(-2px)}
+    #bar{position:absolute;left:22px;right:22px;bottom:8px;height:5px;border-radius:99px;background:rgba(255,255,255,.14);overflow:hidden;cursor:pointer}
+    #fill{width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--accent2),var(--accent));box-shadow:0 0 18px var(--accent)}
+    .meta{min-width:0;display:flex;align-items:center;gap:12px}
+    #cover{width:54px;height:54px;flex:0 0 auto;border-radius:17px;background:linear-gradient(135deg,rgba(255,255,255,.20),rgba(255,255,255,.06));background-size:cover;background-position:center;box-shadow:0 10px 26px rgba(0,0,0,.36)}
+    #title,#artist{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #title{font-size:15px;font-weight:900}#artist{margin-top:4px;font-size:12px;color:rgba(255,255,255,.58)}
+    #controls,#tools{display:flex;align-items:center;gap:8px}#controls{justify-content:center}#tools{justify-content:flex-end}
+    .btn{height:40px;min-width:40px;padding:0 10px;border:0;border-radius:13px;background:transparent;color:rgba(255,255,255,.80);cursor:pointer;font-size:13px;font-weight:900;transition:background .15s,transform .15s}
+    .btn:hover{background:rgba(255,255,255,.13);transform:translateY(-1px);color:#fff}
+    #play{width:50px;height:50px;border-radius:17px;background:rgba(255,255,255,.14);font-size:18px}
+    #volumePanel{display:flex;align-items:center;gap:8px;width:150px}#volume{width:104px;accent-color:var(--accent)}#volText{width:34px;font-size:11px;color:rgba(255,255,255,.65)}
+    @media(max-width:920px){#hud{grid-template-columns:1fr}.meta,#tools{justify-content:center}}
+  </style>
+</head>
+<body>
+  <div id="top" data-interactive>
+    <button class="topBtn glass" data-cmd="show-main" title="打开 Mineradio">打开</button>
+    <button class="topBtn glass" data-cmd="wallpaper-off" title="退出桌面模式">退出</button>
+  </div>
+  <section id="hud" class="glass" data-interactive>
+    <div class="meta">
+      <div id="cover"></div>
+      <div style="min-width:0"><div id="title">Mineradio</div><div id="artist">桌面播放器</div></div>
+    </div>
+    <div id="controls">
+      <button class="btn" data-cmd="previous" title="上一首">‹</button>
+      <button class="btn" id="play" data-cmd="toggle-play" title="播放 / 暂停">▶</button>
+      <button class="btn" data-cmd="next" title="下一首">›</button>
+      <button class="btn" id="mode" data-cmd="mode" title="播放模式">循环</button>
+      <button class="btn" data-cmd="collect" title="收藏">＋</button>
+    </div>
+    <div id="tools">
+      <button class="btn" data-cmd="lyrics">歌词</button>
+      <button class="btn" data-cmd="queue">列表</button>
+      <div id="volumePanel"><input id="volume" type="range" min="0" max="1" step="0.01" value="1"><span id="volText">100%</span></div>
+      <button class="btn" data-cmd="show-main" title="打开主界面">打开</button>
+      <button class="btn" data-cmd="wallpaper-off" title="退出桌面模式">退出</button>
+    </div>
+    <div id="bar" title="播放进度"><div id="fill"></div></div>
+  </section>
+  <script>
+    'use strict';
+    var state={playing:false,time:0,duration:0,rate:1,volume:1,playMode:'loop',colors:{}};
+    var stateAt=performance.now(),capture=false,releaseTimer=0;
+    var hud=document.getElementById('hud'),cover=document.getElementById('cover'),title=document.getElementById('title'),artist=document.getElementById('artist');
+    var play=document.getElementById('play'),mode=document.getElementById('mode'),fill=document.getElementById('fill'),bar=document.getElementById('bar'),volume=document.getElementById('volume'),volText=document.getElementById('volText');
+    function api(){return window.desktopOverlay||null}
+    function setCapture(active){
+      active=!!active;
+      if(releaseTimer){clearTimeout(releaseTimer);releaseTimer=0}
+      if(active===capture)return;
+      capture=active;
+      hud.classList.toggle('active',capture);
+      var bridge=api();if(bridge&&bridge.setWallpaperPointerCapture)bridge.setWallpaperPointerCapture(capture).catch(function(){});
+    }
+    function pointIsInteractive(x,y){var el=document.elementFromPoint(x,y);return !!(el&&el.closest&&el.closest('[data-interactive]'))}
+    document.addEventListener('mousemove',function(e){
+      if(pointIsInteractive(e.clientX,e.clientY)){setCapture(true);return}
+      if(capture&&!releaseTimer)releaseTimer=setTimeout(function(){releaseTimer=0;setCapture(false)},90);
+    },true);
+    document.addEventListener('mouseleave',function(){setCapture(false)},true);
+    function send(command,value){var bridge=api();if(bridge&&bridge.sendWallpaperCommand)return bridge.sendWallpaperCommand({command:command,value:value}).catch(function(){})}
+    document.querySelectorAll('[data-cmd]').forEach(function(btn){btn.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();send(btn.getAttribute('data-cmd')||'')})});
+    function updateProgress(){var duration=Math.max(0,Number(state.duration)||0),time=Math.max(0,Number(state.time)||0);if(state.playing)time+=(performance.now()-stateAt)/1000*(Number(state.rate)||1);fill.style.width=(duration?Math.min(100,time/duration*100):0)+'%'}
+    function applyState(next){
+      state=Object.assign({},state,next||{});state.colors=Object.assign({},state.colors,next&&next.colors||{});stateAt=performance.now();
+      title.textContent=state.title||'Mineradio';artist.textContent=state.artist||'桌面播放器';
+      cover.style.backgroundImage=state.cover?'url("'+String(state.cover).replace(/"/g,'%22')+'")':'';
+      play.textContent=state.playing?'Ⅱ':'▶';mode.textContent=state.playMode==='single'?'单曲':(state.playMode==='shuffle'?'随机':'循环');
+      volume.value=String(Math.max(0,Math.min(1,Number(state.volume)||0)));volText.textContent=Math.round(Number(volume.value)*100)+'%';
+      var colors=state.colors||{};document.documentElement.style.setProperty('--accent',colors.highlight||colors.secondary||'#ffbf66');document.documentElement.style.setProperty('--accent2',colors.secondary||'#8fe8ff');updateProgress();
+    }
+    volume.addEventListener('input',function(){var value=Number(volume.value)||0;volText.textContent=Math.round(value*100)+'%';send('volume-set',value)});
+    bar.addEventListener('pointerdown',function(e){var rect=bar.getBoundingClientRect();send('seek-ratio',Math.max(0,Math.min(1,(e.clientX-rect.left)/Math.max(1,rect.width))))});
+    if(api()&&api().onWallpaperState)api().onWallpaperState(applyState);
+    setInterval(updateProgress,250);
+  </script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-﻿// ====================================================================
+// ====================================================================
 //  Mineradio local desktop server
 //  - 本地文件代理 / 本地节奏缓存 / 更新检查
 //  - 默认纯本地模式，不再加载网易云 / QQ 音乐运行依赖
@@ -11,7 +11,7 @@ const tls = require('tls');
 const { once } = require('events');
 const { Readable } = require('stream');
 const { fileURLToPath } = require('url');
-const { execFileSync } = require('child_process');
+const { execFileSync, execFile } = require('child_process');
 const lxSourceHost = require('./lx-source-host');
 const lxSearch = require('./lx-search');
 const platformPlaylistImport = require('./platform-playlist-import');
@@ -32,8 +32,9 @@ const UPDATE_DOWNLOAD_DIR = process.env.MINERADIO_UPDATE_DOWNLOAD_DIR || path.jo
 const UPDATE_PATCH_BACKUP_DIR = process.env.MINERADIO_PATCH_BACKUP_DIR || path.join(UPDATE_WORK_DIR, 'backups', 'patches');
 const TEST_UPDATE_MANIFEST_FILE = path.join(UPDATE_WORK_DIR, 'test-update-manifest.json');
 const BEATMAP_CACHE_DIR = process.env.MINERADIO_BEAT_CACHE_DIR || 'D:\\MineradioCache\\beatmaps';
+const WALLPAPER_TRANSCODE_CACHE_DIR = process.env.MINERADIO_WALLPAPER_CACHE_DIR || 'D:\\MineradioCache\\wallpapers';
 const APP_PACKAGE = readPackageInfo();
-const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '0.9.11';
+const APP_VERSION = process.env.MINERADIO_VERSION || (APP_PACKAGE.mineradio && APP_PACKAGE.mineradio.releaseVersion) || APP_PACKAGE.version || '0.9.11';
 const UPDATE_CONFIG = readUpdateConfig(APP_PACKAGE);
 const PATCH_MAX_BYTES = 12 * 1024 * 1024;
 const PATCH_ALLOWED_ROOTS = new Set(['public', 'desktop', 'build']);
@@ -126,12 +127,84 @@ function localContentTypeForPath(filePath) {
   return LOCAL_FILE_MIME[path.extname(String(filePath || '')).toLowerCase()] || 'application/octet-stream';
 }
 
+function findFfmpegExecutable() {
+  const candidates = [
+    path.join(process.resourcesPath || '', 'ffmpeg.exe'),
+    path.join(process.resourcesPath || '', 'bin', 'ffmpeg.exe'),
+    path.join(path.dirname(process.execPath || ''), 'ffmpeg.exe'),
+    path.join(__dirname, 'ffmpeg.exe'),
+    path.join(__dirname, 'bin', 'ffmpeg.exe'),
+  ];
+  for (const candidate of candidates) {
+    try { if (candidate && fs.existsSync(candidate)) return candidate; } catch (_e) {}
+  }
+  try {
+    return execFileSync('where.exe', ['ffmpeg.exe'], { encoding:'utf8', windowsHide:true, timeout:2500 })
+      .split(/\r?\n/).map(value => value.trim()).find(Boolean) || '';
+  } catch (_error) {
+    return '';
+  }
+}
+
+function wallpaperTranscodeCachePath(filePath) {
+  const stat = fs.statSync(filePath);
+  const key = crypto.createHash('sha1')
+    .update(path.resolve(filePath))
+    .update(String(stat.size))
+    .update(String(stat.mtimeMs))
+    .digest('hex');
+  return path.join(WALLPAPER_TRANSCODE_CACHE_DIR, key + '.mp4');
+}
+
+async function compatibleWallpaperMediaFile(filePath) {
+  const ext = path.extname(String(filePath || '')).toLowerCase();
+  if (!filePath || !fs.existsSync(filePath)) return filePath;
+  if (ext === '.mp4') return filePath;
+  if (!['.webm', '.mov', '.m4v', '.gif'].includes(ext)) return filePath;
+  const ffmpeg = findFfmpegExecutable();
+  if (!ffmpeg) return filePath;
+  const output = wallpaperTranscodeCachePath(filePath);
+  if (fs.existsSync(output)) return output;
+  await fs.promises.mkdir(path.dirname(output), { recursive:true });
+  const temp = output + '.tmp';
+  await new Promise((resolve, reject) => {
+    execFile(ffmpeg, [
+      '-hide_banner', '-loglevel', 'error', '-y',
+      '-i', filePath,
+      '-map', '0:v:0',
+      '-an',
+      '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-crf', '18',
+      '-pix_fmt', 'yuv420p',
+      '-movflags', '+faststart',
+      temp,
+    ], { windowsHide:true, timeout:180000, maxBuffer:2 * 1024 * 1024 }, error => error ? reject(error) : resolve());
+  }).then(async () => {
+    await fs.promises.rename(temp, output);
+  }).catch(async error => {
+    try { await fs.promises.unlink(temp); } catch (_e) {}
+    console.warn('[WallpaperTranscode]', error.message || error);
+  });
+  return fs.existsSync(output) ? output : filePath;
+}
+
 // ---------- 工具 ----------
 function serveStatic(res, filePath) {
   const ext = path.extname(filePath);
   fs.readFile(filePath, (err, data) => {
     if (err) { res.writeHead(404); res.end('Not Found'); return; }
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'text/plain' });
+    // Resource patches are applied in-place.  Chromium may otherwise reuse an
+    // older index/script after restart and make a successful update look as if
+    // it contained no new features.
+    const headers = { 'Content-Type': MIME[ext] || 'text/plain' };
+    if (/\.(?:html|js|css|json)$/i.test(ext)) {
+      headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, proxy-revalidate';
+      headers.Pragma = 'no-cache';
+      headers.Expires = '0';
+    }
+    res.writeHead(200, headers);
     res.end(data);
   });
 }
@@ -258,10 +331,69 @@ function firstExistingWallpaperFile(dir, candidates) {
   }
   return '';
 }
+
+function imageDimensions(file) {
+  try {
+    const fd = fs.openSync(file, 'r');
+    const buf = Buffer.alloc(64 * 1024);
+    const len = fs.readSync(fd, buf, 0, buf.length, 0);
+    fs.closeSync(fd);
+    const data = buf.subarray(0, len);
+    if (data.length >= 24 && data.readUInt32BE(0) === 0x89504e47 && data.toString('ascii', 12, 16) === 'IHDR') {
+      return { width: data.readUInt32BE(16), height: data.readUInt32BE(20) };
+    }
+    if (data.length >= 12 && data.toString('ascii', 0, 4) === 'RIFF' && data.toString('ascii', 8, 12) === 'WEBP') {
+      const tag = data.toString('ascii', 12, 16);
+      if (tag === 'VP8X' && data.length >= 30) {
+        return {
+          width: 1 + data.readUIntLE(24, 3),
+          height: 1 + data.readUIntLE(27, 3),
+        };
+      }
+      if (tag === 'VP8 ' && data.length >= 30) {
+        return { width: data.readUInt16LE(26) & 0x3fff, height: data.readUInt16LE(28) & 0x3fff };
+      }
+      if (tag === 'VP8L' && data.length >= 25) {
+        const b0 = data[21], b1 = data[22], b2 = data[23], b3 = data[24];
+        return { width: 1 + (((b1 & 0x3f) << 8) | b0), height: 1 + (((b3 & 0x0f) << 10) | (b2 << 2) | ((b1 & 0xc0) >> 6)) };
+      }
+    }
+    if (data.length >= 4 && data[0] === 0xff && data[1] === 0xd8) {
+      let pos = 2;
+      while (pos + 9 < data.length) {
+        if (data[pos] !== 0xff) { pos++; continue; }
+        const marker = data[pos + 1];
+        const size = data.readUInt16BE(pos + 2);
+        if (size < 2) break;
+        if ((marker >= 0xc0 && marker <= 0xc3) || (marker >= 0xc5 && marker <= 0xc7) || (marker >= 0xc9 && marker <= 0xcb) || (marker >= 0xcd && marker <= 0xcf)) {
+          return { width: data.readUInt16BE(pos + 7), height: data.readUInt16BE(pos + 5) };
+        }
+        pos += 2 + size;
+      }
+    }
+  } catch (_error) {}
+  return { width: 0, height: 0 };
+}
+
+function wallpaperImageCandidateScore(file, size, rootDir) {
+  const name = path.basename(file).toLowerCase();
+  const rel = path.relative(rootDir, file).replace(/\\/g, '/').toLowerCase();
+  if (/(^|[._-])(preview|cover|poster|thumbnail|thumb|icon|avatar)([._-]|$)/i.test(name)) return -1;
+  if (/(normal|roughness|metallic|height|specular|emissive|opacity|alpha|mask|noise|bump|ao|sprite|particle|cursor)/i.test(rel)) return -1;
+  const dim = imageDimensions(file);
+  const area = Math.max(0, dim.width * dim.height);
+  if (area && area < 900 * 500) return -1;
+  if (!area && size < 350 * 1024) return -1;
+  const ratio = dim.width && dim.height ? dim.width / dim.height : 16 / 9;
+  const ratioPenalty = Math.min(1.4, Math.abs(Math.log(ratio / (16 / 9))));
+  const rootBonus = path.dirname(file) === rootDir ? 1.15 : 1;
+  return ((area || size * 3) / (1 + ratioPenalty)) * rootBonus;
+}
+
 function compatibleWallpaperMedia(dir, project) {
   const supported = new Map([
-    ['.mp4', 'video'], ['.webm', 'video'], ['.mov', 'video'], ['.m4v', 'video'],
-    ['.jpg', 'image'], ['.jpeg', 'image'], ['.png', 'image'], ['.webp', 'image'], ['.gif', 'image'],
+    ['.mp4', 'video'], ['.webm', 'video'], ['.mov', 'video'], ['.m4v', 'video'], ['.gif', 'video'],
+    ['.jpg', 'image'], ['.jpeg', 'image'], ['.png', 'image'], ['.webp', 'image'],
   ]);
   const direct = firstExistingWallpaperFile(dir, [project && project.file]);
   if (direct && supported.has(path.extname(direct).toLowerCase())) {
@@ -284,17 +416,16 @@ function compatibleWallpaperMedia(dir, project) {
       if (!entry.isFile() || /^preview\./i.test(entry.name)) continue;
       const mediaType = supported.get(path.extname(entry.name).toLowerCase());
       if (!mediaType) continue;
-      // Nested Scene image files are commonly sprites or textures, not the
-      // wallpaper itself. Only auto-promote nested video assets.
-      if (mediaType === 'image' && current !== dir) continue;
       let size = 0;
       try { size = fs.statSync(target).size; } catch (_error) {}
-      candidates.push({ file:target, mediaType, size });
+      const score = mediaType === 'image' ? wallpaperImageCandidateScore(target, size, dir) : size;
+      if (mediaType === 'image' && score < 0) continue;
+      candidates.push({ file:target, mediaType, size, score });
     }
   }
   candidates.sort((a, b) => {
     if (a.mediaType !== b.mediaType) return a.mediaType === 'video' ? -1 : 1;
-    return b.size - a.size;
+    return (b.score || b.size) - (a.score || a.size);
   });
   return candidates[0] || { file:'', mediaType:'' };
 }
@@ -1712,6 +1843,158 @@ function readRequestBody(req) {
     req.on('error', () => resolve({}));
   });
 }
+
+// ====================================================================
+//  Daily hot 30 recommendation
+// ====================================================================
+const DAILY_HOT_CACHE_MS = 6 * 60 * 60 * 1000;
+let dailyHotCache = null;
+function dailyHotDurationText(seconds) {
+  seconds = Math.max(0, Math.round(Number(seconds) || 0));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+function dailyHotNormalizeText(value) {
+  return String(value || '').toLowerCase().replace(/&amp;/g, '&').replace(/[\s·•・,，、/\\|_\-]+/g, ' ').trim();
+}
+function dailyHotSingers(value) {
+  if (!Array.isArray(value)) return String(value || '');
+  return value.map(item => item && (item.name || item.singerName)).filter(Boolean).join('、');
+}
+async function dailyHotFetchJson(targetUrl, options = {}) {
+  const fetchImpl = electronNet && typeof electronNet.fetch === 'function'
+    ? electronNet.fetch.bind(electronNet)
+    : globalThis.fetch;
+  if (typeof fetchImpl !== 'function') throw new Error('FETCH_UNAVAILABLE');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Number(options.timeoutMs) || 12000);
+  try {
+    const response = await fetchImpl(targetUrl, {
+      method: options.method || 'GET',
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: {
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'referer': 'https://music.163.com/',
+        ...(options.headers || {}),
+      },
+    });
+    if (!response.ok) throw new Error(`HTTP_${response.status}`);
+    return await response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+function dailyHotSongFromNeteaseTrack(item) {
+  item = item || {};
+  const album = item.album || item.al || {};
+  const durationMs = Number(item.duration == null ? item.dt : item.duration) || 0;
+  return {
+    id: item.id,
+    songmid: item.id,
+    name: item.name || '',
+    singer: dailyHotSingers(item.artists || item.ar),
+    albumName: album.name || '',
+    albumId: album.id || '',
+    picUrl: album.picUrl || '',
+    interval: dailyHotDurationText(durationMs / 1000),
+    source: 'wy',
+    types: ['flac', '320k', '128k'],
+  };
+}
+function dailyHotSongKey(song) {
+  song = song || {};
+  return [
+    String(song.source || '').toLowerCase(),
+    String(song.songmid || song.id || song.hash || song.copyrightId || ''),
+    dailyHotNormalizeText(song.name),
+    dailyHotNormalizeText(song.singer || song.artist),
+  ].join('|');
+}
+function dailyHotPushUnique(list, song, seen, limit) {
+  if (!song || !song.name || list.length >= limit) return false;
+  const key = dailyHotSongKey(song);
+  if (seen.has(key)) return false;
+  seen.add(key);
+  list.push(song);
+  return true;
+}
+async function fetchNeteaseHotSeeds(limit) {
+  const endpoints = [
+    'https://music.163.com/api/playlist/detail?id=3778678',
+    'https://music.163.com/api/v6/playlist/detail?id=3778678',
+  ];
+  let lastError = null;
+  for (const endpoint of endpoints) {
+    try {
+      const data = await dailyHotFetchJson(endpoint, { timeoutMs: 14000 });
+      const tracks = data?.result?.tracks || data?.playlist?.tracks || [];
+      const songs = tracks.map(dailyHotSongFromNeteaseTrack).filter(song => song.name);
+      if (songs.length) return songs.slice(0, limit);
+    } catch (err) {
+      lastError = err;
+      console.warn('[DailyHotSeeds]', endpoint, err.message || err);
+    }
+  }
+  if (lastError) throw lastError;
+  return [];
+}
+const DAILY_HOT_FALLBACK_SEEDS = [
+  ['句号', 'G.E.M.邓紫棋'], ['悬溺', '葛东琪'], ['若月亮没来', '王宇宙Leto / 乔浚丞'], ['凄美地', '郭顶'],
+  ['离别开出花', '就是南方凯'], ['唯一', '告五人'], ['不如见一面', '海来阿木'], ['晴天', '周杰伦'],
+  ['起风了', '买辣椒也用券'], ['可能', '程响'], ['后来', '刘若英'], ['反方向的钟', '周杰伦'],
+  ['你不是真正的快乐', '五月天'], ['如愿', '王菲'], ['嘉宾', '张远'], ['爱人错过', '告五人'],
+  ['一路生花', '温奕心'], ['我记得', '赵雷'], ['Night Dancer', 'imase'], ['APT.', 'ROSÉ / Bruno Mars'],
+  ['Die With A Smile', 'Lady Gaga / Bruno Mars'], ['Espresso', 'Sabrina Carpenter'], ['Birds of a Feather', 'Billie Eilish'], ['Lose Control', 'Teddy Swims'],
+  ['Cruel Summer', 'Taylor Swift'], ['Seven', 'Jung Kook'], ['Supernova', 'aespa'], ['Drama', 'aespa'],
+  ['Magnetic', 'ILLIT'], ['Ditto', 'NewJeans'], ['青花瓷', '周杰伦'], ['稻香', '周杰伦'],
+].map(([name, singer]) => ({ name, singer, source: 'wy', songmid: '', id: '', interval: '', types: ['flac', '320k', '128k'] }));
+async function resolveDailyHotSeedsAcrossSources(seeds, limit) {
+  const out = [];
+  const seen = new Set();
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(4, seeds.length) }, async () => {
+    while (cursor < seeds.length && out.length < limit) {
+      const seed = seeds[cursor++];
+      const query = [seed.name, seed.singer].filter(Boolean).join(' ');
+      try {
+        const result = await lxSearch.searchAll(query || seed.name, { sources: 'tx,wy,kw,kg,mg', limit: 5 });
+        const candidates = Array.isArray(result?.songs) ? result.songs : [];
+        const seedName = dailyHotNormalizeText(seed.name);
+        const seedSinger = dailyHotNormalizeText(seed.singer);
+        const exact = candidates.find(song => {
+          const sameName = dailyHotNormalizeText(song.name) === seedName;
+          const singer = dailyHotNormalizeText(song.singer);
+          return sameName && (!seedSinger || !singer || seedSinger.includes(singer) || singer.includes(seedSinger));
+        });
+        dailyHotPushUnique(out, exact || candidates[0] || seed, seen, limit);
+      } catch (err) {
+        console.warn('[DailyHotResolve]', query, err.message || err);
+        dailyHotPushUnique(out, seed, seen, limit);
+      }
+    }
+  });
+  await Promise.all(workers);
+  for (const seed of seeds) dailyHotPushUnique(out, seed, seen, limit);
+  return out.slice(0, limit);
+}
+async function getDailyHotSongs(limit) {
+  limit = Math.min(Math.max(Number(limit) || 30, 1), 30);
+  const now = Date.now();
+  if (dailyHotCache && now - dailyHotCache.time < DAILY_HOT_CACHE_MS && dailyHotCache.songs.length >= Math.min(10, limit)) {
+    return { ok: true, songs: dailyHotCache.songs.slice(0, limit), cached: true, updatedAt: dailyHotCache.time };
+  }
+  let seeds = [];
+  try {
+    seeds = await fetchNeteaseHotSeeds(Math.max(limit, 30));
+  } catch (_err) {
+    seeds = [];
+  }
+  if (!seeds.length) seeds = DAILY_HOT_FALLBACK_SEEDS;
+  const songs = await resolveDailyHotSeedsAcrossSources(seeds, limit);
+  dailyHotCache = { time: now, songs };
+  return { ok: songs.length > 0, songs, cached: false, updatedAt: now, source: seeds === DAILY_HOT_FALLBACK_SEEDS ? 'fallback-seeds' : 'netease-hot-3778678+multi-source-search' };
+}
+
 // ====================================================================
 //  HTTP Server
 // ====================================================================
@@ -2038,6 +2321,16 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pn === '/api/daily-hot') {
+    try {
+      const result = await getDailyHotSongs(url.searchParams.get('limit'));
+      sendJSON(res, result, result.ok ? 200 : 502);
+    } catch (err) {
+      sendJSON(res, { ok: false, songs: [], error: err.message || 'DAILY_HOT_FAILED' }, 502);
+    }
+    return;
+  }
+
   if (pn === '/api/lx-source/search') {
     try {
       const result = await lxSearch.searchAll(url.searchParams.get('q'), {
@@ -2190,13 +2483,14 @@ const server = http.createServer(async (req, res) => {
     if (!wallpaperMediaIndex.size) scanWallpaperEngineLibrary();
     const id = String(url.searchParams.get('id') || '');
     const kind = url.searchParams.get('kind') === 'media' ? 'media' : 'preview';
-    const target = wallpaperMediaIndex.get(id + ':' + kind);
-    if (!target) {
+    const originalTarget = wallpaperMediaIndex.get(id + ':' + kind);
+    if (!originalTarget) {
       res.writeHead(404);
       res.end('Not found');
       return;
     }
     try {
+      const target = kind === 'media' ? await compatibleWallpaperMediaFile(originalTarget) : originalTarget;
       const stat = fs.statSync(target);
       let start = 0, end = stat.size - 1, status = 200;
       const match = /^bytes=(\d*)-(\d*)$/i.exec(req.headers.range || '');

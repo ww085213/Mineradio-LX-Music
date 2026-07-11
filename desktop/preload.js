@@ -6,13 +6,17 @@ const PERSISTENT_UI_STATE_KEYS = [
   'mineradio-playback-quality-v1',
   'mineradio-diy-player-mode-v1',
   'mineradio-playlist-panel-pinned-v1',
+  'mineradio-playlist-panel-position-v1',
   'mineradio-user-capsule-auto-hide-v1',
   'mineradio-fx-fab-auto-hide-v1',
   'mineradio-controls-auto-hide-v1',
+  'mineradio-ui-motion-v1',
   'mineradio-free-camera-v1',
   'mineradio-local-library-folder-v1',
   'mineradio-local-library-folders-v2',
   'mineradio-hidden-wallpapers-v1',
+  'mineradio-favorite-wallpapers-v1',
+  'mineradio-last-visual-preset-v1',
   'mineradio-playback-session-v1',
   'mineradio-user-fx-archives-v1',
   'mineradio-hotkey-settings-v1',
@@ -102,6 +106,12 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   },
   setWallpaperMode: (enabled, payload) => ipcRenderer.invoke('mineradio-wallpaper-set-enabled', !!enabled, payload || {}),
   updateWallpaperMode: (payload) => ipcRenderer.invoke('mineradio-wallpaper-update', payload || {}),
+  onWallpaperCommand: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload || {});
+    ipcRenderer.on('mineradio-wallpaper-command', listener);
+    return () => ipcRenderer.removeListener('mineradio-wallpaper-command', listener);
+  },
   onStateChange: (callback) => {
     const listener = (_event, state) => callback(state);
     ipcRenderer.on('desktop-window-state', listener);
