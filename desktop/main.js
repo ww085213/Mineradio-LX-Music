@@ -48,6 +48,7 @@ let wallpaperControlsWindow = null;
 let wallpaperControlsPointerCapture = false;
 let htmlFullscreenActive = false;
 let windowFullscreenActive = false;
+let mainWindowPreFullscreenBounds = null;
 let mainWindowStateTimer = null;
 let mainWindowBoundsSaveTimer = null;
 let tray = null;
@@ -1052,11 +1053,11 @@ function savedWindowedBounds() {
 }
 
 function scheduleMainWindowBoundsSave(win) {
-  if (!win || win.isDestroyed() || win.isFullScreen() || win.isMaximized() || win.isMinimized()) return;
+  if (!win || win.isDestroyed() || windowFullscreenActive || htmlFullscreenActive || win.isFullScreen() || win.isMaximized() || win.isMinimized()) return;
   if (mainWindowBoundsSaveTimer) clearTimeout(mainWindowBoundsSaveTimer);
   mainWindowBoundsSaveTimer = setTimeout(() => {
     mainWindowBoundsSaveTimer = null;
-    if (!win || win.isDestroyed() || win.isFullScreen() || win.isMaximized() || win.isMinimized()) return;
+    if (!win || win.isDestroyed() || windowFullscreenActive || htmlFullscreenActive || win.isFullScreen() || win.isMaximized() || win.isMinimized()) return;
     writeDesktopShellSettings({ windowBounds: win.getBounds() });
   }, 250);
 }
@@ -1108,20 +1109,42 @@ function getWindowedBounds(win, useSaved = true) {
   };
 }
 
-function applyWindowedBounds(win) {
+function capturePreFullscreenBounds(win) {
+  if (!win || win.isDestroyed()) return null;
+  const bounds = win.isMaximized() && typeof win.getNormalBounds === 'function'
+    ? win.getNormalBounds()
+    : win.getBounds();
+  if (!bounds || bounds.width < MIN_WINDOWED_WIDTH || bounds.height < MIN_WINDOWED_HEIGHT) return null;
+  mainWindowPreFullscreenBounds = { ...bounds };
+  writeDesktopShellSettings({ windowBounds: mainWindowPreFullscreenBounds });
+  return mainWindowPreFullscreenBounds;
+}
+
+function applyWindowedBounds(win, preferredBounds = null) {
   if (!win || win.isDestroyed()) return;
   if (win.isMaximized()) win.unmaximize();
   win.setMinimumSize(MIN_WINDOWED_WIDTH, MIN_WINDOWED_HEIGHT);
-  win.setBounds(getWindowedBounds(win), false);
+  const target = preferredBounds || mainWindowPreFullscreenBounds || getWindowedBounds(win);
+  const restore = () => {
+    if (!win || win.isDestroyed() || win.isFullScreen()) return;
+    if (win.isMaximized()) win.unmaximize();
+    win.setBounds(target, false);
+    sendWindowState(win);
+  };
+  restore();
+  // Windows can briefly re-apply the pre-fullscreen maximized state after the
+  // leave-full-screen event. Reassert the exact saved normal bounds once more.
+  setTimeout(restore, 160);
   sendWindowState(win);
 }
 
 function exitFullscreenToWindow(win) {
   if (!win || win.isDestroyed()) return;
+  const restoreBounds = mainWindowPreFullscreenBounds || savedWindowedBounds();
   windowFullscreenActive = false;
 
   if (!win.isFullScreen()) {
-    applyWindowedBounds(win);
+    applyWindowedBounds(win, restoreBounds);
     return;
   }
 
@@ -1129,7 +1152,7 @@ function exitFullscreenToWindow(win) {
   const applyOnce = () => {
     if (applied || !win || win.isDestroyed() || win.isFullScreen()) return;
     applied = true;
-    applyWindowedBounds(win);
+    applyWindowedBounds(win, restoreBounds);
   };
 
   win.once('leave-full-screen', () => setTimeout(applyOnce, 50));
@@ -1143,6 +1166,7 @@ function toggleFullscreen(win) {
     exitFullscreenToWindow(win);
     return;
   }
+  capturePreFullscreenBounds(win);
   windowFullscreenActive = true;
   win.setFullScreen(true);
   sendWindowState(win);
@@ -2728,7 +2752,7 @@ async function createWindow() {
   });
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
-    if (input.type === 'keyDown' && (input.key === 'Escape' || input.code === 'Escape') && mainWindow.isFullScreen()) {
+    if (input.type === 'keyDown' && (input.key === 'Escape' || input.code === 'Escape') && (mainWindow.isFullScreen() || windowFullscreenActive || htmlFullscreenActive)) {
       event.preventDefault();
       exitFullscreenToWindow(mainWindow);
     }
@@ -2830,15 +2854,18 @@ async function createWindow() {
   });
   mainWindow.on('leave-full-screen', () => {
     windowFullscreenActive = false;
-    setTimeout(() => applyWindowedBounds(mainWindow), 50);
+    const restoreBounds = mainWindowPreFullscreenBounds || savedWindowedBounds();
+    setTimeout(() => applyWindowedBounds(mainWindow, restoreBounds), 50);
   });
   mainWindow.on('enter-html-full-screen', () => {
+    if (!mainWindowPreFullscreenBounds) capturePreFullscreenBounds(mainWindow);
     htmlFullscreenActive = true;
     sendWindowState(mainWindow);
   });
   mainWindow.on('leave-html-full-screen', () => {
     htmlFullscreenActive = false;
-    setTimeout(() => applyWindowedBounds(mainWindow), 50);
+    const restoreBounds = mainWindowPreFullscreenBounds || savedWindowedBounds();
+    setTimeout(() => applyWindowedBounds(mainWindow, restoreBounds), 50);
   });
 
   await mainWindow.loadURL(`http://127.0.0.1:${port}`);
