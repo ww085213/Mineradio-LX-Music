@@ -116,14 +116,17 @@ function fetchJsonNative(url, options = {}, redirects = 0) {
 
 async function fetchText(url, options = {}) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 18000);
+  const timeoutMs = Math.max(2500, Math.min(18000, Number(options.timeoutMs) || 18000));
+  const requestOptions = { ...options };
+  delete requestOptions.timeoutMs;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   const headers = {
     'user-agent':'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Mobile Safari/537.36',
     ...(options.headers || {}),
   };
   try {
     try {
-      const response = await networkFetch(url, { ...options, signal:controller.signal, headers });
+      const response = await networkFetch(url, { ...requestOptions, signal:controller.signal, headers });
       if (!response.ok) throw new Error(`HTTP_${response.status}`);
       return await response.text();
     } catch (error) {
@@ -257,7 +260,9 @@ const SOURCE_ALIASES = {
   kg:'kg', kugou:'kg', '小枸':'kg', '小狗':'kg',
   kgc:'kgc', kglite:'kgc', concept:'kgc', '小枸概念版':'kgc', '酷狗概念版':'kgc', '概念版':'kgc',
   mg:'mg', migu:'mg', '小菇':'mg',
-  sp:'sp', spotify:'sp', '声田':'sp',
+  sp:'sp', spotify:'sp', '声田':'sp', '小绿':'sp',
+  qs:'qs', qishui:'qs', soda:'qs', '汽水':'qs', '汽水音乐':'qs', '小水':'qs',
+  am:'am', apple:'am', applemusic:'am', 'apple music':'am', '苹果音乐':'am', '小果':'am',
 };
 
 function normalizeSource(value) {
@@ -462,6 +467,21 @@ function extractJsonRedirect(body, baseUrl) {
 function detect(input, preferredSource) {
   const text = String(input || '').trim();
   const source = normalizeSource(preferredSource);
+  if (source === 'qs') {
+    const url = extractFirstUrl(text) || (/^https?:\/\//i.test(text) ? text : '');
+    if (url && /(?:^|\.)(?:qishui\.douyin\.com|music\.douyin\.com|douyin\.com)$/i.test(new URL(url).hostname)) {
+      return { source:'qs', kind:'playlist', id:stableImportKey([url], 'qs'), input:text };
+    }
+    throw new Error('无法识别小水分享链接；请在小水中重新分享歌单并粘贴完整文案');
+  }
+  if (source === 'am') {
+    const url = extractFirstUrl(text) || (/^https?:\/\//i.test(text) ? text : '');
+    if (url && /(?:^|\.)music\.apple\.com$/i.test(new URL(url).hostname) && /\/playlist\//i.test(new URL(url).pathname)) {
+      const playlistId = (new URL(url).pathname.match(/\/(pl\.[a-z0-9._-]+)\/?$/i) || [])[1] || stableImportKey([url], 'am');
+      return { source:'am', kind:'playlist', id:playlistId, input:text };
+    }
+    throw new Error('无法识别小果歌单；请粘贴公开歌单的分享链接');
+  }
   const preferredPlaylistId = source && extractPlatformPlaylistId(source, text);
   if (preferredPlaylistId) return { source, kind:'playlist', id:preferredPlaylistId, input:text };
   const preferredAlbumId = source && extractPlatformAlbumId(source, text);
@@ -505,7 +525,7 @@ function detect(input, preferredSource) {
     const match = text.match(rx);
     if (match) return { source:ruleSource, kind:ruleKind, id:match[1], input:text };
   }
-  const prefixed = text.match(/^(tx|qq|wy|163|kw|kg|kgc|kglite|mg|sp|spotify|小秋|小芸|小蜗|小枸|小狗|小菇|声田|小枸概念版|酷狗概念版|概念版)\s*[:：]\s*([a-z0-9_-]+)$/i);
+  const prefixed = text.match(/^(tx|qq|wy|163|kw|kg|kgc|kglite|mg|sp|spotify|小秋|小芸|小蜗|小枸|小狗|小菇|声田|小绿|小枸概念版|酷狗概念版|概念版)\s*[:：]\s*([a-z0-9_-]+)$/i);
   if (prefixed) return { source:normalizeSource(prefixed[1]), id:prefixed[2], input:text };
   if (source && /^\d+$/.test(text)) return { source, id:text, input:text };
   if (source === 'kg' && /^gcid_[a-z0-9_-]+$/i.test(text)) return { source, id:text.toLowerCase(), input:text };
@@ -1876,33 +1896,271 @@ async function importMG(id, originalInput, context = {}) {
 }
 
 async function importSpotify(id, input, context = {}) {
-  const sourceUrl = context.resolvedUrl || extractFirstUrl(input) || `https://open.spotify.com/track/${encodeURIComponent(id)}`;
+  const resolvedCandidate = String(context.resolvedUrl || '');
+  const originalUrl = extractFirstUrl(context.originalInput || input);
+  const sourceUrl = (/^https?:\/\/open\.spotify\.com\//i.test(resolvedCandidate) ? resolvedCandidate : '') ||
+    (/^https?:\/\/open\.spotify\.com\//i.test(originalUrl) ? originalUrl : '') ||
+    `https://open.spotify.com/track/${encodeURIComponent(id)}`;
+  if (/\/playlist\//i.test(sourceUrl)) {
+    function parseSpotifyPage(html) {
+      const match = String(html || '').match(/<script[^>]+id=["']initialState["'][^>]*>([\s\S]*?)<\/script>/i);
+      if (!match) return null;
+      try {
+        const payload = JSON.parse(Buffer.from(match[1].trim(), 'base64').toString('utf8'));
+        return payload?.entities?.items?.[`spotify:playlist:${id}`] || Object.values(payload?.entities?.items || {}).find(item => item?.__typename === 'Playlist');
+      } catch (_error) { return null; }
+    }
+    function parseSpotifyEmbedPage(html) {
+      const match = String(html || '').match(/<script[^>]+id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i);
+      if (!match) return null;
+      try {
+        const payload = JSON.parse(match[1]);
+        return payload?.props?.pageProps?.state?.data?.entity || null;
+      } catch (_error) { return null; }
+    }
+    function spotifyEmbedResult(entity) {
+      const tracks = Array.isArray(entity?.trackList) ? entity.trackList : [];
+      const rows = uniqueBy(tracks.map(track => {
+        const uri = String(track?.uri || '');
+        return {
+          name:String(track?.title || track?.name || '').trim(),
+          singer:String(track?.subtitle || '').trim(),
+          albumName:'',
+          picUrl:'',
+          spotifyId:(uri.match(/spotify:track:([a-z0-9]+)/i) || [])[1] || String(track?.id || ''),
+          duration:Number(track?.duration || 0),
+          source:'sp', needsCrossPlatformMatch:true,
+        };
+      }).filter(row => row.name && row.singer), row => `${row.spotifyId || row.name}|${row.singer}`);
+      if (!rows.length) return null;
+      const cover = String(entity?.coverArt?.sources?.[0]?.url || '');
+      return { name:entity?.name || entity?.title || '小绿歌单', cover, songs:rows };
+    }
+    const publicPageUrl = new URL(sourceUrl);
+    publicPageUrl.search = '';
+    publicPageUrl.hash = '';
+    // Spotify's compact embed endpoint is substantially faster and already
+    // contains up to 50 public tracks in __NEXT_DATA__. Prefer it before the
+    // much larger consumer page, especially on restricted networks.
+    try {
+      const embedUrl = `https://open.spotify.com/embed/playlist/${encodeURIComponent(id)}`;
+      const embedResult = spotifyEmbedResult(parseSpotifyEmbedPage(await fetchText(embedUrl, { timeoutMs:7000 })));
+      if (embedResult) return embedResult;
+    } catch (_error) {}
+    let html = /^https?:\/\/open\.spotify\.com\/playlist\//i.test(String(context.resolvedUrl || '')) && context.html
+      ? context.html
+      : await fetchText(publicPageUrl.href, { timeoutMs:8000 }).catch(error => {
+          if (/HTTP_404/i.test(String(error && error.message || ''))) throw new Error('小绿歌单未公开或仅自己可见；请在小绿中设为公开后重新复制链接');
+          throw new Error('小绿连接受限，未能读取公开歌单；请稍后重试或切换可访问 Spotify 的网络');
+        });
+    let entity = parseSpotifyPage(html);
+    if (!entity) {
+      if (/Page not found|status["']?\s*:\s*404/i.test(html)) throw new Error('小绿歌单未公开或仅自己可见；请在小绿中设为公开后重新复制链接');
+      throw new Error('小绿公开歌单页面没有返回曲目，请确认分享链接有效');
+    }
+    let wrappers = Array.isArray(entity?.content?.items) ? entity.content.items.slice() : [];
+    const rawNextOffset = entity?.content?.pagingInfo?.nextOffset;
+    const nextOffset = rawNextOffset != null ? Number(rawNextOffset) : (wrappers.length >= 30 ? 30 : 0);
+    if (Number.isFinite(nextOffset) && nextOffset > 0) {
+      try {
+        const pageUrl = new URL(sourceUrl);
+        pageUrl.search = '';
+        pageUrl.searchParams.set('offset', String(nextOffset));
+        const nextEntity = parseSpotifyPage(await fetchText(pageUrl.href));
+        if (nextEntity?.content?.items?.length) wrappers = wrappers.concat(nextEntity.content.items);
+      } catch (_error) {}
+    }
+    const rows = uniqueBy(wrappers.map(wrapper => wrapper?.itemV2?.data || wrapper?.item?.data || wrapper?.track).filter(Boolean).map(track => {
+      const artists = (track?.artists?.items || track?.artists || []).map(item => item?.profile?.name || item?.name).filter(Boolean).join('、');
+      const sources = track?.albumOfTrack?.coverArt?.sources || track?.album?.coverArt?.sources || [];
+      const uri = String(track.uri || '');
+      return {
+        name:String(track.name || track.title || '').trim(), singer:artists,
+        albumName:String(track?.albumOfTrack?.name || track?.album?.name || ''),
+        picUrl:String((sources.find(item => Number(item?.width) >= 300) || sources[0] || {}).url || ''),
+        spotifyId:(uri.match(/spotify:track:([a-z0-9]+)/i) || [])[1] || String(track.id || ''),
+        duration:Number(track?.trackDuration?.totalMilliseconds || track?.duration?.totalMilliseconds || track?.durationMs || 0),
+        source:'sp', needsCrossPlatformMatch:true,
+      };
+    }).filter(row => row.name && row.singer), row => `${row.spotifyId || row.name}|${row.singer}`);
+    if (!rows.length) throw new Error('小绿歌单没有可导入的公开曲目');
+    const cover = entity?.images?.items?.[0]?.sources?.[0]?.url || rows.find(row => row.picUrl)?.picUrl || '';
+    return { name:entity.name || '小绿歌单', cover, songs:rows };
+  }
   if (!/\/track\//i.test(sourceUrl)) {
-    throw new Error('Spotify 歌单曲目需要账户授权；当前尽力模式先支持单曲分享链接');
+    throw new Error('无法识别小绿分享链接，请粘贴公开歌单或单曲链接');
   }
   const metadata = await fetchJson(`https://open.spotify.com/oembed?url=${encodeURIComponent(sourceUrl)}`);
   const rawTitle = String(metadata?.title || '').replace(/\s*\|\s*Spotify\s*$/i, '').trim();
-  if (!rawTitle) throw new Error('Spotify 未返回可匹配的单曲信息');
+  if (!rawTitle) throw new Error('小绿未返回可匹配的单曲信息');
   const titleParts = rawTitle.split(/\s+[–—-]\s+/);
   const songName = titleParts[0] || rawTitle;
   const artistHint = titleParts.slice(1).join(' ');
   const found = await lxSearch.searchAll([songName, artistHint].filter(Boolean).join(' '), { sources:'tx,wy,kw,kg,mg', limit:8 });
   const candidates = found && Array.isArray(found.songs) ? found.songs : [];
   const song = candidates[0];
-  if (!song) throw new Error('Spotify 单曲已识别，但暂未在可播放渠道匹配到版本');
+  if (!song) throw new Error('小绿单曲已识别，但暂未在可播放渠道匹配到版本');
   song.meta = Object.assign({}, song.meta || {}, { spotify:{ id:String(id), url:sourceUrl, title:rawTitle } });
   song.spotifyUrl = sourceUrl;
   if (!song.picUrl && metadata.thumbnail_url) song.picUrl = metadata.thumbnail_url;
-  return { name:'Spotify · ' + rawTitle, cover:metadata.thumbnail_url || song.picUrl || '', songs:[song] };
+  return { name:'小绿 · ' + rawTitle, cover:metadata.thumbnail_url || song.picUrl || '', songs:[song] };
 }
 
-const IMPORTERS = { tx:importQQ, wy:importWY, kw:importKW, kg:importKG, kgc:importKGC, mg:importMG, sp:importSpotify };
+function decodeHtmlEntities(value) {
+  return String(value || '').replace(/&quot;/g, '"').replace(/&#34;/g, '"').replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+}
+
+function qishuiEmbeddedPayloads(html) {
+  const payloads = [];
+  const text = String(html || '');
+  for (const match of text.matchAll(/<script[^>]*(?:type=["']application\/json["']|id=["'](?:__NEXT_DATA__|RENDER_DATA|SIGI_STATE)["'])[^>]*>([\s\S]*?)<\/script>/gi)) {
+    let body = decodeHtmlEntities(match[1]).trim();
+    try { body = decodeURIComponent(body); } catch (_error) {}
+    try { payloads.push(JSON.parse(body)); } catch (_error) {}
+  }
+  for (const marker of ['window.__INITIAL_STATE__=', 'window._ROUTER_DATA =', '_ROUTER_DATA =', 'window.__SSR_DATA__=', 'window._SSR_DATA =']) {
+    try { const value = parseAssignedObject(text, marker); if (value) payloads.push(value); } catch (_error) {}
+  }
+  return payloads;
+}
+
+function qishuiSongRows(payloads) {
+  const rows = [];
+  const seen = new Set();
+  const visit = (value, depth = 0) => {
+    if (value == null || depth > 14) return;
+    if (Array.isArray(value)) { value.forEach(item => visit(item, depth + 1)); return; }
+    if (typeof value !== 'object' || seen.has(value)) return;
+    seen.add(value);
+    const name = value.track_name || value.song_name || value.music_name || value.title || value.name;
+    const artistValue = value.artists || value.artist_list || value.singers || value.author || value.artist || value.singer;
+    const singer = singerText(artistValue);
+    const looksLikeSong = name && singer && (value.duration != null || value.album || value.album_name || value.music_id || value.track_id || value.song_id || value.id);
+    if (looksLikeSong) {
+      rows.push({
+        name:String(name).trim(), singer:String(singer).trim(),
+        albumName:String(value.album_name || value.album?.name || value.album || ''),
+        picUrl:value.cover_url || value.cover?.url_list?.[0] || value.cover?.url || value.album?.cover_url || value.image || '',
+        qishuiId:String(value.music_id || value.track_id || value.song_id || value.id || ''),
+        duration:Number(value.duration || value.duration_ms || 0), source:'qs', needsCrossPlatformMatch:true,
+      });
+    }
+    Object.values(value).forEach(item => visit(item, depth + 1));
+  };
+  (payloads || []).forEach(item => visit(item));
+  return uniqueBy(rows, item => `${item.name.toLowerCase()}|${item.singer.toLowerCase()}`);
+}
+
+function qishuiPlaylistInfo(payloads) {
+  let found = null;
+  const seen = new Set();
+  const visit = (value, depth = 0) => {
+    if (found || value == null || depth > 12 || typeof value !== 'object' || seen.has(value)) return;
+    seen.add(value);
+    if (value.playlistInfo && typeof value.playlistInfo === 'object') { found = value.playlistInfo; return; }
+    Object.values(value).forEach(item => visit(item, depth + 1));
+  };
+  (payloads || []).forEach(item => visit(item));
+  return found || {};
+}
+
+async function importQishui(id, input, context = {}) {
+  const url = context.resolvedUrl || extractFirstUrl(input);
+  let html = context.html || '';
+  if (!html && url) html = await fetchText(url);
+  const payloads = qishuiEmbeddedPayloads(html);
+  const rows = qishuiSongRows(payloads);
+  const playlistInfo = qishuiPlaylistInfo(payloads);
+  if (!rows.length) throw new Error('汽水分享页未返回公开曲目；请确认歌单已设为公开，并重新复制歌单分享链接');
+  const matched = new Array(rows.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < rows.length) {
+      const index = cursor++;
+      const row = rows[index];
+      try {
+        const found = await lxSearch.searchAll(`${row.name} ${row.singer}`, { sources:'tx,wy,kw,kg,mg', limit:6 });
+        const song = found && Array.isArray(found.songs) && found.songs[0];
+        matched[index] = song ? Object.assign({}, song, { qishuiMeta:row }) : row;
+      } catch (_error) { matched[index] = row; }
+    }
+  }
+  await Promise.all([worker(), worker(), worker(), worker(), worker()]);
+  const title = String(playlistInfo.title || (html.match(/<meta[^>]+(?:name|property)=["'](?:name|og:title)["'][^>]+content=["']([^"']+)/i) || [])[1] || (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || '小水歌单').replace(/<[^>]+>/g, '').replace(/\s*[-_|].*汽水音乐.*$/i, '').trim();
+  const coverInfo = playlistInfo.url_cover || {};
+  const cover = (coverInfo.urls && coverInfo.urls[0] && coverInfo.uri ? coverInfo.urls[0] + coverInfo.uri : '') || rows.find(item => item.picUrl)?.picUrl || '';
+  return { name:title || '小水歌单', cover, songs:matched.filter(Boolean) };
+}
+
+function appleMusicPageData(html) {
+  const match = String(html || '').match(/<script[^>]+id=["']serialized-server-data["'][^>]*>([\s\S]*?)<\/script>/i);
+  if (!match) return null;
+  try { return JSON.parse(decodeHtmlEntities(match[1])); } catch (_error) { return null; }
+}
+
+function appleMusicRows(payload) {
+  const rows = [];
+  const seen = new Set();
+  const visit = (value, depth = 0) => {
+    if (value == null || depth > 16) return;
+    if (Array.isArray(value)) { value.forEach(item => visit(item, depth + 1)); return; }
+    if (typeof value !== 'object' || seen.has(value)) return;
+    seen.add(value);
+    const descriptor = value.contentDescriptor || {};
+    if (descriptor.kind === 'song' && value.title && value.artistName) {
+      const appleId = String(descriptor.identifiers?.storeAdamID || value.id || '');
+      const artwork = value.artwork || value.image || {};
+      let picUrl = String(artwork.url || artwork.template || artwork.src || '');
+      picUrl = picUrl.replace(/\{w\}/g, '600').replace(/\{h\}/g, '600').replace(/\{f\}/g, 'jpg');
+      rows.push({
+        name:String(value.title).trim(), singer:String(value.artistName).trim(),
+        albumName:String(value.tertiaryLinks?.[0]?.title || value.albumName || ''),
+        picUrl, appleMusicId:appleId, duration:Number(value.duration || 0),
+        source:'am', needsCrossPlatformMatch:true,
+      });
+    }
+    Object.values(value).forEach(item => visit(item, depth + 1));
+  };
+  visit(payload);
+  return uniqueBy(rows, item => `${item.appleMusicId || item.name}|${item.singer}`);
+}
+
+async function importAppleMusic(id, input, context = {}) {
+  const url = context.resolvedUrl || extractFirstUrl(input);
+  let html = context.html || '';
+  if (!html && url) html = await fetchText(url, { headers:{ 'accept-language':'zh-CN,zh;q=0.9,en;q=0.7' } });
+  const payload = appleMusicPageData(html);
+  const rows = appleMusicRows(payload);
+  if (!rows.length) throw new Error('小果分享页没有返回公开曲目；请确认链接是公开歌单而不是个人资料库页面');
+  const matched = new Array(rows.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < rows.length) {
+      const index = cursor++;
+      const row = rows[index];
+      try {
+        const found = await lxSearch.searchAll(`${row.name} ${row.singer}`, { sources:'tx,wy,kw,kg,mg', limit:6 });
+        const song = found && Array.isArray(found.songs) && found.songs[0];
+        matched[index] = song ? Object.assign({}, song, { appleMusicMeta:row }) : row;
+      } catch (_error) { matched[index] = row; }
+    }
+  }
+  await Promise.all([worker(), worker(), worker(), worker(), worker()]);
+  const title = String(payload?.data?.[0]?.data?.seoData?.pageTitle || (html.match(/<meta[^>]+name=["']apple:title["'][^>]+content=["']([^"']+)/i) || [])[1] || '小果歌单').replace(/\s+-\s+Playlist\s+-\s+Apple Music.*$/i, '').trim();
+  const ldMatch = html.match(/<script[^>]+id=["']?schema:music-playlist["']?[^>]*>([\s\S]*?)<\/script>/i);
+  let cover = '';
+  try { const ld = JSON.parse(ldMatch && ldMatch[1] || '{}'); cover = ld.image || ld.track?.[0]?.audio?.thumbnailUrl || ''; } catch (_error) {}
+  return { name:title || '小果歌单', cover, songs:matched.filter(Boolean) };
+}
+
+const IMPORTERS = { tx:importQQ, wy:importWY, kw:importKW, kg:importKG, kgc:importKGC, mg:importMG, sp:importSpotify, qs:importQishui, am:importAppleMusic };
 const ALBUM_IMPORTERS = { tx:importQQAlbum, wy:importWYAlbum, kw:importKWAlbum };
 async function importPlaylist(input, preferredSource) {
   const originalInput = String(input || '').trim();
   const firstUrl = extractFirstUrl(originalInput);
   let resolution = { url:firstUrl || originalInput, html:'', chain:[] };
-  if (firstUrl) {
+  const directSpotifyUrl = /^https?:\/\/open\.spotify\.com\/(?:playlist|track)\//i.test(firstUrl);
+  if (firstUrl && !directSpotifyUrl) {
     try { resolution = await expandShareLinkDetailed(originalInput); } catch (_error) {}
   }
 
