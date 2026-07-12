@@ -2329,7 +2329,12 @@ ipcMain.handle('mineradio-open-update-installer', async (_event, filePath) => {
       return { ok: false, error: 'INVALID_UPDATE_PATH' };
     }
     if (!fs.existsSync(target)) return { ok: false, error: 'UPDATE_FILE_MISSING' };
+    // Hide the running copy before launching the installer. This makes an
+    // update look like one continuous operation and avoids users launching a
+    // second copy while NSIS is replacing files.
+    if (mainWindow && !mainWindow.isDestroyed()) hideMainWindowToTray();
     const error = await shell.openPath(target);
+    if (error && mainWindow && !mainWindow.isDestroyed()) focusMainWindow();
     return error ? { ok: false, error } : { ok: true };
   } catch (e) {
     return { ok: false, error: e.message || 'OPEN_UPDATE_FAILED' };

@@ -273,9 +273,9 @@
     if(!text)return;
     var layer=makeTextLayer(text,size),lw=layer.w,lh=layer.h,dx=x-layer.pad,dy=y+size*.55-lh/2;
     var motion=smoothMotion||state.motion||{},pulse=clamp((motion.beatPulse||0)*.16+(motion.bass||0)*.08,0,.16,0);
-    var glow=clamp((motion.lyricGlowStrength||0)+(.10*(motion.beatGlow||0))+(.08*(motion.highBloom||0)),0,1.0,.25);
+    var glow=state.lyricGlowEnabled===false?0:clamp((motion.lyricGlowStrength||0)+(.10*(motion.beatGlow||0))+(.08*(motion.highBloom||0)),0,1.0,.25);
     ctx.save();ctx.globalAlpha=alpha*state.opacity;
-    if(role==='current'){
+    if(role==='current'&&state.lyricGlowEnabled!==false){
       ctx.save();ctx.filter='blur('+Math.max(4,size*(.065+.020*glow))+'px)';ctx.globalAlpha*=.34+.12*glow;
       ctx.drawImage(layer.canvas,dx-size*.01,dy-size*.01,lw*(1+.018*pulse),lh*(1+.018*pulse));ctx.restore();
     }else{
