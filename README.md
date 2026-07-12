@@ -2,9 +2,9 @@
 
 ## 最新版本：1.5.4.3 补充版
 
-[下载 Windows 补充版安装包](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.3.1/Mineradio.Setup.1.5.4.3.Supplement.exe) / [查看 v1.5.4.3.1 Release](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.5.4.3.1)
+[下载 Windows 补充版安装包](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.3.2/Mineradio.Setup.1.5.4.3.Supplement.exe) / [查看 v1.5.4.3.2 Release](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.5.4.3.2)
 
-已安装普通 `1.5.4.3` 的用户可以在软件内打开 **DIY → 检查更新**，直接更新到内部版本 `1.5.4.3.1`。补充版安装包的 Windows 文件版本仍显示为 `1.5.4.3`。
+已安装普通 `1.5.4.3` 或上一补充版的用户可以在软件内打开 **DIY → 检查更新**，直接更新到内部版本 `1.5.4.3.2`。补充版安装包的 Windows 文件版本仍显示为 `1.5.4.3`。
 
 补充版主要修复：
 
@@ -14,8 +14,10 @@
 - 修复桌面模式无法操作，支持自定义操作层快捷键并显示当前快捷键提示。
 - 左侧歌单一次点击打开并固定，桌面歌词泛光可以独立关闭。
 - 音源未配置时提示前往 DIY 预设配置。
+- 修复网易云歌单超过 200 首后出现“歌曲 ID / 未知歌手”。
+- 恢复汽水音乐、Apple Music 和 Spotify（小绿）歌单导入。
 
-SHA-256：`BE91C069AC0C94AF27EBB4BE08C63F683B6794BA8863EE24470E4B15B246B211`
+SHA-256：`E9046E0EC38E58DC64665AF74568C3E778B305158FF0346848612CF01AC0BF8C`
 
 Mineradio 是一个 Windows 桌面音乐播放器、歌单工具和音乐可视化应用。它可以独立播放本地音乐，也支持导入歌单、显示歌词、桌面歌词、壁纸和可视化效果。
 
