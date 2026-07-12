@@ -20,35 +20,6 @@ SHA-256：`BE91C069AC0C94AF27EBB4BE08C63F683B6794BA8863EE24470E4B15B246B211`
 Mineradio 是一个 Windows 桌面音乐播放器、歌单工具和音乐可视化应用。它可以独立播放本地音乐，也支持导入歌单、显示歌词、桌面歌词、壁纸和可视化效果。
 
 Mineradio 不内置音乐音源，不分发受版权保护的音频、歌词、封面或壁纸内容。涉及第三方平台、兼容音源脚本或用户本地文件时，请只导入和播放你有权使用的内容，并遵守相应服务条款。
-
-
-
-### Mineradio 1.5.4.2
-
-[下载 1.5.4.2 安装包](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.2/Mineradio.Setup.1.5.4.2.exe) / [查看 1.5.4.2 Release](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.5.4.2)
-
-国内下载较慢时，可以优先尝试下面的镜像入口：
-
-| 下载方式 | 链接 | 说明 |
-| --- | --- | --- |
-| 镜像下载 1 | [点击下载](https://gh.llkk.cc/https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.2/Mineradio.Setup.1.5.4.2.exe) | 国内用户推荐 |
-| 镜像下载 2 | [备用镜像](https://ghfast.top/https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.2/Mineradio.Setup.1.5.4.2.exe) | 镜像 1 慢时使用 |
-| 镜像下载 3 | [备用镜像](https://gh-proxy.com/https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.2/Mineradio.Setup.1.5.4.2.exe) | 公益加速服务 |
-| GitHub Release | [官方下载](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.2/Mineradio.Setup.1.5.4.2.exe) | 官方备用地址 |
-
-已安装旧版的用户，可以在软件内使用「检查更新」直接下载并安装 `1.5.4.2`。
-
-## 1.5.4.2 更新内容
-
-- 新增极光、霓虹雨夜、水墨、纯净舞台等声境视觉预设，并加入按 BPM、能量和曲风自动选择的智能声境。
-- 新预设统一旧预设的舞台操作：普通状态可拖动旋转、滚轮缩放，并可在右侧 3D 歌单架滚轮换歌；开启歌词拖拽后再调整歌词位置与大小。
-- 新增“软件界面动画”总开关，设置保存在“视觉控制台 → 高级”；关闭后同时跳过下次启动动画和提示音。
-- 完善歌词动画、歌词翻译与外语歌词匹配，补充桌面歌词和舞台歌词的布局、性能及交互控制。
-- 完善壁纸播放器与独立控制窗口，改进视频背景、Wallpaper Engine 和桌面覆盖层体验。
-- 改进本地音乐、跨平台歌单导入、LX 音源搜索与失败换源逻辑。
-- 修复快速补丁更新后 Chromium 仍读取旧页面缓存、导致更新成功但看不到新功能的问题。
-- 持久化歌词布局、动画开关、歌单面板等界面状态，降低更新后设置丢失的概率。
-
 ## 作者支持
 
 如果我的二创给大家带来好的体验，大家的支持就是我继续长期更新下去的动力。感谢大家的理解与支持。
