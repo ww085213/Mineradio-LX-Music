@@ -810,7 +810,7 @@ function pickReleaseAsset(assets) {
 }
 function effectiveReleaseVersion(version, asset) {
   const base = normalizeVersion(version || APP_VERSION) || APP_VERSION;
-  return asset && /supplement/i.test(String(asset.name || '')) ? `${base}.1` : base;
+  return asset && /supplement/i.test(String(asset.name || '')) && base.split('.').length <= 4 ? `${base}.1` : base;
 }
 function patchAssetVersions(name) {
   const matches = String(name || '').match(/\d+(?:[._-]\d+){1,3}/g) || [];

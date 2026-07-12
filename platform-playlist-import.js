@@ -919,17 +919,35 @@ async function importWY(id) {
   const loadedIds = new Set(initialTracks.map(item => String(item?.id || '')));
   const missingIds = trackIds.filter(trackId => !loadedIds.has(trackId));
   const extraTracks = [];
-  for (let offset = 0; offset < missingIds.length; offset += 500) {
-    const ids = missingIds.slice(offset, offset + 500);
+  // The public song/detail endpoint becomes unreliable with very long URLs.
+  // Keep batches below 100 so playlists larger than the first 200 tracks are
+  // fully hydrated instead of turning into "Netease song <id>" placeholders.
+  for (let offset = 0; offset < missingIds.length; offset += 100) {
+    const ids = missingIds.slice(offset, offset + 100);
     const details = await fetchJson(
       `https://music.163.com/api/song/detail?ids=${encodeURIComponent(JSON.stringify(ids.map(Number)))}`,
       { headers:{ Referer:'https://music.163.com/' } }
     );
     extraTracks.push(...(details?.songs || []));
   }
-  const byId = new Map([...initialTracks, ...extraTracks].map(item => [String(item.id), item]));
+  let byId = new Map([...initialTracks, ...extraTracks].map(item => [String(item.id), item]));
+  const unresolvedIds = missingIds.filter(trackId => !byId.has(trackId));
+  for (let offset = 0; offset < unresolvedIds.length; offset += 50) {
+    const ids = unresolvedIds.slice(offset, offset + 50);
+    const details = await fetchJson('https://music.163.com/api/v3/song/detail', {
+      method:'POST',
+      headers:{ Referer:'https://music.163.com/', 'content-type':'application/x-www-form-urlencoded' },
+      body:'c=' + encodeURIComponent(JSON.stringify(ids.map(value => ({ id:Number(value), v:0 })))),
+    });
+    extraTracks.push(...(details?.songs || []));
+  }
+  byId = new Map([...initialTracks, ...extraTracks].map(item => [String(item.id), item]));
+  const stillMissing = trackIds.filter(trackId => !byId.has(trackId));
+  if (stillMissing.length) {
+    throw new Error(`网易云歌曲详情补全失败（${stillMissing.length} 首），请稍后重试导入`);
+  }
   const tracks = trackIds.length
-    ? trackIds.map(trackId => byId.get(trackId) || { id:trackId, name:`网易云歌曲 ${trackId}`, ar:[], al:{} })
+    ? trackIds.map(trackId => byId.get(trackId)).filter(Boolean)
     : initialTracks;
   return {
     name:list.name || `小芸歌单 ${id}`, cover:list.coverImgUrl || '',
