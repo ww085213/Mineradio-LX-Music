@@ -791,7 +791,8 @@ function extractReleaseNotes(body) {
 }
 function pickReleaseAsset(assets) {
   const list = Array.isArray(assets) ? assets : [];
-  const preferred = list.find(a => /\.(exe|msi)$/i.test(a && a.name || ''))
+  const preferred = list.find(a => /supplement.*\.(exe|msi)$/i.test(a && a.name || ''))
+    || list.find(a => /\.(exe|msi)$/i.test(a && a.name || ''))
     || list.find(a => /\.(zip|7z)$/i.test(a && a.name || ''))
     || list[0];
   if (!preferred) return null;
@@ -806,6 +807,10 @@ function pickReleaseAsset(assets) {
     sha256: digest.sha256 || '',
     sha512: digest.sha512 || '',
   };
+}
+function effectiveReleaseVersion(version, asset) {
+  const base = normalizeVersion(version || APP_VERSION) || APP_VERSION;
+  return asset && /supplement/i.test(String(asset.name || '')) ? `${base}.1` : base;
 }
 function patchAssetVersions(name) {
   const matches = String(name || '').match(/\d+(?:[._-]\d+){1,3}/g) || [];
@@ -1184,8 +1189,9 @@ async function fetchLatestUpdateInfo() {
       catch (_) { return localUpdateFallback('GitHub Releases ' + resp.status, { configured: true }); }
     }
     const data = await resp.json();
-    const latestVersion = normalizeVersion(data.tag_name || data.name || APP_VERSION) || APP_VERSION;
+    const releaseVersion = normalizeVersion(data.tag_name || data.name || APP_VERSION) || APP_VERSION;
     const asset = pickReleaseAsset(data.assets);
+    const latestVersion = effectiveReleaseVersion(releaseVersion, asset);
     const patch = pickPatchAsset(data.assets, APP_VERSION, latestVersion);
     const notes = extractReleaseNotes(data.body).length ? extractReleaseNotes(data.body) : UPDATE_FALLBACK_NOTES;
     return {

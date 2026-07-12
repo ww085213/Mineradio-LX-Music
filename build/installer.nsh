@@ -37,6 +37,7 @@
 !include WinMessages.nsh
 
 !define MINERADIO_INSTALL_MARKER ".mineradio-install-root"
+!define MINERADIO_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\52487c9b-5c83-5d92-b8c9-2c54b52b7121"
 
 !ifndef BUILD_UNINSTALLER
   Var MineradioWelcomePage
@@ -55,7 +56,14 @@
 !macroend
 
 !macro customInstall
+  ; Remove launchers left by older builds that used the localized product name.
+  ; Keeping one canonical Mineradio.exe also keeps shortcuts and single-instance
+  ; locking pointed at the same application after every update.
+  Delete "$INSTDIR\Mineradio二创版.exe"
+  Delete "$INSTDIR\Mineradio二創版.exe"
   Call MineradioWriteInstallMarker
+  WriteRegStr HKCU "${MINERADIO_UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
+  WriteRegStr HKLM "${MINERADIO_UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
 !macroend
 
 !macro customUnInit
@@ -217,7 +225,24 @@ Function MineradioUsePreferredInstallDir
     Call MineradioNormalizeInstallDir
     Pop $INSTDIR
   ${Else}
-    StrCpy $INSTDIR "C:\Mineradio"
+    ; Upgrades must reuse the registered install root. Older packages did not
+    ; write InstallLocation, so fall back to the parent of DisplayIcon.
+    ReadRegStr $R1 HKCU "${MINERADIO_UNINSTALL_KEY}" "InstallLocation"
+    ${If} $R1 == ""
+      ReadRegStr $R1 HKLM "${MINERADIO_UNINSTALL_KEY}" "InstallLocation"
+    ${EndIf}
+    ${If} $R1 == ""
+      ReadRegStr $R1 HKCU "${MINERADIO_UNINSTALL_KEY}" "DisplayIcon"
+    ${EndIf}
+    ${If} $R1 == ""
+      ReadRegStr $R1 HKLM "${MINERADIO_UNINSTALL_KEY}" "DisplayIcon"
+    ${EndIf}
+    ${If} $R1 != ""
+      ${GetParent} "$R1" $R1
+      StrCpy $INSTDIR "$R1"
+    ${Else}
+      StrCpy $INSTDIR "C:\Mineradio"
+    ${EndIf}
   ${EndIf}
 FunctionEnd
 

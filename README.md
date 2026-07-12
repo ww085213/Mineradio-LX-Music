@@ -1,38 +1,53 @@
-# Mineradio二创版 - LX Music / MR
+# Mineradio - LX Music / MR
 
-Mineradio二创版是一个 Windows 桌面音乐播放器、歌单工具和音乐可视化应用。它可以独立播放本地音乐，也支持导入歌单、显示歌词、桌面歌词、壁纸和可视化效果。
+## 最新版本：1.5.4.3 补充版
+
+[下载 Windows 补充版安装包](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.3.1/Mineradio.Setup.1.5.4.3.Supplement.exe) / [查看 v1.5.4.3.1 Release](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.5.4.3.1)
+
+已安装普通 `1.5.4.3` 的用户可以在软件内打开 **DIY → 检查更新**，直接更新到内部版本 `1.5.4.3.1`。补充版安装包的 Windows 文件版本仍显示为 `1.5.4.3`。
+
+补充版主要修复：
+
+- 安装路径只选择一次，升级时复用原目录。
+- 避免生成两个桌面快捷方式。
+- 修复托盘图标不显示和关闭后无法恢复窗口。
+- 修复桌面模式无法操作，支持自定义操作层快捷键并显示当前快捷键提示。
+- 左侧歌单一次点击打开并固定，桌面歌词泛光可以独立关闭。
+- 音源未配置时提示前往 DIY 预设配置。
+
+SHA-256：`BE91C069AC0C94AF27EBB4BE08C63F683B6794BA8863EE24470E4B15B246B211`
+
+Mineradio 是一个 Windows 桌面音乐播放器、歌单工具和音乐可视化应用。它可以独立播放本地音乐，也支持导入歌单、显示歌词、桌面歌词、壁纸和可视化效果。
 
 Mineradio 不内置音乐音源，不分发受版权保护的音频、歌词、封面或壁纸内容。涉及第三方平台、兼容音源脚本或用户本地文件时，请只导入和播放你有权使用的内容，并遵守相应服务条款。
 
 
 
-### Mineradio二创版 1.5.4.3
+### Mineradio 1.5.4.2
 
-[下载 1.5.4.3 安装包](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.3/Mineradio%E4%BA%8C%E5%88%9B%E7%89%88.Setup.1.5.4.3.exe) / [查看 1.5.4.3 Release](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.5.4.3)
+[下载 1.5.4.2 安装包](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.2/Mineradio.Setup.1.5.4.2.exe) / [查看 1.5.4.2 Release](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.5.4.2)
 
 国内下载较慢时，可以优先尝试下面的镜像入口：
 
 | 下载方式 | 链接 | 说明 |
 | --- | --- | --- |
-| 镜像下载 1 | [点击下载](https://gh.llkk.cc/https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.3/Mineradio%E4%BA%8C%E5%88%9B%E7%89%88.Setup.1.5.4.3.exe) | 国内用户推荐 |
-| 镜像下载 2 | [备用镜像](https://ghfast.top/https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.3/Mineradio%E4%BA%8C%E5%88%9B%E7%89%88.Setup.1.5.4.3.exe) | 镜像 1 慢时使用 |
-| 镜像下载 3 | [备用镜像](https://gh-proxy.com/https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.3/Mineradio%E4%BA%8C%E5%88%9B%E7%89%88.Setup.1.5.4.3.exe) | 公益加速服务 |
-| GitHub Release | [官方下载](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.3/Mineradio%E4%BA%8C%E5%88%9B%E7%89%88.Setup.1.5.4.3.exe) | 官方备用地址 |
+| 镜像下载 1 | [点击下载](https://gh.llkk.cc/https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.2/Mineradio.Setup.1.5.4.2.exe) | 国内用户推荐 |
+| 镜像下载 2 | [备用镜像](https://ghfast.top/https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.2/Mineradio.Setup.1.5.4.2.exe) | 镜像 1 慢时使用 |
+| 镜像下载 3 | [备用镜像](https://gh-proxy.com/https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.2/Mineradio.Setup.1.5.4.2.exe) | 公益加速服务 |
+| GitHub Release | [官方下载](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.4.2/Mineradio.Setup.1.5.4.2.exe) | 官方备用地址 |
 
-已安装旧版的用户，可以在软件内使用「检查更新」直接下载并安装 `1.5.4.3`。
+已安装旧版的用户，可以在软件内使用「检查更新」直接下载并安装 `1.5.4.2`。
 
-## 1.5.4.3 更新内容
+## 1.5.4.2 更新内容
 
-- 本版本开始统一使用“Mineradio二创版”名称。
-- 新增歌单批量导入，并优化本地音乐批量导入体验。
-- 新增窗口大小和位置记忆，重新启动后自动恢复。
-- 修复“莫奈”歌词动画遮挡 DIY 控制条的问题。
-- 全局升级液态玻璃视觉效果。
-- 加入小水、小果、小绿平台导入。
-- 优化小绿公开歌单读取速度及网络错误提示。
-- 左侧区域支持加入视频背景。
-- 最小化按钮支持隐藏到系统托盘。
-- 应用、快捷方式、卸载项和更新界面统一显示“Mineradio二创版”。
+- 新增极光、霓虹雨夜、水墨、纯净舞台等声境视觉预设，并加入按 BPM、能量和曲风自动选择的智能声境。
+- 新预设统一旧预设的舞台操作：普通状态可拖动旋转、滚轮缩放，并可在右侧 3D 歌单架滚轮换歌；开启歌词拖拽后再调整歌词位置与大小。
+- 新增“软件界面动画”总开关，设置保存在“视觉控制台 → 高级”；关闭后同时跳过下次启动动画和提示音。
+- 完善歌词动画、歌词翻译与外语歌词匹配，补充桌面歌词和舞台歌词的布局、性能及交互控制。
+- 完善壁纸播放器与独立控制窗口，改进视频背景、Wallpaper Engine 和桌面覆盖层体验。
+- 改进本地音乐、跨平台歌单导入、LX 音源搜索与失败换源逻辑。
+- 修复快速补丁更新后 Chromium 仍读取旧页面缓存、导致更新成功但看不到新功能的问题。
+- 持久化歌词布局、动画开关、歌单面板等界面状态，降低更新后设置丢失的概率。
 
 ## 作者支持
 
@@ -84,16 +99,14 @@ npm run build:win
 
 构建产物输出到 `dist/`：
 
-- `Mineradio二创版.Setup.1.5.4.3.exe`
-- `Mineradio二创版.Setup.1.5.4.3.exe.blockmap`
+- `Mineradio.Setup.1.5.4.2.exe`
+- `Mineradio.Setup.1.5.4.2.exe.blockmap`
 - `latest.yml`
 
 macOS DMG 需要在 macOS 环境构建：
 
 ```bash
 npm run build:mac
-```
-
 ## 原项目与授权说明
 
 - 本项目基于 [XxHuberrr/Mineradio](https://github.com/XxHuberrr/Mineradio) 修改维护，是非官方二创版本。
@@ -123,26 +136,11 @@ npm run build:mac
 - 禁止将本项目用于盗版音乐、违规抓取、绕过平台限制、传播侵权内容或其他违法违规用途。
 - 因用户自行导入、配置、分享或违规使用第三方内容产生的版权争议、账号风险、法律责任，由使用者自行承担。
 
-## 当前版本
+## 当前版本```
 
 ## 发布仓库
 
 默认发布仓库为 `ww085213/Mineradio-LX-Music`。更新检查配置位于 `package.json` 的 `mineradio.update` 字段。
-
-## Mineradio二创版 v1.5.4.3
-
-本版本统一使用“Mineradio二创版”名称，主要更新如下：
-
-- 新增歌单批量导入，并优化本地音乐批量导入体验。
-- 新增窗口大小和位置记忆，重新启动后自动恢复。
-- 修复“莫奈”歌词动画遮挡 DIY 控制条的问题。
-- 全局升级液态玻璃视觉效果。
-- 加入小水、小果、小绿平台导入，并优化小绿公开歌单的读取速度和错误提示。
-- 左侧区域支持加入视频背景。
-- 最小化按钮支持隐藏到系统托盘。
-- 应用、快捷方式、卸载项和更新界面统一显示“Mineradio二创版”。
-
-安装包：`Mineradio二创版.Setup.1.5.4.3.exe`
 
 ## License
 

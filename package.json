@@ -1,6 +1,6 @@
 {
   "name": "mineradio",
-  "productName": "Mineradio二创版",
+  "productName": "Mineradio",
   "version": "1.5.4",
   "description": "Mineradio 桌面音乐播放器，支持本地播放、歌单导入同步、跨平台搜索、歌词与可视化效果。",
   "author": "Mineradio",
@@ -15,8 +15,8 @@
   },
   "build": {
     "buildVersion": "1.5.4.3",
-    "appId": "com.mineradio.app",
-    "productName": "Mineradio二创版",
+    "appId": "com.mineradio.desktop",
+    "productName": "Mineradio",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -51,7 +51,7 @@
     ],
     "asar": false,
     "win": {
-      "executableName": "Mineradio二创版",
+      "executableName": "Mineradio",
       "icon": "build/icon.ico",
       "signAndEditExecutable": false,
       "target": [
@@ -81,10 +81,10 @@
           ]
         }
       ],
-      "artifactName": "Mineradio二创版-1.5.4.3-mac-${arch}.${ext}"
+      "artifactName": "Mineradio-1.5.4.3-mac-${arch}.${ext}"
     },
     "dmg": {
-      "artifactName": "Mineradio二创版-1.5.4.3-mac-${arch}.${ext}"
+      "artifactName": "Mineradio-1.5.4.2-mac-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -92,14 +92,14 @@
       "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Mineradio二创版",
+      "shortcutName": "Mineradio",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "installerSidebar": "build/installerSidebar.bmp",
       "uninstallerSidebar": "build/installerSidebar.bmp",
       "installerHeader": "build/installerHeader.bmp",
       "include": "build/installer.nsh",
-      "artifactName": "Mineradio二创版.Setup.1.5.4.3.${ext}"
+      "artifactName": "Mineradio.Setup.1.5.4.3.Supplement.${ext}"
     },
     "publish": [
       {
@@ -110,7 +110,7 @@
     ]
   },
   "mineradio": {
-    "releaseVersion": "1.5.4.3",
+    "releaseVersion": "1.5.4.3.1",
     "update": {
       "provider": "github",
       "owner": "ww085213",
