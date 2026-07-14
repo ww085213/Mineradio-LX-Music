@@ -11,7 +11,8 @@ const tls = require('tls');
 const { once } = require('events');
 const { Readable } = require('stream');
 const { fileURLToPath } = require('url');
-const { execFileSync, execFile } = require('child_process');
+const { execFileSync, spawn } = require('child_process');
+const { WallpaperConverter } = require('./wallpaper-converter');
 const lxSourceHost = require('./lx-source-host');
 const lxSearch = require('./lx-search');
 const platformPlaylistImport = require('./platform-playlist-import');
@@ -32,7 +33,16 @@ const UPDATE_DOWNLOAD_DIR = process.env.MINERADIO_UPDATE_DOWNLOAD_DIR || path.jo
 const UPDATE_PATCH_BACKUP_DIR = process.env.MINERADIO_PATCH_BACKUP_DIR || path.join(UPDATE_WORK_DIR, 'backups', 'patches');
 const TEST_UPDATE_MANIFEST_FILE = path.join(UPDATE_WORK_DIR, 'test-update-manifest.json');
 const BEATMAP_CACHE_DIR = process.env.MINERADIO_BEAT_CACHE_DIR || 'D:\\MineradioCache\\beatmaps';
-const WALLPAPER_TRANSCODE_CACHE_DIR = process.env.MINERADIO_WALLPAPER_CACHE_DIR || 'D:\\MineradioCache\\wallpapers';
+const DEFAULT_WALLPAPER_CACHE_DIR = fs.existsSync('D:\\')
+  ? 'D:\\MineradioCache\\wallpapers'
+  : path.join(process.env.LOCALAPPDATA || __dirname, 'MineradioCache', 'wallpapers');
+const WALLPAPER_TRANSCODE_CACHE_DIR = process.env.MINERADIO_WALLPAPER_CACHE_DIR || DEFAULT_WALLPAPER_CACHE_DIR;
+const wallpaperConverter = new WallpaperConverter({
+  appDir:__dirname,
+  cacheDir:WALLPAPER_TRANSCODE_CACHE_DIR,
+  resourcesPath:process.resourcesPath,
+  execPath:process.execPath,
+});
 const APP_PACKAGE = readPackageInfo();
 const APP_VERSION = process.env.MINERADIO_VERSION || (APP_PACKAGE.mineradio && APP_PACKAGE.mineradio.releaseVersion) || APP_PACKAGE.version || '0.9.11';
 const APP_DISPLAY_NAME = APP_PACKAGE.productName || 'Mineradio二创版';
@@ -128,67 +138,42 @@ function localContentTypeForPath(filePath) {
   return LOCAL_FILE_MIME[path.extname(String(filePath || '')).toLowerCase()] || 'application/octet-stream';
 }
 
-function findFfmpegExecutable() {
-  const candidates = [
-    path.join(process.resourcesPath || '', 'ffmpeg.exe'),
-    path.join(process.resourcesPath || '', 'bin', 'ffmpeg.exe'),
-    path.join(path.dirname(process.execPath || ''), 'ffmpeg.exe'),
-    path.join(__dirname, 'ffmpeg.exe'),
-    path.join(__dirname, 'bin', 'ffmpeg.exe'),
-  ];
-  for (const candidate of candidates) {
-    try { if (candidate && fs.existsSync(candidate)) return candidate; } catch (_e) {}
-  }
+function applySecurityHeaders(res) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  // Electron's explicit desktop-source capture is exposed through getUserMedia
+  // and therefore needs the camera directive for this local origin only.
+  res.setHeader('Permissions-Policy', 'camera=(self), geolocation=(), microphone=()');
+  res.setHeader('Content-Security-Policy', [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' blob:",
+    "worker-src 'self' blob:",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "img-src 'self' data: blob: http: https:",
+    "media-src 'self' data: blob: http: https:",
+    "connect-src 'self' http: https: ws: wss:",
+    "font-src 'self' data: https://fonts.gstatic.com",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'none'",
+  ].join('; '));
+}
+
+function isTrustedLocalApiRequest(req) {
+  const fetchSite = String(req.headers['sec-fetch-site'] || '').toLowerCase();
+  if (fetchSite === 'cross-site') return false;
+  const origin = String(req.headers.origin || '').trim();
+  if (!origin || origin === 'null') return true;
   try {
-    return execFileSync('where.exe', ['ffmpeg.exe'], { encoding:'utf8', windowsHide:true, timeout:2500 })
-      .split(/\r?\n/).map(value => value.trim()).find(Boolean) || '';
-  } catch (_error) {
-    return '';
+    const parsed = new URL(origin);
+    const localHost = parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost' || parsed.hostname === '::1';
+    return parsed.protocol === 'http:' && localHost && String(parsed.port || '80') === String(PORT);
+  } catch (_err) {
+    return false;
   }
-}
-
-function wallpaperTranscodeCachePath(filePath) {
-  const stat = fs.statSync(filePath);
-  const key = crypto.createHash('sha1')
-    .update(path.resolve(filePath))
-    .update(String(stat.size))
-    .update(String(stat.mtimeMs))
-    .digest('hex');
-  return path.join(WALLPAPER_TRANSCODE_CACHE_DIR, key + '.mp4');
-}
-
-async function compatibleWallpaperMediaFile(filePath) {
-  const ext = path.extname(String(filePath || '')).toLowerCase();
-  if (!filePath || !fs.existsSync(filePath)) return filePath;
-  if (ext === '.mp4') return filePath;
-  if (!['.webm', '.mov', '.m4v', '.gif'].includes(ext)) return filePath;
-  const ffmpeg = findFfmpegExecutable();
-  if (!ffmpeg) return filePath;
-  const output = wallpaperTranscodeCachePath(filePath);
-  if (fs.existsSync(output)) return output;
-  await fs.promises.mkdir(path.dirname(output), { recursive:true });
-  const temp = output + '.tmp';
-  await new Promise((resolve, reject) => {
-    execFile(ffmpeg, [
-      '-hide_banner', '-loglevel', 'error', '-y',
-      '-i', filePath,
-      '-map', '0:v:0',
-      '-an',
-      '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
-      '-c:v', 'libx264',
-      '-preset', 'veryfast',
-      '-crf', '18',
-      '-pix_fmt', 'yuv420p',
-      '-movflags', '+faststart',
-      temp,
-    ], { windowsHide:true, timeout:180000, maxBuffer:2 * 1024 * 1024 }, error => error ? reject(error) : resolve());
-  }).then(async () => {
-    await fs.promises.rename(temp, output);
-  }).catch(async error => {
-    try { await fs.promises.unlink(temp); } catch (_e) {}
-    console.warn('[WallpaperTranscode]', error.message || error);
-  });
-  return fs.existsSync(output) ? output : filePath;
 }
 
 // ---------- 工具 ----------
@@ -212,7 +197,6 @@ function serveStatic(res, filePath) {
 function sendJSON(res, data, status) {
   res.writeHead(status || 200, {
     'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': '*',
     'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
     'Pragma': 'no-cache',
     'Expires': '0',
@@ -253,6 +237,8 @@ function audioProxyUrl(originalUrl, headers) {
 }
 
 const wallpaperMediaIndex = new Map();
+const wallpaperProjectIndex = new Map();
+const WALLPAPER_CAPTURE_WINDOW_TITLE = 'Mineradio Wallpaper Capture';
 function steamRegistryRoots() {
   if (process.platform !== 'win32') return [];
   const roots = new Set();
@@ -323,6 +309,27 @@ function steamLibraryRoots() {
     });
   }
   return [...roots].filter(root => fs.existsSync(root));
+}
+function findWallpaperEngineExecutable() {
+  const candidates = [];
+  steamLibraryRoots().forEach(root => {
+    const install = path.join(root, 'steamapps', 'common', 'wallpaper_engine');
+    candidates.push(path.join(install, 'wallpaper64.exe'), path.join(install, 'wallpaper32.exe'));
+  });
+  return candidates.find(candidate => {
+    try { return fs.existsSync(candidate) && fs.statSync(candidate).isFile(); } catch (_error) { return false; }
+  }) || '';
+}
+function runWallpaperEngineControl(args) {
+  const executable = findWallpaperEngineExecutable();
+  if (!executable) throw new Error('WALLPAPER_ENGINE_NOT_FOUND');
+  const child = spawn(executable, args, {
+    windowsHide: true,
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
+  return executable;
 }
 function firstExistingWallpaperFile(dir, candidates) {
   for (const value of candidates) {
@@ -480,6 +487,7 @@ function wallpaperContentFingerprint(file) {
 }
 function scanWallpaperEngineLibrary() {
   wallpaperMediaIndex.clear();
+  wallpaperProjectIndex.clear();
   const results = [];
   const projectRoots = [];
   steamLibraryRoots().forEach(root => {
@@ -500,7 +508,8 @@ function scanWallpaperEngineLibrary() {
         const type = String(project.type || '').toLowerCase();
         const compatible = compatibleWallpaperMedia(dir, project);
         const media = compatible.file;
-        const preview = bestWallpaperPreview(dir, project);
+        const preview = bestWallpaperPreview(dir, project) ||
+          (media && path.extname(media).toLowerCase() === '.gif' ? media : '');
         if (!media && !preview) return;
         const fingerprint = crypto.createHash('sha1').update(projectPath).digest('hex').slice(0, 18);
         if (seen.has(fingerprint)) return;
@@ -510,11 +519,16 @@ function scanWallpaperEngineLibrary() {
         if (contentFingerprint) seenContent.add(contentFingerprint);
         if (media) wallpaperMediaIndex.set(fingerprint + ':media', media);
         if (preview) wallpaperMediaIndex.set(fingerprint + ':preview', preview);
+        wallpaperProjectIndex.set(fingerprint, projectPath);
         results.push({
           id: fingerprint,
           title: String(project.title || path.basename(dir)).slice(0, 160),
           type: media ? compatible.mediaType : type || 'scene',
           projectType: type || '',
+          nativeScene: type === 'scene',
+          sourceFormat: type === 'scene' ? 'scene.pkg' : (path.extname(media || '').slice(1).toLowerCase() || compatible.mediaType || ''),
+          outputFormat: type === 'scene' || compatible.mediaType === 'video' ? 'MP4 / H.264' : compatible.mediaType,
+          conversionEngine: type === 'scene' ? 'RePKG + Wallpaper Engine + FFmpeg' : (compatible.mediaType === 'video' ? 'FFmpeg' : 'Direct'),
           mediaType: compatible.mediaType || '',
           playable: !!media,
           dynamic: !!media && compatible.mediaType === 'video',
@@ -1851,6 +1865,36 @@ function readRequestBody(req) {
   });
 }
 
+function readBinaryRequestBody(req, maxBytes) {
+  const limit = Math.max(1, Number(maxBytes) || 192 * 1024 * 1024);
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    let settled = false;
+    req.on('data', chunk => {
+      if (settled) return;
+      const data = Buffer.from(chunk);
+      total += data.length;
+      if (total > limit) {
+        settled = true;
+        reject(new Error('WALLPAPER_RECORDING_TOO_LARGE'));
+        return;
+      }
+      chunks.push(data);
+    });
+    req.on('end', () => {
+      if (settled) return;
+      settled = true;
+      resolve(Buffer.concat(chunks));
+    });
+    req.on('error', error => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    });
+  });
+}
+
 // ====================================================================
 //  Daily hot 30 recommendation
 // ====================================================================
@@ -2008,6 +2052,11 @@ async function getDailyHotSongs(limit) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost:' + PORT);
   const pn = url.pathname;
+  applySecurityHeaders(res);
+  if (pn.startsWith('/api/') && !isTrustedLocalApiRequest(req)) {
+    sendJSON(res, { ok: false, error: 'CROSS_ORIGIN_REQUEST_BLOCKED' }, 403);
+    return;
+  }
 
   if (pn === '/api/app/version') {
     sendJSON(res, {
@@ -2384,7 +2433,6 @@ const server = http.createServer(async (req, res) => {
         'Content-Type': upstream.headers.get('content-type') || 'audio/mpeg',
         'Accept-Ranges': upstream.headers.get('accept-ranges') || 'bytes',
         'Cache-Control': 'no-store',
-        'Access-Control-Allow-Origin': '*',
       };
       ['content-length', 'content-range', 'etag', 'last-modified'].forEach(name => {
         const value = upstream.headers.get(name);
@@ -2482,7 +2530,125 @@ const server = http.createServer(async (req, res) => {
 
   if (pn === '/api/wallpaper/list') {
     const wallpapers = scanWallpaperEngineLibrary();
-    sendJSON(res, { ok: true, wallpapers, count: wallpapers.length });
+    sendJSON(res, { ok: true, wallpapers, count: wallpapers.length, converter:wallpaperConverter.capabilities() });
+    return;
+  }
+
+  if (pn === '/api/wallpaper/capabilities') {
+    sendJSON(res, { ok:true, converter:wallpaperConverter.capabilities() });
+    return;
+  }
+
+  if (pn === '/api/wallpaper/inspect') {
+    try {
+      if (!wallpaperProjectIndex.size) scanWallpaperEngineLibrary();
+      const id = String(url.searchParams.get('id') || '');
+      const projectFile = wallpaperProjectIndex.get(id);
+      const inspection = await wallpaperConverter.inspectSceneProject(projectFile);
+      sendJSON(res, { ok:!!inspection.valid, inspection, converter:wallpaperConverter.capabilities() }, inspection.valid ? 200 : 422);
+    } catch (error) {
+      sendJSON(res, { ok:false, error:error.message || 'WALLPAPER_INSPECT_FAILED' }, 422);
+    }
+    return;
+  }
+
+  if (pn === '/api/wallpaper/capture/start') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { ok:false, error:'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    try {
+      if (!wallpaperProjectIndex.size) scanWallpaperEngineLibrary();
+      const id = String(url.searchParams.get('id') || '');
+      const projectFile = wallpaperProjectIndex.get(id);
+      if (!projectFile || !fs.existsSync(projectFile)) throw new Error('WALLPAPER_PROJECT_NOT_FOUND');
+      // Capturing does not require unpacking the package. A full RePKG `info` pass can
+      // take tens of seconds for large scenes, so keep the click path synchronous only
+      // with a cheap package presence/size check and let Wallpaper Engine open it now.
+      const packageFile = path.join(path.dirname(projectFile), 'scene.pkg');
+      if (!fs.existsSync(packageFile) || !fs.statSync(packageFile).isFile() || fs.statSync(packageFile).size < 16) {
+        throw new Error('WALLPAPER_SCENE_PACKAGE_INVALID');
+      }
+      const packageStat = fs.statSync(packageFile);
+      const inspection = {
+        valid:true,
+        validated:false,
+        fast:true,
+        packageFile,
+        packageSize:packageStat.size,
+        engine:'Wallpaper Engine',
+        extractor:wallpaperConverter.repkgPath ? 'RePKG available' : '',
+        outputFormat:'MP4 / H.264',
+      };
+      const width = Math.max(640, Math.min(3840, Number(url.searchParams.get('width')) || 1920));
+      const height = Math.max(360, Math.min(2160, Number(url.searchParams.get('height')) || 1080));
+      runWallpaperEngineControl([
+        '-control', 'openWallpaper',
+        '-file', projectFile,
+        '-playInWindow', WALLPAPER_CAPTURE_WINDOW_TITLE,
+        '-width', String(Math.round(width)),
+        '-height', String(Math.round(height)),
+        '-borderless',
+      ]);
+      sendJSON(res, { ok:true, windowTitle:WALLPAPER_CAPTURE_WINDOW_TITLE, width, height, inspection });
+    } catch (error) {
+      sendJSON(res, { ok:false, error:error.message || 'WALLPAPER_CAPTURE_START_FAILED' }, 503);
+    }
+    return;
+  }
+
+  if (pn === '/api/wallpaper/capture/stop') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { ok:false, error:'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    try {
+      runWallpaperEngineControl(['-control', 'closeWallpaper', '-location', WALLPAPER_CAPTURE_WINDOW_TITLE]);
+      sendJSON(res, { ok:true });
+    } catch (error) {
+      sendJSON(res, { ok:false, error:error.message || 'WALLPAPER_CAPTURE_STOP_FAILED' }, 503);
+    }
+    return;
+  }
+
+  if (pn === '/api/wallpaper/convert/recording') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { ok:false, error:'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    let inputFile = '';
+    let outputFile = '';
+    try {
+      if (!wallpaperProjectIndex.size) scanWallpaperEngineLibrary();
+      const id = String(url.searchParams.get('id') || '');
+      if (!wallpaperProjectIndex.has(id)) throw new Error('WALLPAPER_PROJECT_NOT_FOUND');
+      const fps = Math.max(30, Math.min(60, Math.round(Number(url.searchParams.get('fps')) || 60)));
+      const raw = await readBinaryRequestBody(req, 192 * 1024 * 1024);
+      if (raw.length < 1024) throw new Error('WALLPAPER_RECORDING_EMPTY');
+      await fs.promises.mkdir(WALLPAPER_TRANSCODE_CACHE_DIR, { recursive:true });
+      inputFile = path.join(WALLPAPER_TRANSCODE_CACHE_DIR, 'capture-' + id + '-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex') + '.webm');
+      await fs.promises.writeFile(inputFile, raw);
+      const converted = await wallpaperConverter.convertRecordingFile(inputFile, { id, fps });
+      outputFile = converted.file;
+      const stat = fs.statSync(outputFile);
+      res.writeHead(200, {
+        'Content-Type':'video/mp4',
+        'Content-Length':String(stat.size),
+        'Cache-Control':'no-store',
+        'X-Mineradio-Format':converted.format,
+        'X-Mineradio-Encoder':converted.encoder,
+        'X-Mineradio-Fps':String(converted.fps),
+      });
+      const stream = fs.createReadStream(outputFile);
+      stream.pipe(res);
+      await once(stream, 'close');
+    } catch (error) {
+      if (!res.headersSent) sendJSON(res, { ok:false, error:error.message || 'WALLPAPER_RECORDING_CONVERT_FAILED' }, 500);
+      else if (!res.writableEnded) res.end();
+    } finally {
+      if (inputFile) try { await fs.promises.unlink(inputFile); } catch (_error) {}
+      if (outputFile) try { await fs.promises.unlink(outputFile); } catch (_error) {}
+    }
     return;
   }
 
@@ -2497,7 +2663,9 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     try {
-      const target = kind === 'media' ? await compatibleWallpaperMediaFile(originalTarget) : originalTarget;
+      const target = kind === 'media'
+        ? await wallpaperConverter.compatibleMediaFile(originalTarget, 60)
+        : originalTarget;
       const stat = fs.statSync(target);
       let start = 0, end = stat.size - 1, status = 200;
       const match = /^bytes=(\d*)-(\d*)$/i.exec(req.headers.range || '');
@@ -2547,7 +2715,6 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, {
         'Content-Type': contentType,
         'Content-Length': String(data.length),
-        'Access-Control-Allow-Origin': '*',
         'Cache-Control': 'public, max-age=86400',
       });
       res.end(data);
@@ -2693,14 +2860,14 @@ const server = http.createServer(async (req, res) => {
   if (pn === '/api/local-file') {
     try {
       if (!LOCAL_FILE_TOKEN || url.searchParams.get('token') !== LOCAL_FILE_TOKEN) {
-        res.writeHead(403, { 'Access-Control-Allow-Origin': '*' });
+        res.writeHead(403);
         res.end('Forbidden');
         return;
       }
       const target = path.resolve(String(url.searchParams.get('path') || ''));
       const stat = fs.statSync(target);
       if (!stat.isFile()) {
-        res.writeHead(404, { 'Access-Control-Allow-Origin': '*' });
+        res.writeHead(404);
         res.end('Not found');
         return;
       }
@@ -2715,7 +2882,6 @@ const server = http.createServer(async (req, res) => {
         const parsedEnd = match[2] ? Number(match[2]) : end;
         if (!Number.isFinite(parsedStart) || !Number.isFinite(parsedEnd) || parsedStart > parsedEnd || parsedStart >= total) {
           res.writeHead(416, {
-            'Access-Control-Allow-Origin': '*',
             'Content-Range': `bytes */${total}`,
           });
           res.end();
@@ -2729,8 +2895,6 @@ const server = http.createServer(async (req, res) => {
         'Content-Type': localContentTypeForPath(target),
         'Content-Length': String(end - start + 1),
         'Accept-Ranges': 'bytes',
-        'Access-Control-Allow-Origin': '*',
-        'Cross-Origin-Resource-Policy': 'cross-origin',
         'Cache-Control': 'no-store',
       };
       if (status === 206) headers['Content-Range'] = `bytes ${start}-${end}/${total}`;
@@ -2744,7 +2908,7 @@ const server = http.createServer(async (req, res) => {
         .pipe(res);
     } catch (err) {
       console.error('[LocalFile]', err);
-      res.writeHead(500, { 'Access-Control-Allow-Origin': '*' });
+      res.writeHead(500);
       res.end();
     }
     return;
