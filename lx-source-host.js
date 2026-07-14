@@ -924,6 +924,28 @@ function audioProbeSatisfiesQuality(probe, quality) {
   return probe.lossless === true || probe.bitrate >= 96000;
 }
 
+const QUALITY_ALIASES = Object.freeze({
+  master: ['master', 'flac24bit', 'hires', 'lossless', 'flac'],
+  atmos_plus: ['atmos_plus', 'atmos', 'master', 'flac24bit', 'hires', 'flac'],
+  flac24bit: ['flac24bit', '24bit', '24BIT', 'hires', 'flac'],
+  hires: ['hires', 'flac24bit', '24bit', 'flac'],
+  flac: ['flac', 'lossless', 'ape'],
+  '320k': ['320k', '320', '320K', 'high'],
+  '128k': ['128k', '128', '128K', 'standard'],
+});
+
+function qualityVariants(quality) {
+  const key = String(quality || '').trim();
+  const variants = [key, ...(QUALITY_ALIASES[key] || [])].filter(Boolean);
+  return variants.filter((item, index) => variants.indexOf(item) === index);
+}
+
+function sourceSupportsQuality(supported, quality) {
+  if (!Array.isArray(supported) || !supported.length) return true;
+  const normalized = new Set(supported.map(item => String(item || '').trim().toLowerCase()).filter(Boolean));
+  return qualityVariants(quality).some(item => normalized.has(String(item || '').toLowerCase()));
+}
+
 const musicUrlCache = new Map();
 async function resolveMusicUrl(source, musicInfo, quality, options) {
   options = options || {};
@@ -970,16 +992,20 @@ async function resolveMusicUrl(source, musicInfo, quality, options) {
       ? ['320k', '128k', requested, 'flac']
       : (fallbackMap[requested] || [requested, 'flac', '320k', '128k']);
     const candidates = rawCandidates
-      .filter((item, index, all) => item && (!supported.length || supported.includes(item)) && all.indexOf(item) === index)
+      .filter((item, index, all) => item && sourceSupportsQuality(supported, item) && all.indexOf(item) === index)
       .slice(0, 4);
     if (!host.sources[source] || !candidates.length) throw new Error('LX_QUALITY_UNSUPPORTED');
     const errors = [];
     for (const candidate of candidates) {
+      const candidateVariants = qualityVariants(candidate)
+        .filter((item, index, all) => item && sourceSupportsQuality(supported, item) && all.indexOf(item) === index)
+        .slice(0, 4);
+      for (const candidateVariant of candidateVariants) {
       try {
         const result = await withTimeout(
-          host.request(source, 'musicUrl', { type: candidate, quality: candidate, musicInfo: normalizedInfo }),
+          host.request(source, 'musicUrl', { type: candidateVariant, quality: candidateVariant, musicInfo: normalizedInfo }),
           LX_ACTION_TIMEOUT_MS,
-          `LX_SOURCE_TIMEOUT_${candidate}`
+          `LX_SOURCE_TIMEOUT_${candidateVariant}`
         );
         let url = extractHttpUrl(result);
         const playbackHeaders = extractPlaybackHeaders(result);
@@ -997,11 +1023,12 @@ async function resolveMusicUrl(source, musicInfo, quality, options) {
           } catch (probeErr) {
             errors.push(`${candidate}:${probeErr && probeErr.message ? probeErr.message : 'LX_AUDIO_PROBE_FAILED'}_ACCEPTED`);
           }
-          return { url, headers: playbackHeaders, quality: candidate, actual: probe, resolver: host.name };
+          return { url, headers: playbackHeaders, quality: candidateVariant, requestedQuality: candidate, actual: probe, resolver: host.name };
         }
-        errors.push(`${candidate}:LX_SOURCE_URL_INVALID`);
+        errors.push(`${candidateVariant}:LX_SOURCE_URL_INVALID`);
       } catch (err) {
-        errors.push(`${candidate}:${err && err.message ? err.message : 'LX_SOURCE_RESOLVE_FAILED'}`);
+        errors.push(`${candidateVariant}:${err && err.message ? err.message : 'LX_SOURCE_RESOLVE_FAILED'}`);
+      }
       }
     }
     throw new Error(errors.join(';') || 'LX_SOURCE_RESOLVE_FAILED');

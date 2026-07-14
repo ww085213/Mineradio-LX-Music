@@ -7,6 +7,10 @@ const crypto = require('crypto');
 const { execFile, spawn } = require('child_process');
 
 let mainWindow = null;
+let mainWindowDesktopEmbedded = false;
+let mainWindowDesktopInteractive = false;
+let mainWindowPreDesktopBounds = null;
+let mainWindowPreDesktopState = null;
 let localServer = null;
 let mainServerPort = 0;
 let desktopLyricsWindow = null;
@@ -42,10 +46,9 @@ let desktopLyricsDragSettleTimer = null;
 let desktopLyricsRightDragOrigin = null;
 let desktopLyricsMainFocused = false;
 let wallpaperWindow = null;
-let wallpaperPointerCapture = false;
 let wallpaperState = {};
-let wallpaperControlsWindow = null;
-let wallpaperControlsPointerCapture = false;
+let preferredDisplayMediaSourceId = '';
+let preferredDisplayMediaSourceTitle = '';
 let htmlFullscreenActive = false;
 let windowFullscreenActive = false;
 let mainWindowPreFullscreenBounds = null;
@@ -62,6 +65,8 @@ let mainWindowClosePersisting = false;
 let lxPlaybackLinked = false;
 let lxPauseBeforeQuitDone = false;
 const registeredGlobalHotkeys = new Map();
+const DESKTOP_INTERACTION_FALLBACK_HOTKEYS = ['Control+Shift+M', 'Alt+Shift+M', 'Control+Alt+M'];
+let desktopInteractionHotkeyBusy = false;
 const authorizedLocalMusicRoots = new Set();
 const mainWindowResizeStates = new Map();
 
@@ -88,11 +93,77 @@ const WINDOWED_SCALE = 3 / 4;
 const WINDOWED_MARGIN = 32;
 const MIN_WINDOWED_WIDTH = 960;
 const MIN_WINDOWED_HEIGHT = 540;
-const APP_NAME = 'Mineradio二创版';
+const APP_NAME = 'Mineradio';
 const APP_USER_MODEL_ID = 'com.mineradio.desktop';
+const DESKTOP_SHORTCUT_NAME = 'Mineradio';
 const APP_TRAY_GUID = '7e6162ca-f43f-4d0a-b5bb-8b8fcd17a865';
 const APP_ICON_ICO = path.join(__dirname, '..', 'build', 'icon.ico');
 const APP_TRAY_ICON_PNG = path.join(__dirname, '..', 'public', 'tray-icon.png');
+const STABLE_USER_DATA_NAME = 'Mineradio';
+
+function copyMissingUserData(sourceDir, targetDir) {
+  if (!sourceDir || !targetDir || sourceDir === targetDir || !fs.existsSync(sourceDir)) return;
+  fs.mkdirSync(targetDir, { recursive: true });
+  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+    if (entry.name === 'lockfile') continue;
+    const source = path.join(sourceDir, entry.name);
+    const target = path.join(targetDir, entry.name);
+    if (fs.existsSync(target)) continue;
+    try {
+      fs.cpSync(source, target, { recursive: true, errorOnExist: false });
+    } catch (error) {
+      console.warn('User data migration skipped entry:', source, error.message);
+    }
+  }
+}
+
+function mergeDesktopUiStateFile(sourceDir, targetDir) {
+  const sourceFile = path.join(sourceDir, 'desktop-ui-state.json');
+  const targetFile = path.join(targetDir, 'desktop-ui-state.json');
+  if (!fs.existsSync(sourceFile)) return;
+  try {
+    const source = JSON.parse(fs.readFileSync(sourceFile, 'utf8')) || {};
+    const target = fs.existsSync(targetFile) ? JSON.parse(fs.readFileSync(targetFile, 'utf8')) || {} : {};
+    const next = {
+      schema: 1,
+      updatedAt: Math.max(Number(source.updatedAt) || 0, Number(target.updatedAt) || 0, Date.now()),
+      values: { ...(target.values || {}), ...(source.values || {}) },
+    };
+    fs.mkdirSync(targetDir, { recursive: true });
+    fs.writeFileSync(targetFile, JSON.stringify(next, null, 2), 'utf8');
+  } catch (error) {
+    console.warn('Desktop UI state migration skipped:', error.message);
+  }
+}
+
+function migrateUserDataToStablePath(stableDir) {
+  try {
+    const appDataDir = app.getPath('appData');
+    const candidates = new Set();
+    for (const entry of fs.readdirSync(appDataDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name === STABLE_USER_DATA_NAME) continue;
+      if (/^Mineradio/i.test(entry.name)) candidates.add(path.join(appDataDir, entry.name));
+    }
+    fs.mkdirSync(stableDir, { recursive: true });
+    for (const candidate of candidates) {
+      copyMissingUserData(candidate, stableDir);
+      mergeDesktopUiStateFile(candidate, stableDir);
+    }
+  } catch (error) {
+    console.warn('User data migration skipped:', error.message);
+  }
+}
+
+const explicitUserDataArg = process.argv.find((arg) => String(arg || '').startsWith('--user-data-dir='));
+const explicitUserDataPath = explicitUserDataArg
+  ? String(explicitUserDataArg).slice('--user-data-dir='.length).trim()
+  : '';
+const stableUserDataPath = explicitUserDataPath
+  ? path.resolve(explicitUserDataPath)
+  : path.join(app.getPath('appData'), STABLE_USER_DATA_NAME);
+app.setPath('userData', stableUserDataPath);
+if (!explicitUserDataPath) migrateUserDataToStablePath(stableUserDataPath);
 app.setName(APP_NAME);
 if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID);
 const LOCAL_FILE_TOKEN = crypto.randomBytes(16).toString('hex');
@@ -104,6 +175,12 @@ const DESKTOP_UI_STATE_KEYS = new Set([
   'mineradio-playback-quality-v1',
   'mineradio-diy-player-mode-v1',
   'mineradio-playlist-panel-pinned-v1',
+  'mineradio-playlist-panel-position-v1',
+  'mineradio-home-playlist-order-v1',
+  'mineradio-home-more-playlists-expanded-v1',
+  'mineradio-wallpaper-scene-recordings-v1',
+  'mineradio-wallpaper-record-fps-v1',
+  'mineradio-wallpaper-record-fps-v2',
   'mineradio-user-capsule-auto-hide-v1',
   'mineradio-fx-fab-auto-hide-v1',
   'mineradio-controls-auto-hide-v1',
@@ -123,23 +200,19 @@ const DESKTOP_UI_STATE_KEYS = new Set([
 
 const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['autoplay-policy', 'no-user-gesture-required'],
-  // Prefer the discrete GPU on Windows hybrid-graphics systems. The driver/OS
-  // still owns the final decision, but this prevents Chromium from defaulting
-  // the WebGL compositor to the power-saving adapter whenever possible.
-  ['force_high_performance_gpu'],
+  // Keep accelerated rendering available without forcing a discrete GPU or
+  // disabling Chromium's normal background/minimized-window throttling.
   ['enable-gpu-rasterization'],
   ['enable-zero-copy'],
-  ['ignore-gpu-blocklist'],
-  ['disable-background-timer-throttling'],
-  ['disable-renderer-backgrounding'],
-  ['disable-backgrounding-occluded-windows'],
-  ['disable-features', 'CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,TimerThrottlingForHiddenFrames'],
 ];
 for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
   if (value == null) app.commandLine.appendSwitch(name);
   else app.commandLine.appendSwitch(name, value);
 }
-const gotSingleInstanceLock = app.requestSingleInstanceLock();
+// Normal launches remain single-instance. The explicit private flag is used by
+// local clean-profile verification so an installed/admin instance does not
+// prevent testing the exact files that are about to be packaged.
+const gotSingleInstanceLock = process.argv.includes('--mineradio-test-instance') || app.requestSingleInstanceLock();
 
 function findOpenPort(startPort) {
   return new Promise((resolve, reject) => {
@@ -257,6 +330,16 @@ function localFileProxyUrl(filePath) {
   if (!mainServerPort) return pathToFileURL(filePath).href;
   return `http://127.0.0.1:${mainServerPort}/api/local-file?token=${encodeURIComponent(LOCAL_FILE_TOKEN)}&path=${encodeURIComponent(filePath)}`;
 }
+
+function hasMp4AudioSignature(data) {
+  if (!data || !data.length) return false;
+  const ftyp = data.indexOf(Buffer.from('ftyp'));
+  if (ftyp >= 4 && ftyp < 1024 * 1024) return true;
+  const moov = data.indexOf(Buffer.from('moov'));
+  const mdat = data.indexOf(Buffer.from('mdat'));
+  return moov >= 0 && mdat >= 0;
+}
+
 async function validateLocalAudioFile(filePath, ext) {
   if (ENCRYPTED_AUDIO_EXTS.has(ext)) {
     return { playable:false, encrypted:true, code:'ENCRYPTED_AUDIO', error:'检测到平台加密音频；MR 不进行破解，请先从平台导出合法的普通音频文件' };
@@ -272,8 +355,14 @@ async function validateLocalAudioFile(filePath, ext) {
     if (ext === '.flac') valid = data.indexOf(Buffer.from('fLaC')) >= 0;
     else if (ext === '.wav') valid = data.subarray(0, 4).toString('ascii') === 'RIFF' && data.subarray(8, 12).toString('ascii') === 'WAVE';
     else if (ext === '.ogg' || ext === '.opus') valid = data.subarray(0, 4).toString('ascii') === 'OggS';
-    else if (ext === '.m4a' || ext === '.mp4') valid = data.subarray(4, 12).includes(Buffer.from('ftyp'));
-    else if (ext === '.aac') valid = data.length >= 2 && data[0] === 0xff && (data[1] & 0xf6) === 0xf0;
+    else if (ext === '.m4a' || ext === '.mp4') valid = hasMp4AudioSignature(data) || data.length > 0;
+    else if (ext === '.aac') {
+      let start = 0;
+      if (data.subarray(0, 3).toString('ascii') === 'ID3' && data.length >= 10) {
+        start = 10 + ((data[6] & 0x7f) << 21) + ((data[7] & 0x7f) << 14) + ((data[8] & 0x7f) << 7) + (data[9] & 0x7f);
+      }
+      valid = data.length >= start + 2 && data[start] === 0xff && (data[start + 1] & 0xf6) === 0xf0;
+    }
     else if (ext === '.webm') valid = data.length >= 4 && data[0] === 0x1a && data[1] === 0x45 && data[2] === 0xdf && data[3] === 0xa3;
     else {
       let start = 0;
@@ -580,6 +669,77 @@ function sendGlobalHotkeyAction(action) {
   mainWindow.webContents.send('mineradio-global-hotkey', { action });
 }
 
+function handleGlobalHotkeyAction(action) {
+  if (action !== 'toggleDesktopInteraction') {
+    sendGlobalHotkeyAction(action);
+    return;
+  }
+  if (!mainWindow || mainWindow.isDestroyed() || desktopInteractionHotkeyBusy) return;
+  // The desktop layer hotkey must remain functional even when the renderer is
+  // hidden behind Explorer or has not yet attached its IPC listener. Perform
+  // the actual layer switch in the main process whenever desktop mode is active.
+  if (mainWindowDesktopEmbedded) {
+    desktopInteractionHotkeyBusy = true;
+    toggleMainWindowDesktopInteraction()
+      .catch(() => {})
+      .finally(() => { desktopInteractionHotkeyBusy = false; });
+    return;
+  }
+  // Outside desktop mode the renderer owns the wallpaper payload. Ask it to
+  // enable desktop mode, after which subsequent presses switch the two layers
+  // directly in this process.
+  sendGlobalHotkeyAction(action);
+}
+
+function storedHotkeyToAccelerator(hotkey) {
+  const parts = String(hotkey || '').split('+').filter(Boolean);
+  if (!parts.length) return '';
+  return parts.map((part) => {
+    if (part === 'Ctrl') return 'Control';
+    if (part === 'Meta') return 'Super';
+    if (part === 'ArrowLeft') return 'Left';
+    if (part === 'ArrowRight') return 'Right';
+    if (part === 'ArrowUp') return 'Up';
+    if (part === 'ArrowDown') return 'Down';
+    if (/^Key[A-Z]$/.test(part)) return part.slice(3);
+    if (/^Digit[0-9]$/.test(part)) return part.slice(5);
+    return part;
+  }).join('+');
+}
+
+function desktopInteractionBootstrapAccelerator() {
+  const fallback = DESKTOP_INTERACTION_FALLBACK_HOTKEYS[0];
+  try {
+    const saved = readDesktopUiState().values?.['mineradio-hotkey-settings-v1'];
+    if (!saved) return fallback;
+    const settings = JSON.parse(saved);
+    const accelerator = storedHotkeyToAccelerator(settings?.global?.toggleDesktopInteraction);
+    return accelerator || fallback;
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+function registerBootstrapDesktopInteractionHotkey() {
+  const preferred = desktopInteractionBootstrapAccelerator();
+  const accelerators = [preferred, ...DESKTOP_INTERACTION_FALLBACK_HOTKEYS]
+    .filter((item, index, all) => item && all.indexOf(item) === index);
+  for (const accelerator of accelerators) {
+    let registered = false;
+    try {
+      registered = globalShortcut.register(accelerator, () => handleGlobalHotkeyAction('toggleDesktopInteraction'));
+    } catch (_error) {
+      registered = false;
+    }
+    if (registered) {
+      registeredGlobalHotkeys.set(accelerator, 'toggleDesktopInteraction');
+      if (accelerator !== preferred) console.warn(`Desktop interaction hotkey fallback registered: ${accelerator}`);
+      return;
+    }
+  }
+  console.warn(`Desktop interaction hotkey unavailable: ${accelerators.join(', ')}`);
+}
+
 function unregisterMineradioGlobalHotkeys() {
   for (const accelerator of registeredGlobalHotkeys.keys()) {
     try { globalShortcut.unregister(accelerator); } catch (e) {}
@@ -591,14 +751,18 @@ function configureMineradioGlobalHotkeys(bindings = []) {
   unregisterMineradioGlobalHotkeys();
   const results = [];
   const seen = new Set();
-  for (const item of Array.isArray(bindings) ? bindings : []) {
+  const normalizedBindings = (Array.isArray(bindings) ? bindings : []).slice();
+  if (!normalizedBindings.some(item => item && item.action === 'toggleDesktopInteraction')) {
+    normalizedBindings.push({ action: 'toggleDesktopInteraction', accelerator: DESKTOP_INTERACTION_FALLBACK_HOTKEYS[0], fallback: true });
+  }
+  for (const item of normalizedBindings) {
     const action = item && String(item.action || '').trim();
     const accelerator = item && String(item.accelerator || '').trim();
     if (!action || !accelerator || seen.has(accelerator)) continue;
     seen.add(accelerator);
     let registered = false;
     try {
-      registered = globalShortcut.register(accelerator, () => sendGlobalHotkeyAction(action));
+      registered = globalShortcut.register(accelerator, () => handleGlobalHotkeyAction(action));
     } catch (error) {
       registered = false;
     }
@@ -684,6 +848,8 @@ function getWindowState(win) {
     isMinimized: false,
     isVisible: false,
     isFocused: false,
+    bounds: null,
+    normalBounds: null,
     isPrimaryDisplay: true,
     hasDisplayOnLeft: false,
     hasDisplayOnRight: false,
@@ -698,6 +864,10 @@ function getWindowState(win) {
     isMinimized: win.isMinimized(),
     isVisible: win.isVisible(),
     isFocused: win.isFocused(),
+    bounds: win.getBounds(),
+    normalBounds: typeof win.getNormalBounds === 'function' ? win.getNormalBounds() : win.getBounds(),
+    isDesktopEmbedded: mainWindowDesktopEmbedded,
+    isDesktopInteractive: mainWindowDesktopInteractive,
     ...getDisplayState(win),
   };
 }
@@ -871,13 +1041,18 @@ function refreshTrayMenu() {
     { label: '显示 Mineradio', click: focusMainWindow },
     { label: '隐藏到托盘', click: hideMainWindowToTray },
     {
+      label: mainWindowDesktopInteractive ? '返回桌面图标' : '操作 Mineradio',
+      visible: mainWindowDesktopEmbedded,
+      click: () => toggleMainWindowDesktopInteraction(),
+    },
+    {
       label: '退出桌面播放器模式',
-      visible: !!wallpaperState.enabled,
+      visible: mainWindowDesktopEmbedded,
       click: () => {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('mineradio-wallpaper-command', { command: 'wallpaper-off' });
         }
-        closeWallpaperWindow();
+        setMainWindowDesktopEmbedded(false);
       },
     },
     {
@@ -927,19 +1102,16 @@ function createTray() {
     clearTimeout(trayCreateRetryTimer);
     trayCreateRetryTimer = null;
   }
-  const candidates = [APP_ICON_ICO, APP_TRAY_ICON_PNG, process.execPath].filter((item, index, list) => item && list.indexOf(item) === index && (item === process.execPath || fs.existsSync(item)));
+  // Prefer the dedicated PNG. Unsigned in-place upgrades can leave a stale
+  // Windows notification-area registration when a fixed GUID is reused.
+  const candidates = [APP_TRAY_ICON_PNG, APP_ICON_ICO, process.execPath].filter((item, index, list) => item && list.indexOf(item) === index && (item === process.execPath || fs.existsSync(item)));
   let lastError = null;
   for (const iconPath of candidates) {
     try {
       let icon = nativeImage.createFromPath(iconPath);
       if (icon.isEmpty()) continue;
       if (iconPath !== APP_ICON_ICO) icon = icon.resize({ width: 16, height: 16, quality: 'best' });
-      try {
-        tray = new Tray(icon, APP_TRAY_GUID);
-      } catch (guidError) {
-        lastError = guidError;
-        tray = new Tray(icon);
-      }
+      tray = new Tray(icon);
       break;
     } catch (error) {
       lastError = error;
@@ -983,8 +1155,27 @@ function shouldEnsureDesktopShortcut() {
 function ensureDesktopShortcut() {
   if (!shouldEnsureDesktopShortcut()) return { ok: false, skipped: true };
   try {
-    const shortcutPath = path.join(app.getPath('desktop'), `${APP_NAME}.lnk`);
+    const shortcutPath = path.join(app.getPath('desktop'), `${DESKTOP_SHORTCUT_NAME}.lnk`);
     const target = process.execPath;
+    // Per-machine installers create the shortcut on the Public desktop. Do
+    // not create a second, visually identical shortcut on the user's desktop.
+    const publicShortcutPath = process.env.PUBLIC
+      ? path.join(process.env.PUBLIC, 'Desktop', `${DESKTOP_SHORTCUT_NAME}.lnk`)
+      : '';
+    if (publicShortcutPath && fs.existsSync(publicShortcutPath) && shell.readShortcutLink) {
+      try {
+        const publicShortcut = shell.readShortcutLink(publicShortcutPath);
+        if (path.resolve(publicShortcut.target || '') === path.resolve(target)) {
+          if (fs.existsSync(shortcutPath)) {
+            try {
+              const userShortcut = shell.readShortcutLink(shortcutPath);
+              if (path.resolve(userShortcut.target || '') === path.resolve(target)) fs.unlinkSync(shortcutPath);
+            } catch (_) {}
+          }
+          return { ok: true, path: publicShortcutPath, existing: true, public: true };
+        }
+      } catch (_) {}
+    }
     const shortcut = {
       target,
       cwd: path.dirname(target),
@@ -1136,6 +1327,62 @@ function applyWindowedBounds(win, preferredBounds = null) {
   // leave-full-screen event. Reassert the exact saved normal bounds once more.
   setTimeout(restore, 160);
   sendWindowState(win);
+}
+
+function capturePreDesktopWindowState(win) {
+  if (!win || win.isDestroyed()) return null;
+  const wasMaximized = win.isMaximized();
+  const wasFullScreen = win.isFullScreen();
+  const wasWindowFullscreen = windowFullscreenActive;
+  let bounds = null;
+  if ((wasFullScreen || wasWindowFullscreen) && mainWindowPreFullscreenBounds) {
+    bounds = mainWindowPreFullscreenBounds;
+  } else if (typeof win.getNormalBounds === 'function') {
+    bounds = win.getNormalBounds();
+  }
+  if (!bounds || bounds.width < MIN_WINDOWED_WIDTH || bounds.height < MIN_WINDOWED_HEIGHT) {
+    bounds = savedWindowedBounds() || win.getBounds();
+  }
+  mainWindowPreDesktopBounds = { ...bounds };
+  mainWindowPreDesktopState = {
+    bounds: { ...bounds },
+    wasMaximized,
+    wasFullScreen,
+    wasWindowFullscreen,
+  };
+  return mainWindowPreDesktopState;
+}
+
+function restorePreDesktopWindowState(win, snapshot) {
+  if (!win || win.isDestroyed()) return;
+  const state = snapshot || {};
+  const bounds = state.bounds || mainWindowPreDesktopBounds || savedWindowedBounds() || getWindowedBounds(win);
+  const applyNormalBounds = () => {
+    if (!win || win.isDestroyed()) return;
+    try { if (win.isFullScreen()) win.setFullScreen(false); } catch (_e) {}
+    try { if (win.isMaximized()) win.unmaximize(); } catch (_e) {}
+    try { win.setMinimumSize(MIN_WINDOWED_WIDTH, MIN_WINDOWED_HEIGHT); } catch (_e) {}
+    try { win.setBounds(bounds, false); } catch (_e) {}
+  };
+
+  // Re-parenting out of WorkerW can make Windows re-apply the desktop-sized
+  // placement after Electron has already restored the window. Reassert the
+  // exact pre-desktop normal bounds across that transition, then restore the
+  // original maximized/full-screen state only after the placement is stable.
+  applyNormalBounds();
+  setTimeout(applyNormalBounds, 140);
+  setTimeout(applyNormalBounds, 360);
+  setTimeout(() => {
+    applyNormalBounds();
+    if (!win || win.isDestroyed()) return;
+    if (state.wasMaximized) {
+      try { win.maximize(); } catch (_e) {}
+    } else if (state.wasFullScreen || state.wasWindowFullscreen) {
+      windowFullscreenActive = true;
+      try { win.setFullScreen(true); } catch (_e) {}
+    }
+    sendWindowState(win);
+  }, 700);
 }
 
 function exitFullscreenToWindow(win) {
@@ -1759,7 +2006,7 @@ function createDesktopLyricsWindow(payload = {}) {
       preload: path.join(__dirname, 'overlay-preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
       backgroundThrottling: false,
     },
   });
@@ -1862,98 +2109,269 @@ function nativeWindowHandleDecimal(win) {
   return String(handle.readUInt32LE(0));
 }
 
-function attachWallpaperToWorkerW(win, aboveDesktopIcons = false) {
+function applyMainWindowBorderlessCorners(win) {
   if (process.platform !== 'win32' || !win || win.isDestroyed()) return;
   const hwnd = nativeWindowHandleDecimal(win);
   const script = `
 $ErrorActionPreference = "Stop"
-if (-not ("MineradioNativeWin" -as [type])) {
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
-public class MineradioNativeWin {
-  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
-  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr childAfter, string className, string windowName);
-  [DllImport("user32.dll", SetLastError=true)] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
-  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
-  [DllImport("user32.dll", SetLastError=true)] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
-  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
+public static class MineradioBorderlessCorners {
+  [DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(IntPtr h, int attribute, ref int value, int size);
 }
 "@
-}
-$progman = [MineradioNativeWin]::FindWindow("Progman", $null)
-$result = [IntPtr]::Zero
-[MineradioNativeWin]::SendMessageTimeout($progman, 0x052C, [IntPtr]::Zero, [IntPtr]::Zero, 0, 1000, [ref]$result) | Out-Null
-$script:workerw = [IntPtr]::Zero
-$script:iconHost = [IntPtr]::Zero
-$enum = [MineradioNativeWin+EnumWindowsProc]{
-  param([IntPtr]$top, [IntPtr]$param)
-  $shell = [MineradioNativeWin]::FindWindowEx($top, [IntPtr]::Zero, "SHELLDLL_DefView", $null)
-  if ($shell -ne [IntPtr]::Zero) {
-    $script:iconHost = $top
-    $script:workerw = [MineradioNativeWin]::FindWindowEx([IntPtr]::Zero, $top, "WorkerW", $null)
-  }
-  return $true
-}
-[MineradioNativeWin]::EnumWindows($enum, [IntPtr]::Zero) | Out-Null
-if ($script:workerw -eq [IntPtr]::Zero) { $script:workerw = $progman }
-$target = [IntPtr]::new([Int64]${hwnd})
-$parent = if (${aboveDesktopIcons ? '$true' : '$false'} -and $script:iconHost -ne [IntPtr]::Zero) { $script:iconHost } else { $script:workerw }
-[MineradioNativeWin]::SetParent($target, $parent) | Out-Null
-$z = if (${aboveDesktopIcons ? '$true' : '$false'}) { [IntPtr]::Zero } else { [IntPtr]::new(1) }
-[MineradioNativeWin]::SetWindowPos($target, $z, 0, 0, 0, 0, 0x0013) | Out-Null
+$target=[IntPtr]::new([Int64]${hwnd})
+$ncPolicy=1
+$nativeCorner=1
+[MineradioBorderlessCorners]::DwmSetWindowAttribute($target,2,[ref]$ncPolicy,4)|Out-Null
+[MineradioBorderlessCorners]::DwmSetWindowAttribute($target,33,[ref]$nativeCorner,4)|Out-Null
 `;
   execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
     windowsHide: true,
-    timeout: 5000,
-  }, (error) => {
-    if (error) console.warn('Wallpaper WorkerW attach failed:', error.message);
+    timeout: 4000,
+  }, () => {});
+}
+
+function setMainWindowDesktopEmbedded(enabled) {
+  if (process.platform !== 'win32' || !mainWindow || mainWindow.isDestroyed()) {
+    return Promise.resolve({ ok: false, error: 'MAIN_WINDOW_UNAVAILABLE' });
+  }
+  const next = !!enabled;
+  if (next === mainWindowDesktopEmbedded) return Promise.resolve({ ok: true, enabled: next });
+  const win = mainWindow;
+  const hwnd = nativeWindowHandleDecimal(win);
+  if (next) capturePreDesktopWindowState(win);
+  const restoreState = mainWindowPreDesktopState;
+  const restore = restoreState?.bounds || mainWindowPreDesktopBounds || savedWindowedBounds();
+  const script = next ? `
+$ErrorActionPreference = "Stop"
+if (-not ("MineradioDesktopHost" -as [type])) {
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class MineradioDesktopHost {
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr FindWindow(string c, string n);
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr FindWindowEx(IntPtr p, IntPtr a, string c, string n);
+  [DllImport("user32.dll", SetLastError=true)] public static extern bool EnumWindows(EnumWindowsProc cb, IntPtr p);
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SetParent(IntPtr child, IntPtr parent);
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr GetParent(IntPtr child);
+  [DllImport("user32.dll", SetLastError=true)] public static extern bool GetClientRect(IntPtr h, out RECT rect);
+  [DllImport("user32.dll", EntryPoint="GetWindowLongPtr", SetLastError=true)] public static extern IntPtr GetWindowLongPtr(IntPtr h, int index);
+  [DllImport("user32.dll", EntryPoint="SetWindowLongPtr", SetLastError=true)] public static extern IntPtr SetWindowLongPtr(IntPtr h, int index, IntPtr value);
+  [DllImport("user32.dll", SetLastError=true)] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int w, int hgt, uint flags);
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SendMessageTimeout(IntPtr h, uint m, IntPtr w, IntPtr l, uint f, uint t, out IntPtr r);
+}
+"@
+}
+$progman=[MineradioDesktopHost]::FindWindow("Progman",$null)
+$result=[IntPtr]::Zero
+[MineradioDesktopHost]::SendMessageTimeout($progman,0x052C,[IntPtr]::Zero,[IntPtr]::Zero,0,1000,[ref]$result)|Out-Null
+$script:iconHost=[IntPtr]::Zero
+$script:workerw=[IntPtr]::Zero
+$enum=[MineradioDesktopHost+EnumWindowsProc]{param([IntPtr]$top,[IntPtr]$p)
+  if([MineradioDesktopHost]::FindWindowEx($top,[IntPtr]::Zero,"SHELLDLL_DefView",$null)-ne [IntPtr]::Zero){
+    $script:iconHost=$top
+    $script:workerw=[MineradioDesktopHost]::FindWindowEx([IntPtr]::Zero,$top,"WorkerW",$null)
+  }
+  return $true
+}
+[MineradioDesktopHost]::EnumWindows($enum,[IntPtr]::Zero)|Out-Null
+if ($script:iconHost -eq [IntPtr]::Zero) { $script:iconHost=$progman }
+if ($script:workerw -eq [IntPtr]::Zero) { $script:workerw=$progman }
+$target=[IntPtr]::new([Int64]${hwnd})
+$style=[MineradioDesktopHost]::GetWindowLongPtr($target,-16).ToInt64()
+$style=($style -band (-bnot 0x80000000L)) -bor 0x40000000L
+[MineradioDesktopHost]::SetWindowLongPtr($target,-16,[IntPtr]::new($style))|Out-Null
+$exStyle=[MineradioDesktopHost]::GetWindowLongPtr($target,-20).ToInt64()
+$exStyle=($exStyle -band (-bnot 0x00000080L)) -bor 0x00040000L
+[MineradioDesktopHost]::SetWindowLongPtr($target,-20,[IntPtr]::new($exStyle))|Out-Null
+[MineradioDesktopHost]::SetParent($target,$script:workerw)|Out-Null
+if ([MineradioDesktopHost]::GetParent($target) -ne $script:workerw) { throw "DESKTOP_PARENT_FAILED" }
+$rect=New-Object MineradioDesktopHost+RECT
+if (-not [MineradioDesktopHost]::GetClientRect($script:workerw,[ref]$rect)) { throw "DESKTOP_BOUNDS_FAILED" }
+$width=[Math]::Max(1,$rect.Right-$rect.Left)
+$height=[Math]::Max(1,$rect.Bottom-$rect.Top)
+[MineradioDesktopHost]::SetWindowPos($target,[IntPtr]::Zero,0,0,$width,$height,0x0070)|Out-Null
+` : `
+$ErrorActionPreference = "Stop"
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class MineradioDesktopDetach {
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SetParent(IntPtr child, IntPtr parent);
+  [DllImport("user32.dll", SetLastError=true)] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int w, int hgt, uint flags);
+  [DllImport("user32.dll", EntryPoint="GetWindowLongPtr", SetLastError=true)] public static extern IntPtr GetWindowLongPtr(IntPtr h, int index);
+  [DllImport("user32.dll", EntryPoint="SetWindowLongPtr", SetLastError=true)] public static extern IntPtr SetWindowLongPtr(IntPtr h, int index, IntPtr value);
+  [DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(IntPtr h, int attribute, ref int value, int size);
+}
+"@
+$target=[IntPtr]::new([Int64]${hwnd})
+[MineradioDesktopDetach]::SetParent($target,[IntPtr]::Zero)|Out-Null
+$style=[MineradioDesktopDetach]::GetWindowLongPtr($target,-16).ToInt64()
+$style=($style -band (-bnot 0x40000000L)) -bor 0x80000000L
+[MineradioDesktopDetach]::SetWindowLongPtr($target,-16,[IntPtr]::new($style))|Out-Null
+$exStyle=[MineradioDesktopDetach]::GetWindowLongPtr($target,-20).ToInt64()
+$exStyle=($exStyle -band (-bnot 0x00000080L)) -bor 0x00040000L
+[MineradioDesktopDetach]::SetWindowLongPtr($target,-20,[IntPtr]::new($exStyle))|Out-Null
+$corner=2
+[MineradioDesktopDetach]::DwmSetWindowAttribute($target,33,[ref]$corner,4)|Out-Null
+[MineradioDesktopDetach]::SetWindowPos($target,[IntPtr]::Zero,${restore.x},${restore.y},${restore.width},${restore.height},0x0060)|Out-Null
+`;
+  return new Promise((resolve) => {
+    execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+      windowsHide: true,
+      timeout: 6000,
+    }, (error) => {
+      if (error || !mainWindow || mainWindow.isDestroyed()) {
+        resolve({ ok: false, error: error ? error.message : 'MAIN_WINDOW_UNAVAILABLE' });
+        return;
+      }
+      mainWindowDesktopEmbedded = next;
+      mainWindowDesktopInteractive = false;
+      // Desktop fusion is continuously visible and must remain at full speed.
+      // Normal/minimized mode may use Chromium's power throttling.
+      try { win.webContents.setBackgroundThrottling(!next); } catch (_e) {}
+      win.setSkipTaskbar(false);
+      try { win.setHasShadow(false); } catch (_e) {}
+      applyMainWindowBorderlessCorners(win);
+      if (next) {
+        try { win.setResizable(false); } catch (_e) {}
+        try { win.setMovable(false); } catch (_e) {}
+        try { win.setFocusable(false); } catch (_e) {}
+        try { win.setIgnoreMouseEvents(true, { forward: true }); } catch (_e) {}
+        win.showInactive();
+      } else {
+        windowFullscreenActive = false;
+        htmlFullscreenActive = false;
+        try { win.setFullScreen(false); } catch (_e) {}
+        try { win.setResizable(true); } catch (_e) {}
+        try { win.setMovable(true); } catch (_e) {}
+        try { win.setFocusable(true); } catch (_e) {}
+        try { win.setIgnoreMouseEvents(false); } catch (_e) {}
+        try { win.setHasShadow(false); } catch (_e) {}
+        try {
+          win.webContents.executeJavaScript('document.fullscreenElement && document.exitFullscreen ? document.exitFullscreen() : false', true).catch(() => {});
+        } catch (_e) {}
+        win.hide();
+        restorePreDesktopWindowState(win, restoreState);
+        win.show();
+        win.focus();
+        setTimeout(() => {
+          if (mainWindowPreDesktopState === restoreState) {
+            mainWindowPreDesktopState = null;
+            mainWindowPreDesktopBounds = null;
+          }
+        }, 1200);
+      }
+      sendWindowState(win);
+      refreshTrayMenu();
+      resolve({ ok: true, enabled: next });
+    });
   });
 }
 
-function wallpaperDesktopBounds() {
-  const displays = screen.getAllDisplays();
-  if (!displays.length) return screen.getPrimaryDisplay().bounds;
-  const bounds = displays.reduce((acc, display) => {
-    const b = display.bounds;
-    const left = Math.min(acc.x, b.x);
-    const top = Math.min(acc.y, b.y);
-    const right = Math.max(acc.x + acc.width, b.x + b.width);
-    const bottom = Math.max(acc.y + acc.height, b.y + b.height);
-    return { x: left, y: top, width: right - left, height: bottom - top };
-  }, { ...displays[0].bounds });
-  return {
-    x: bounds.x - 8,
-    y: bounds.y - 8,
-    width: bounds.width + 16,
-    height: bounds.height + 16,
-  };
+function setMainWindowDesktopInteractive(enabled) {
+  if (!mainWindowDesktopEmbedded || !mainWindow || mainWindow.isDestroyed()) {
+    return Promise.resolve({ ok: false, error: 'DESKTOP_MODE_INACTIVE' });
+  }
+  const next = !!enabled;
+  const win = mainWindow;
+  const hwnd = nativeWindowHandleDecimal(win);
+  const desktopSourceBounds = mainWindowPreDesktopBounds || savedWindowedBounds();
+  const interactiveBounds = screen.getDisplayMatching(desktopSourceBounds).bounds;
+  const script = `
+$ErrorActionPreference = "Stop"
+if (-not ("MineradioDesktopLayer" -as [type])) {
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class MineradioDesktopLayer {
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr FindWindow(string c, string n);
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr FindWindowEx(IntPtr p, IntPtr a, string c, string n);
+  [DllImport("user32.dll", SetLastError=true)] public static extern bool EnumWindows(EnumWindowsProc cb, IntPtr p);
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SetParent(IntPtr child, IntPtr parent);
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr GetParent(IntPtr child);
+  [DllImport("user32.dll", SetLastError=true)] public static extern bool GetClientRect(IntPtr h, out RECT rect);
+  [DllImport("user32.dll", EntryPoint="GetWindowLongPtr", SetLastError=true)] public static extern IntPtr GetWindowLongPtr(IntPtr h, int index);
+  [DllImport("user32.dll", EntryPoint="SetWindowLongPtr", SetLastError=true)] public static extern IntPtr SetWindowLongPtr(IntPtr h, int index, IntPtr value);
+  [DllImport("user32.dll", SetLastError=true)] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int w, int hgt, uint flags);
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SendMessageTimeout(IntPtr h, uint m, IntPtr w, IntPtr l, uint f, uint t, out IntPtr r);
+}
+"@
+}
+$progman=[MineradioDesktopLayer]::FindWindow("Progman",$null)
+$result=[IntPtr]::Zero
+[MineradioDesktopLayer]::SendMessageTimeout($progman,0x052C,[IntPtr]::Zero,[IntPtr]::Zero,0,1000,[ref]$result)|Out-Null
+$script:iconHost=[IntPtr]::Zero
+$script:workerw=[IntPtr]::Zero
+$enum=[MineradioDesktopLayer+EnumWindowsProc]{param([IntPtr]$top,[IntPtr]$p)
+  if([MineradioDesktopLayer]::FindWindowEx($top,[IntPtr]::Zero,"SHELLDLL_DefView",$null)-ne [IntPtr]::Zero){
+    $script:iconHost=$top
+    $script:workerw=[MineradioDesktopLayer]::FindWindowEx([IntPtr]::Zero,$top,"WorkerW",$null)
+  }
+  return $true
+}
+[MineradioDesktopLayer]::EnumWindows($enum,[IntPtr]::Zero)|Out-Null
+if ($script:iconHost -eq [IntPtr]::Zero) { $script:iconHost=$progman }
+if ($script:workerw -eq [IntPtr]::Zero) { $script:workerw=$progman }
+$target=[IntPtr]::new([Int64]${hwnd})
+if (${next ? '$true' : '$false'}) {
+  # Explorer's icon host always wins hit-testing over its child windows on
+  # some Windows 11 builds. Detach while editing so every click reaches MR.
+  [MineradioDesktopLayer]::SetParent($target,[IntPtr]::Zero)|Out-Null
+  $style=[MineradioDesktopLayer]::GetWindowLongPtr($target,-16).ToInt64()
+  $style=($style -band (-bnot 0x40000000L)) -bor 0x80000000L
+  [MineradioDesktopLayer]::SetWindowLongPtr($target,-16,[IntPtr]::new($style))|Out-Null
+  if ([MineradioDesktopLayer]::GetParent($target) -ne [IntPtr]::Zero) { throw "DESKTOP_INTERACTIVE_DETACH_FAILED" }
+  [MineradioDesktopLayer]::SetWindowPos($target,[IntPtr]::Zero,${interactiveBounds.x},${interactiveBounds.y},${interactiveBounds.width},${interactiveBounds.height},0x0060)|Out-Null
+} else {
+  $style=[MineradioDesktopLayer]::GetWindowLongPtr($target,-16).ToInt64()
+  $style=($style -band (-bnot 0x80000000L)) -bor 0x40000000L
+  [MineradioDesktopLayer]::SetWindowLongPtr($target,-16,[IntPtr]::new($style))|Out-Null
+  [MineradioDesktopLayer]::SetParent($target,$script:workerw)|Out-Null
+  if ([MineradioDesktopLayer]::GetParent($target) -ne $script:workerw) { throw "DESKTOP_LAYER_FAILED" }
+  $rect=New-Object MineradioDesktopLayer+RECT
+  if (-not [MineradioDesktopLayer]::GetClientRect($script:workerw,[ref]$rect)) { throw "DESKTOP_BOUNDS_FAILED" }
+  $width=[Math]::Max(1,$rect.Right-$rect.Left)
+  $height=[Math]::Max(1,$rect.Bottom-$rect.Top)
+  [MineradioDesktopLayer]::SetWindowPos($target,[IntPtr]::Zero,0,0,$width,$height,0x0070)|Out-Null
+}
+`;
+  return new Promise((resolve) => {
+    execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+      windowsHide: true,
+      timeout: 6000,
+    }, (error) => {
+      if (error || !mainWindow || mainWindow.isDestroyed()) {
+        resolve({ ok: false, error: error ? error.message : 'MAIN_WINDOW_UNAVAILABLE' });
+        return;
+      }
+      mainWindowDesktopInteractive = next;
+      try { win.setIgnoreMouseEvents(!next, { forward: true }); } catch (_e) {}
+      try { win.setFocusable(next); } catch (_e) {}
+      if (next) {
+        try { win.setResizable(false); } catch (_e) {}
+        try { win.setMovable(false); } catch (_e) {}
+        try { win.setBounds(interactiveBounds, false); } catch (_e) {}
+        win.show();
+        win.focus();
+      } else {
+        win.showInactive();
+      }
+      refreshTrayMenu();
+      resolve({ ok: true, interactive: next });
+    });
+  });
 }
 
-function positionWallpaperWindow() {
-  if (!wallpaperWindow || wallpaperWindow.isDestroyed()) return;
-  wallpaperWindow.setBounds(wallpaperDesktopBounds(), false);
-}
-
-function positionWallpaperControlsWindow() {
-  if (!wallpaperControlsWindow || wallpaperControlsWindow.isDestroyed()) return;
-  wallpaperControlsWindow.setBounds(wallpaperControlsBounds(), false);
-}
-
-function wallpaperControlsBounds() {
-  const display = screen.getPrimaryDisplay();
-  const area = display.workArea || display.bounds;
-  const width = Math.max(720, Math.min(1120, area.width - 48));
-  const height = 116;
-  // Keep clear of both the Windows taskbar and common floating docks.
-  const lift = Math.max(104, Math.min(170, Math.round(area.height * 0.12)));
-  return {
-    x: Math.round(area.x + (area.width - width) / 2),
-    y: Math.round(area.y + area.height - height - lift),
-    width: Math.round(width),
-    height,
-  };
+function toggleMainWindowDesktopInteraction() {
+  if (!mainWindowDesktopEmbedded) return Promise.resolve({ ok: false, error: 'DESKTOP_MODE_INACTIVE' });
+  return setMainWindowDesktopInteractive(!mainWindowDesktopInteractive);
 }
 
 function refreshWallpaperDesktopPlacement() {
@@ -1961,13 +2379,6 @@ function refreshWallpaperDesktopPlacement() {
   positionWallpaperWindow();
   wallpaperWindow.showInactive();
   attachWallpaperToWorkerW(wallpaperWindow);
-  applyWallpaperMouseBehavior();
-  if (wallpaperControlsWindow && !wallpaperControlsWindow.isDestroyed()) {
-    positionWallpaperControlsWindow();
-    wallpaperControlsWindow.showInactive();
-    attachWallpaperToWorkerW(wallpaperControlsWindow, true);
-    applyWallpaperControlsMouseBehavior();
-  }
   sendWallpaperState();
 }
 
@@ -2001,95 +2412,76 @@ public static class MineradioShellMessage {
   });
 }
 
+function attachWallpaperToWorkerW(win) {
+  if (process.platform !== 'win32' || !win || win.isDestroyed()) return;
+  const hwnd = nativeWindowHandleDecimal(win);
+  const script = `
+$ErrorActionPreference = "Stop"
+if (-not ("MineradioNativeWin" -as [type])) {
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class MineradioNativeWin {
+  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr childAfter, string className, string windowName);
+  [DllImport("user32.dll", SetLastError=true)] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
+  [DllImport("user32.dll", SetLastError=true)] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
+}
+"@
+}
+$progman = [MineradioNativeWin]::FindWindow("Progman", $null)
+$result = [IntPtr]::Zero
+[MineradioNativeWin]::SendMessageTimeout($progman, 0x052C, [IntPtr]::Zero, [IntPtr]::Zero, 0, 1000, [ref]$result) | Out-Null
+$script:workerw = [IntPtr]::Zero
+$enum = [MineradioNativeWin+EnumWindowsProc]{
+  param([IntPtr]$top, [IntPtr]$param)
+  $shell = [MineradioNativeWin]::FindWindowEx($top, [IntPtr]::Zero, "SHELLDLL_DefView", $null)
+  if ($shell -ne [IntPtr]::Zero) {
+    $script:workerw = [MineradioNativeWin]::FindWindowEx([IntPtr]::Zero, $top, "WorkerW", $null)
+  }
+  return $true
+}
+[MineradioNativeWin]::EnumWindows($enum, [IntPtr]::Zero) | Out-Null
+if ($script:workerw -eq [IntPtr]::Zero) { $script:workerw = $progman }
+$target = [IntPtr]::new([Int64]${hwnd})
+[MineradioNativeWin]::SetParent($target, $script:workerw) | Out-Null
+[MineradioNativeWin]::SetWindowPos($target, [IntPtr]::Zero, 0, 0, 0, 0, 0x0013) | Out-Null
+`;
+  execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+    windowsHide: true,
+    timeout: 5000,
+  }, (error) => {
+    if (error) console.warn('Wallpaper WorkerW attach failed:', error.message);
+  });
+}
+
+function positionWallpaperWindow() {
+  if (!wallpaperWindow || wallpaperWindow.isDestroyed()) return;
+  const bounds = screen.getPrimaryDisplay().bounds;
+  wallpaperWindow.setBounds(bounds, false);
+}
+
 function sendWallpaperState() {
   if (!wallpaperWindow || wallpaperWindow.isDestroyed()) return;
   wallpaperWindow.webContents.send('mineradio-wallpaper-state', wallpaperState);
-  if (wallpaperControlsWindow && !wallpaperControlsWindow.isDestroyed()) {
-    wallpaperControlsWindow.webContents.send('mineradio-wallpaper-state', wallpaperState);
-  }
-}
-
-function applyWallpaperMouseBehavior() {
-  if (!wallpaperWindow || wallpaperWindow.isDestroyed()) return;
-  try {
-    // The WorkerW render surface must never block Explorer desktop icons.
-    wallpaperPointerCapture = false;
-    wallpaperWindow.setIgnoreMouseEvents(true, { forward: true });
-  } catch (e) {
-    console.warn('Wallpaper mouse behavior failed:', e && e.message || e);
-  }
-}
-
-function applyWallpaperControlsMouseBehavior() {
-  if (!wallpaperControlsWindow || wallpaperControlsWindow.isDestroyed()) return;
-  try {
-    // This window only covers the visible control strip, so it can remain
-    // directly clickable without blocking icons elsewhere on the desktop.
-    wallpaperControlsPointerCapture = true;
-    wallpaperControlsWindow.setIgnoreMouseEvents(false);
-  } catch (e) {
-    console.warn('Wallpaper controls mouse behavior failed:', e && e.message || e);
-  }
-}
-
-function createWallpaperControlsWindow() {
-  if (wallpaperControlsWindow && !wallpaperControlsWindow.isDestroyed()) return wallpaperControlsWindow;
-  const bounds = wallpaperControlsBounds();
-  wallpaperControlsWindow = new BrowserWindow({
-    ...bounds,
-    frame: false,
-    transparent: true,
-    backgroundColor: '#00000000',
-    hasShadow: false,
-    resizable: false,
-    movable: false,
-    focusable: false,
-    skipTaskbar: true,
-    show: false,
-    title: 'Mineradio Desktop Controls',
-    webPreferences: {
-      preload: path.join(__dirname, 'overlay-preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-      backgroundThrottling: false,
-    },
-  });
-  wallpaperControlsPointerCapture = true;
-  applyWallpaperControlsMouseBehavior();
-  wallpaperControlsWindow.once('ready-to-show', () => {
-    if (!wallpaperControlsWindow || wallpaperControlsWindow.isDestroyed()) return;
-    positionWallpaperControlsWindow();
-    wallpaperControlsWindow.showInactive();
-    attachWallpaperToWorkerW(wallpaperControlsWindow, true);
-    applyWallpaperControlsMouseBehavior();
-    sendWallpaperState();
-  });
-  wallpaperControlsWindow.webContents.once('did-finish-load', sendWallpaperState);
-  wallpaperControlsWindow.on('closed', () => {
-    wallpaperControlsPointerCapture = false;
-    wallpaperControlsWindow = null;
-  });
-  wallpaperControlsWindow.loadURL(overlayUrl('wallpaper-controls.html')).catch((e) => console.warn('Wallpaper controls load failed:', e.message));
-  return wallpaperControlsWindow;
 }
 
 function createWallpaperWindow(payload = {}) {
   wallpaperState = { ...wallpaperState, ...payload, enabled: true };
-  refreshTrayMenu();
   if (wallpaperWindow && !wallpaperWindow.isDestroyed()) {
-    createWallpaperControlsWindow();
     positionWallpaperWindow();
-    applyWallpaperMouseBehavior();
     sendWallpaperState();
     return wallpaperWindow;
   }
-  const bounds = wallpaperDesktopBounds();
+  const bounds = screen.getPrimaryDisplay().bounds;
   wallpaperWindow = new BrowserWindow({
     ...bounds,
     frame: false,
-    transparent: false,
-    backgroundColor: '#050608',
+    transparent: true,
+    backgroundColor: '#00000000',
     hasShadow: false,
     resizable: false,
     movable: false,
@@ -2101,20 +2493,20 @@ function createWallpaperWindow(payload = {}) {
       preload: path.join(__dirname, 'overlay-preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
       backgroundThrottling: false,
     },
   });
-  wallpaperPointerCapture = true;
-  applyWallpaperMouseBehavior();
-  createWallpaperControlsWindow();
+  wallpaperWindow.setIgnoreMouseEvents(true, { forward: true });
   wallpaperWindow.once('ready-to-show', () => {
     if (!wallpaperWindow || wallpaperWindow.isDestroyed()) return;
-    refreshWallpaperDesktopPlacement();
+    positionWallpaperWindow();
+    wallpaperWindow.showInactive();
+    attachWallpaperToWorkerW(wallpaperWindow);
+    sendWallpaperState();
   });
   wallpaperWindow.webContents.once('did-finish-load', sendWallpaperState);
   wallpaperWindow.on('closed', () => {
-    wallpaperPointerCapture = false;
     wallpaperWindow = null;
   });
   wallpaperWindow.loadURL(overlayUrl('wallpaper.html')).catch((e) => console.warn('Wallpaper load failed:', e.message));
@@ -2122,17 +2514,12 @@ function createWallpaperWindow(payload = {}) {
 }
 
 function closeWallpaperWindow() {
-  wallpaperPointerCapture = false;
-  wallpaperControlsPointerCapture = false;
   wallpaperState = { ...wallpaperState, enabled: false };
-  refreshTrayMenu();
   if (wallpaperWindow && !wallpaperWindow.isDestroyed()) {
     sendWallpaperState();
     wallpaperWindow.close();
   }
   wallpaperWindow = null;
-  if (wallpaperControlsWindow && !wallpaperControlsWindow.isDestroyed()) wallpaperControlsWindow.close();
-  wallpaperControlsWindow = null;
 }
 
 function closeOverlayWindows() {
@@ -2143,9 +2530,17 @@ function closeOverlayWindows() {
 ipcMain.handle('desktop-window-minimize', (event) => {
   const win = getSenderWindow(event);
   if (!win || win.isDestroyed()) return;
-  // The desktop shell's minimize button always sends the app to the tray.
-  // This keeps playback available without leaving a taskbar button behind.
-  hideMainWindowToTray({ pauseLinked: false });
+  // Minimize to the Windows taskbar. Closing to the notification-area tray
+  // remains a separate, user-configurable action for the close button.
+  if (mainWindowDesktopEmbedded) {
+    win.webContents.send('mineradio-wallpaper-command', { command: 'wallpaper-off' });
+    setMainWindowDesktopEmbedded(false).finally(() => {
+      if (!win.isDestroyed()) win.minimize();
+    });
+    return;
+  }
+  win.setSkipTaskbar(false);
+  win.minimize();
 });
 
 ipcMain.handle('desktop-window-toggle-maximize', (event) => {
@@ -2163,6 +2558,8 @@ ipcMain.handle('desktop-window-exit-fullscreen-windowed', (event) => {
 ipcMain.handle('desktop-window-get-state', (event) => {
   return getWindowState(getSenderWindow(event));
 });
+
+ipcMain.handle('desktop-window-toggle-desktop-interaction', () => toggleMainWindowDesktopInteraction());
 
 ipcMain.handle('desktop-window-close', (event) => {
   getSenderWindow(event)?.close();
@@ -2431,12 +2828,7 @@ ipcMain.handle('mineradio-open-update-installer', async (_event, filePath) => {
       return { ok: false, error: 'INVALID_UPDATE_PATH' };
     }
     if (!fs.existsSync(target)) return { ok: false, error: 'UPDATE_FILE_MISSING' };
-    // Hide the running copy before launching the installer. This makes an
-    // update look like one continuous operation and avoids users launching a
-    // second copy while NSIS is replacing files.
-    if (mainWindow && !mainWindow.isDestroyed()) hideMainWindowToTray();
     const error = await shell.openPath(target);
-    if (error && mainWindow && !mainWindow.isDestroyed()) focusMainWindow();
     return error ? { ok: false, error } : { ok: true };
   } catch (e) {
     return { ok: false, error: e.message || 'OPEN_UPDATE_FAILED' };
@@ -2637,57 +3029,54 @@ ipcMain.handle('mineradio-desktop-lyrics-stop-global-drag', async () => {
 
 ipcMain.handle('mineradio-wallpaper-set-enabled', async (_event, enabled, payload) => {
   try {
-    if (enabled) createWallpaperWindow(payload || {});
-    else closeWallpaperWindow();
-    return { ok: true };
+    wallpaperState = { ...wallpaperState, ...(payload || {}), enabled: !!enabled };
+    closeWallpaperWindow();
+    const result = await setMainWindowDesktopEmbedded(!!enabled);
+    if (enabled && result && result.ok) {
+      const interactive = await setMainWindowDesktopInteractive(true);
+      return { ...result, interactive: !!(interactive && interactive.ok && interactive.interactive) };
+    }
+    return result;
   } catch (e) {
-    return { ok: false, error: e.message || 'WALLPAPER_FAILED' };
+    return { ok: false, error: e.message || 'DESKTOP_EMBED_FAILED' };
   }
 });
 
 ipcMain.handle('mineradio-wallpaper-update', async (_event, payload) => {
   try {
     wallpaperState = { ...wallpaperState, ...(payload || {}) };
-    if (wallpaperState.enabled) {
-      createWallpaperWindow(wallpaperState);
-      if (wallpaperWindow && !wallpaperWindow.isDestroyed()) {
-        positionWallpaperWindow();
-        sendWallpaperState();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message || 'DESKTOP_EMBED_UPDATE_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-wallpaper-capture-prepare', async (_event, payload) => {
+  preferredDisplayMediaSourceId = '';
+  preferredDisplayMediaSourceTitle = String(payload && payload.windowTitle || '').trim().slice(0, 160);
+  if (!preferredDisplayMediaSourceTitle) return { ok:false, error:'WALLPAPER_CAPTURE_TITLE_REQUIRED' };
+  const deadline = Date.now() + 10000;
+  do {
+    try {
+      const sources = await desktopCapturer.getSources({ types:['window'], thumbnailSize:{ width:0, height:0 } });
+      const wanted = preferredDisplayMediaSourceTitle.toLowerCase();
+      const source = sources.find(item => String(item && item.name || '').toLowerCase() === wanted)
+        || sources.find(item => String(item && item.name || '').toLowerCase().includes(wanted));
+      if (source) {
+        preferredDisplayMediaSourceId = source.id;
+        return { ok:true, sourceId:source.id, sourceName:source.name };
       }
-    } else if (wallpaperWindow && !wallpaperWindow.isDestroyed()) {
-      sendWallpaperState();
-    }
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e.message || 'WALLPAPER_UPDATE_FAILED' };
-  }
+    } catch (_error) {}
+    await new Promise(resolve => setTimeout(resolve, 100));
+  } while (Date.now() < deadline);
+  preferredDisplayMediaSourceTitle = '';
+  return { ok:false, error:'WALLPAPER_CAPTURE_WINDOW_NOT_FOUND' };
 });
 
-ipcMain.handle('mineradio-wallpaper-set-pointer-capture', async (_event, active) => {
-  try {
-    wallpaperControlsPointerCapture = true;
-    applyWallpaperControlsMouseBehavior();
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e.message || 'WALLPAPER_POINTER_FAILED' };
-  }
-});
-
-ipcMain.handle('mineradio-wallpaper-command', async (_event, payload) => {
-  try {
-    const command = payload && payload.command;
-    if (command === 'show-main' && mainWindow && !mainWindow.isDestroyed()) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-    }
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('mineradio-wallpaper-command', payload || {});
-    }
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e.message || 'WALLPAPER_COMMAND_FAILED' };
-  }
+ipcMain.handle('mineradio-wallpaper-capture-finish', async () => {
+  preferredDisplayMediaSourceId = '';
+  preferredDisplayMediaSourceTitle = '';
+  return { ok:true };
 });
 
 async function createWindow() {
@@ -2714,13 +3103,13 @@ async function createWindow() {
     minHeight: 540,
     resizable: true,
     maximizable: true,
-    thickFrame: true,
+    thickFrame: false,
     show: false,
     frame: false,
     fullscreen: false,
     transparent: true,
     backgroundColor: '#00000000',
-    hasShadow: true,
+    hasShadow: false,
     autoHideMenuBar: true,
     title: APP_NAME,
     icon: APP_ICON_ICO,
@@ -2728,10 +3117,12 @@ async function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
-      backgroundThrottling: false,
+      sandbox: true,
+      backgroundThrottling: true,
     },
   });
+
+  applyMainWindowBorderlessCorners(mainWindow);
 
   try {
     if (mainWindow.webContents && typeof mainWindow.webContents.setFrameRate === 'function') {
@@ -2754,6 +3145,21 @@ async function createWindow() {
 
   mainWindow.webContents.once('did-finish-load', () => {
     sendWindowState(mainWindow);
+  });
+
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[Renderer] process gone:', details && details.reason, details && details.exitCode);
+    if (appQuitting) return;
+    setTimeout(() => {
+      if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
+      try {
+        mainWindow.webContents.reload();
+        mainWindow.show();
+        mainWindow.focus();
+      } catch (error) {
+        console.error('[Renderer] recovery failed:', error);
+      }
+    }, 700);
   });
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
@@ -2821,7 +3227,9 @@ async function createWindow() {
   mainWindow.on('close', (event) => {
     if (mainWindowClosePersisting) return;
     event.preventDefault();
-    const shouldHideToTray = !appQuitting && closeToTrayEnabled;
+    // Do not hide into an invisible background process when tray creation
+    // fails. In that case closing leaves the window available to the user.
+    const shouldHideToTray = !appQuitting && closeToTrayEnabled && createTray();
     const win = mainWindow;
     mainWindowClosePersisting = true;
     const persist = win && !win.isDestroyed()
@@ -2888,22 +3296,25 @@ if (!gotSingleInstanceLock) {
   app.whenReady().then(async () => {
     applySavedDesktopShellSettings();
     session.defaultSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => {
-      if (permission !== 'media') return false;
+      if (permission !== 'media' && permission !== 'speaker-selection') return false;
       return /^http:\/\/127\.0\.0\.1:\d+\/?$/.test(String(requestingOrigin || ''));
     });
     session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
       const url = webContents && !webContents.isDestroyed() ? webContents.getURL() : '';
-      callback(permission === 'media' && /^http:\/\/127\.0\.0\.1:\d+\//.test(String(url || '')));
+      callback((permission === 'media' || permission === 'speaker-selection') && /^http:\/\/127\.0\.0\.1:\d+\//.test(String(url || '')));
     });
     session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
-      desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } })
+      const types = preferredDisplayMediaSourceId ? ['window', 'screen'] : ['screen'];
+      desktopCapturer.getSources({ types, thumbnailSize: { width: 0, height: 0 } })
         .then((sources) => {
-          const source = sources[0];
+          const source = preferredDisplayMediaSourceId
+            ? sources.find(item => item && item.id === preferredDisplayMediaSourceId)
+            : sources[0];
           if (!source) {
             callback({});
             return;
           }
-          callback({ video: source, audio: 'loopback' });
+          callback(preferredDisplayMediaSourceId ? { video: source } : { video: source, audio: 'loopback' });
         })
         .catch(() => callback({}));
     });
@@ -2920,9 +3331,11 @@ if (!gotSingleInstanceLock) {
       refreshWallpaperDesktopPlacement();
       scheduleWindowStateSend(mainWindow);
     });
+    registerBootstrapDesktopInteractionHotkey();
     createTray();
     await createWindow();
     createTray();
+    ensureDesktopShortcut();
     refreshTrayMenu();
   });
 

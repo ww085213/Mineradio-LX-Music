@@ -43,8 +43,8 @@ body::after,#desktop-window-shell::after{content:none}
 
 #desktop-window-shell{display:contents}
 #desktop-titlebar{display:none}
-html.desktop-shell-root body,body.desktop-shell{background:transparent;border-radius:34px;overflow:hidden;clip-path:inset(0 round 34px)}
-html.desktop-shell-root #desktop-window-shell,body.desktop-shell #desktop-window-shell{display:block;position:fixed;inset:0;overflow:hidden;border-radius:34px;clip-path:inset(0 round 34px);background:#050608;box-shadow:0 24px 80px rgba(0,0,0,.46);transform:translateZ(0)}
+html.desktop-shell-root body,body.desktop-shell{background:transparent;border:0;outline:0;border-radius:34px;overflow:hidden;clip-path:inset(0 round 34px);box-shadow:none}
+html.desktop-shell-root #desktop-window-shell,body.desktop-shell #desktop-window-shell{display:block;position:fixed;inset:0;overflow:hidden;border:0;outline:0;border-radius:34px;clip-path:inset(0 round 34px);background:#050608;box-shadow:none;transform:translateZ(0)}
 body.desktop-shell.desktop-maximized,body.desktop-shell.desktop-fullscreen,html:fullscreen body.desktop-shell{border-radius:0!important;clip-path:none!important}
 body.desktop-shell.desktop-maximized #desktop-window-shell,body.desktop-shell.desktop-fullscreen #desktop-window-shell,html:fullscreen body.desktop-shell #desktop-window-shell{border-radius:0!important;clip-path:none!important;box-shadow:none!important}
 body.desktop-shell #desktop-titlebar{position:fixed;z-index:500;top:0;left:0;right:0;height:44px;padding:0 12px 0 18px;display:flex;align-items:center;justify-content:space-between;background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none;-webkit-app-region:drag;pointer-events:none}
@@ -112,6 +112,9 @@ body.desktop-shell.desktop-fullscreen #top-right{top:24px}
 .wallpaper-picker.show{display:flex}
 .wallpaper-picker-card{width:min(1080px,96vw);max-height:min(820px,90vh);overflow:auto;border-radius:24px;padding:20px;background:rgba(10,11,15,.94);border:1px solid rgba(255,255,255,.14);box-shadow:0 32px 100px rgba(0,0,0,.62)}
 .wallpaper-picker-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}
+.wallpaper-picker-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px}
+.wallpaper-record-fps{height:30px;padding:0 9px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.055);color:rgba(255,255,255,.78);font:700 11px inherit;outline:none;cursor:pointer}
+.wallpaper-record-fps option{background:#11131a;color:#fff}
 .wallpaper-picker-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
 .wallpaper-card{position:relative;aspect-ratio:16/9;min-height:0;border-radius:18px;overflow:hidden;border:1px solid rgba(255,255,255,.12);background:#111;cursor:pointer}
 .wallpaper-card{content-visibility:auto;contain-intrinsic-size:320px 180px}
@@ -124,6 +127,25 @@ body.desktop-shell.desktop-fullscreen #top-right{top:24px}
 .wallpaper-card-meta small{display:block;margin-top:3px;color:rgba(255,255,255,.58)}
 .wallpaper-card-hide{position:absolute;right:8px;top:8px;z-index:3;width:27px;height:27px;border:1px solid rgba(255,255,255,.18);border-radius:50%;background:rgba(0,0,0,.62);color:#fff;cursor:pointer;opacity:.72}
 .wallpaper-card-hide:hover{opacity:1;background:rgba(150,35,45,.78)}
+.wallpaper-card-rerecord{position:absolute;right:43px;top:8px;z-index:3;min-width:66px;height:29px;padding:0 10px;border:1px solid rgba(255,255,255,.22);border-radius:999px;background:rgba(0,0,0,.72);color:#fff;cursor:pointer;font:800 11px/27px inherit;letter-spacing:.2px;opacity:.9;white-space:nowrap}
+.wallpaper-card-rerecord:hover{opacity:1;border-color:rgba(157,184,207,.58);background:rgba(30,65,88,.82)}
+.wallpaper-card-rerecord.busy{pointer-events:none;cursor:wait;opacity:1;border-color:rgba(157,184,207,.72);background:rgba(30,65,88,.94);box-shadow:0 0 18px rgba(92,168,220,.24)}
+.wallpaper-record-delay-mask{z-index:2600!important}
+.wallpaper-record-delay-modal{width:min(760px,94vw);max-width:min(760px,94vw);text-align:left;padding:24px}
+.wallpaper-record-delay-modal h2{text-align:center;margin-bottom:10px}
+.wallpaper-record-delay-input{display:block;width:100%;height:46px;margin-top:14px;padding:0 14px;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:rgba(0,0,0,.54);color:#fff;font:800 17px inherit;text-align:center;outline:none}
+.wallpaper-record-delay-input:focus{border-color:rgba(157,184,207,.58);box-shadow:0 0 0 3px rgba(157,184,207,.10)}
+.wallpaper-record-live[hidden],.wallpaper-record-setup[hidden]{display:none!important}
+.wallpaper-record-live-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.wallpaper-record-live-head h2{margin:0;text-align:left}
+.wallpaper-record-preview{position:relative;width:100%;aspect-ratio:16/9;overflow:hidden;border-radius:16px;border:1px solid rgba(255,255,255,.16);background:#050608;box-shadow:inset 0 0 0 1px rgba(0,0,0,.25)}
+.wallpaper-record-preview video{display:block;width:100%;height:100%;object-fit:contain;background:#000}
+.wallpaper-record-preview-status{position:absolute;left:12px;bottom:12px;padding:7px 11px;border-radius:999px;background:rgba(0,0,0,.72);border:1px solid rgba(255,255,255,.16);color:#fff;font-size:12px;font-weight:800;backdrop-filter:blur(10px)}
+.wallpaper-record-progress{height:8px;margin-top:13px;overflow:hidden;border-radius:999px;background:rgba(255,255,255,.10)}
+.wallpaper-record-progress i{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#65d6ff,#8cffc8);box-shadow:0 0 18px rgba(101,214,255,.36);transition:width .22s linear}
+.wallpaper-record-live-detail{min-height:20px;margin-top:9px;color:rgba(255,255,255,.66);font-size:12px;text-align:center}
+body.immersive-mode #wallpaper-record-delay-modal.show{display:flex!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important}
+body.immersive-mode #wallpaper-record-delay-modal:not(.show){display:none!important}
 .wallpaper-card-star{position:absolute;left:8px;top:8px;z-index:3;width:29px;height:29px;border:1px solid rgba(255,255,255,.18);border-radius:50%;background:rgba(0,0,0,.62);color:rgba(255,255,255,.72);cursor:pointer;font-size:17px;line-height:25px;opacity:.82}
 .wallpaper-card-star:hover{opacity:1;color:#ffe39a;border-color:rgba(255,227,154,.48)}
 .wallpaper-card-star.active{opacity:1;color:#ffd45e;background:rgba(75,52,8,.80);border-color:rgba(255,212,94,.62);box-shadow:0 0 18px rgba(255,212,94,.20)}
@@ -888,6 +910,23 @@ body.immersive-mode #now-flow{z-index:30}
 #now-flow.marquee-title .now-flow-title-scroll,#now-flow.marquee-lyric .now-flow-lyric-scroll{animation:nowFlowMarquee var(--marquee-duration,18s) linear infinite}#now-flow:not(.marquee-title) .now-flow-title-scroll span:nth-child(2),#now-flow:not(.marquee-lyric) .now-flow-lyric-scroll span:nth-child(2){display:none}
 @keyframes nowFlowMarquee{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
 .now-flow-bars{position:relative;z-index:1;display:flex;align-items:flex-end;gap:3px;width:26px;height:24px;flex:0 0 26px;opacity:.72}.now-flow-bars i{display:block;width:3px;height:9px;border-radius:999px;background:linear-gradient(180deg,rgba(255,255,255,.92),rgba(var(--fc-accent-rgb),.72));box-shadow:0 0 12px rgba(var(--fc-accent-rgb),.18);transform-origin:bottom}.now-flow-bars i:nth-child(2){height:16px}.now-flow-bars i:nth-child(3){height:12px}.now-flow-bars i:nth-child(4){height:20px}#now-flow.is-playing .now-flow-bars i{animation:nowFlowBars .78s ease-in-out infinite}#now-flow.is-playing .now-flow-bars i:nth-child(2){animation-delay:.12s}#now-flow.is-playing .now-flow-bars i:nth-child(3){animation-delay:.24s}#now-flow.is-playing .now-flow-bars i:nth-child(4){animation-delay:.06s}@keyframes nowFlowBars{0%,100%{transform:scaleY(.45);opacity:.46}50%{transform:scaleY(1);opacity:1}}
+/* Keep the tiny playing indicator alive even when the user disables the rest
+   of the decorative UI motion. It is playback state feedback, not a page
+   transition, so the global motion switch must not freeze it. */
+html.ui-motion-off #now-flow.is-playing .now-flow-bars i{
+  animation-name:nowFlowBars!important;
+  animation-duration:.78s!important;
+  animation-timing-function:ease-in-out!important;
+  animation-iteration-count:infinite!important;
+}
+html.ui-motion-off #now-flow.is-playing .now-flow-dot,
+html.ui-motion-off body.has-playing-strip.playing .control-kicker::before,
+html.ui-motion-off #bottom-bar.is-playing .control-kicker::before{
+  animation-name:nowFlowPulse!important;
+  animation-duration:1.35s!important;
+  animation-timing-function:ease-in-out!important;
+  animation-iteration-count:infinite!important;
+}
 @media (max-width:920px){#now-flow{width:calc(100vw - 34px);bottom:18px}.now-flow-artist{display:none}.now-flow-lyric-scroll{font-size:17px}.now-flow-kicker{display:none}}
 @media (max-width:620px){#now-flow{height:62px;padding-right:12px}.now-flow-cover{width:44px;height:44px;flex-basis:44px}.now-flow-title-scroll{font-size:13px}.now-flow-lyric-scroll{font-size:15.5px}.now-flow-bars{display:none}}
 
@@ -2330,7 +2369,7 @@ body.player-lyric-drag-mode.player-lyric-dragging canvas{cursor:grabbing!importa
 
 /* Desktop wallpaper sync enabled badge */
 #t-wallpaperMode:not(.dev-locked) .fx-dev-badge{border-color:rgba(156,255,223,.32);background:rgba(156,255,223,.10);color:rgba(196,255,236,.88)}
-.desktop-wallpaper-setting{display:none!important}
+.desktop-wallpaper-setting{display:flex}
 
 /* Mineradio visible fixes: player lyric position controls and wallpaper mirror row */
 .wallpaper-mirror-row #wallpaper-mirror-toggle.active{background:rgba(244,210,138,.20);border-color:rgba(244,210,138,.48);color:#fff}
@@ -2339,7 +2378,7 @@ body.player-lyric-drag-mode.player-lyric-dragging canvas{cursor:grabbing!importa
 body.player-lyric-drag-mode #stage-lyrics::after{content:'拖拽模式';position:fixed;right:18px;bottom:18px;padding:8px 10px;border-radius:999px;background:rgba(0,0,0,.42);color:rgba(255,255,255,.86);font-size:12px;letter-spacing:.5px;pointer-events:none;z-index:999}
 
 
-/* ---------- 首页歌单：前四张固定一行 + 更多歌单轻量收起 ---------- */
+/* ---------- 首页歌单：前四位自由排序 + 其余歌单可收起 ---------- */
 html.local-only-mode body.desktop-shell.desktop-fullscreen.home-has-library #empty-home,
 html.local-only-mode:fullscreen body.desktop-shell.home-has-library #empty-home{
   width:min(1600px,calc(100vw - 72px));
@@ -3421,8 +3460,30 @@ body.tv-mode .playlist-import-platform,body.tv-mode .fx-mini-btn,body.tv-mode .p
 <div id="custom-bg"><video id="custom-bg-video" muted loop playsinline preload="metadata"></video></div>
 <div id="wallpaper-picker" class="wallpaper-picker" onclick="if(event.target===this)closeWallpaperPicker()">
   <div class="wallpaper-picker-card">
-    <div class="wallpaper-picker-head"><div><div class="fx-title">Wallpaper Engine 壁纸导入</div><div class="fx-sub">点击卡片导入 Mineradio；Scene 仅导入静态预览，不会切换桌面壁纸</div></div><div style="display:flex;gap:8px"><button class="fx-mini-btn ghost" type="button" onclick="restoreHiddenWallpaperItems()">恢复隐藏</button><button class="fx-mini-btn ghost" type="button" onclick="closeWallpaperPicker()">关闭</button></div></div>
+    <div class="wallpaper-picker-head"><div><div class="fx-title">Wallpaper Engine 壁纸转换</div><div id="wallpaper-converter-status" class="fx-sub">正在检测 RePKG / FFmpeg 转换引擎…</div></div><div class="wallpaper-picker-actions"><label class="fx-sub" for="wallpaper-record-fps">转换帧率</label><select id="wallpaper-record-fps" class="wallpaper-record-fps" onchange="setWallpaperRecordFps(this.value)"><option value="60">60 FPS（默认）</option><option value="30">30 FPS（省资源）</option></select><button class="fx-mini-btn ghost" type="button" onclick="restoreHiddenWallpaperItems()">恢复隐藏</button><button class="fx-mini-btn ghost" type="button" onclick="closeWallpaperPicker()">关闭</button></div></div>
     <div id="wallpaper-picker-grid" class="wallpaper-picker-grid"></div>
+  </div>
+</div>
+<div id="wallpaper-record-delay-modal" class="modal-mask wallpaper-record-delay-mask" onclick="if(event.target===this)requestWallpaperRecordCancel()">
+  <div class="modal wallpaper-record-delay-modal" role="dialog" aria-modal="true" aria-labelledby="wallpaper-record-delay-title">
+    <div id="wallpaper-record-setup" class="wallpaper-record-setup">
+      <h2 id="wallpaper-record-delay-title">转换 Scene 动态壁纸</h2>
+      <div id="wallpaper-record-delay-desc" class="desc">立即打开实时预览，等待指定秒数后开始录制；如果开头有广告，可在预览中确认后再录。</div>
+      <input id="wallpaper-record-delay-input" class="wallpaper-record-delay-input" type="number" min="0" max="30" step="1" value="2" aria-label="录制前预览等待秒数" onkeydown="handleWallpaperRecordDelayKey(event)">
+      <div class="btn-row">
+        <button class="modal-btn" type="button" onclick="finishWallpaperRecordDelay(false)">取消</button>
+        <button class="modal-btn primary" type="button" onclick="finishWallpaperRecordDelay(true)">打开预览并录制</button>
+      </div>
+    </div>
+    <div id="wallpaper-record-live" class="wallpaper-record-live" hidden>
+      <div class="wallpaper-record-live-head"><h2>Scene 实时录制</h2><button class="modal-btn" type="button" onclick="requestWallpaperRecordCancel()">取消</button></div>
+      <div class="wallpaper-record-preview">
+        <video id="wallpaper-record-preview-video" muted autoplay playsinline></video>
+        <div id="wallpaper-record-preview-status" class="wallpaper-record-preview-status">正在启动 Wallpaper Engine…</div>
+      </div>
+      <div class="wallpaper-record-progress"><i id="wallpaper-record-progress-fill"></i></div>
+      <div id="wallpaper-record-live-detail" class="wallpaper-record-live-detail">准备实时画面，请稍候</div>
+    </div>
   </div>
 </div>
 <div id="album-bg"></div>
@@ -3592,6 +3653,7 @@ body.tv-mode .playlist-import-platform,body.tv-mode .fx-mini-btn,body.tv-mode .p
       <button class="source-import-btn" type="button" onclick="openLxSourceImport()" title="导入本地落雪音源脚本">导入文件</button>
     </div>
   </div>
+  <div class="fx-sub" style="margin-top:7px;line-height:1.55">安全提示：音源是可执行的 JS 插件，只导入你信任的文件或链接。</div>
   <div class="fx-section-label">视觉预设</div>
   <div class="preset-grid" id="preset-grid"></div>
   <div id="soundscape-position-controls" class="soundscape-position-controls">
@@ -4450,7 +4512,7 @@ body.tv-mode .playlist-import-platform,body.tv-mode .fx-mini-btn,body.tv-mode .p
         <div>
           <div class="update-kicker">MINERADIO 二创版</div>
           <div id="update-modal-title" class="update-title">New release</div>
-          <div id="update-modal-version" class="update-version">Mineradio二创版 v1.5.4.3</div>
+          <div id="update-modal-version" class="update-version">Mineradio v1.5.5</div>
         </div>
       </div>
       <div class="update-hero">
@@ -4732,6 +4794,12 @@ var PERSISTENT_UI_STATE_KEYS = [
   PLAYBACK_TUNING_STORE_KEY,
   DIY_MODE_STORE_KEY,
   PLAYLIST_PANEL_PIN_STORE_KEY,
+  PLAYLIST_PANEL_POSITION_STORE_KEY,
+  'mineradio-home-playlist-order-v1',
+  'mineradio-home-more-playlists-expanded-v1',
+  'mineradio-wallpaper-scene-recordings-v1',
+  'mineradio-wallpaper-record-fps-v1',
+  'mineradio-wallpaper-record-fps-v2',
   FX_FAB_AUTO_HIDE_STORE_KEY,
   CONTROLS_AUTO_HIDE_STORE_KEY,
   UI_MOTION_STORE_KEY,
@@ -4797,6 +4865,7 @@ var HOTKEY_ACTIONS = [
   { key:'volumeUp', label:'音量增加', category:'音量', local:'ArrowUp', global:'Ctrl+Alt+ArrowUp' },
   { key:'volumeDown', label:'音量降低', category:'音量', local:'ArrowDown', global:'Ctrl+Alt+ArrowDown' },
   { key:'toggleFullscreen', label:'全屏', category:'窗口', local:'KeyF', global:'Ctrl+Alt+KeyF' },
+  { key:'toggleDesktopInteraction', label:'桌面操作层切换', category:'窗口', local:'', global:'Ctrl+Shift+KeyM' },
   { key:'toggleDesktopLyrics', label:'桌面歌词', category:'歌词', local:'Alt+KeyL', global:'Ctrl+Alt+KeyL' }
 ];
 var hotkeyCaptureState = null;
@@ -4898,7 +4967,7 @@ var updatePreviewState = {
   installerOpened: false,
   cached: false,
   currentVersion: '1.5.3',
-  version: '1.5.4.2',
+  version: '1.5.5',
   configured: false,
   preview: true,
   updateAvailable: false,
@@ -6024,15 +6093,12 @@ function clonePackagedDefaultFxSnapshot() {
 function packagedDefaultLyricLayoutRaw() {
   return Object.assign({ desktopLyricsSchema: 'desktop-lyrics-v4' }, clonePackagedDefaultFxSnapshot());
 }
-var DEVELOPMENT_LOCKED_FX = { wallpaperMode:true };
+var DEVELOPMENT_LOCKED_FX = {};
 function isDevelopmentLockedFx(key) {
   return !!DEVELOPMENT_LOCKED_FX[key];
 }
 function normalizeDevelopmentLockedFxState() {
-  if (!fx) return;
-  // 桌面融合暂时下线。即使旧版本保存过开启状态，也不要在后台
-  // 继续创建或更新 Windows 壁纸层。
-  fx.wallpaperMode = false;
+  // 桌面融合已开放；保留用户保存的开关状态。
 }
 function readSavedPlaybackVisualPreset() {
   try {
@@ -6472,6 +6538,8 @@ var RENDER_VISIBLE_VSYNC = false; // 锁定目标帧率，避免高刷屏持续�
 var RENDER_ACTIVE_FPS = 60;
 var RENDER_LARGE_FPS = 50;
 var RENDER_HUGE_FPS = 60;
+var RENDER_IDLE_FPS = 30;
+var RENDER_IDLE_LARGE_FPS = 24;
 var RENDER_INTERACTION_FPS = 72;
 var RENDER_INTERACTION_LARGE_FPS = 60;
 var RENDER_INTERACTION_HUGE_FPS = 60;
@@ -17998,6 +18066,18 @@ function makeShelfManager() {
     pulseObjectValue(card, 'fxPulse', amount || 1, 0.46);
   }
 
+  function handleCurrentQueueCardWithoutReload(action, card) {
+    if (!action || action.kind !== 'playQueue' || Number(action.index) !== Number(currentIdx)) return false;
+    if (!audio || !audio.src) return false;
+    pulseCard(card, 0.58);
+    // Reloading the same URL briefly clears Chromium's video/audio state and
+    // makes the card and wallpaper flash. Keep the active stream untouched;
+    // when paused, the same click simply resumes it.
+    if (audio.paused || audio.ended) Promise.resolve(togglePlay()).catch(function(){});
+    forcePlaybackControlsInteractive();
+    return true;
+  }
+
   function createStageExtras() {
     if (!group) return;
     var pcount = 80;
@@ -18283,7 +18363,7 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
       var card = cards.find(function(c) { return c.mesh.userData.action === action; });
       pulseCard(card, action.kind === 'loadPlaylist' ? 1.0 : 0.70);
       if (action.kind === 'playQueue') {
-        playQueueAt(action.index);
+        if (!handleCurrentQueueCardWithoutReload(action, card)) playQueueAt(action.index);
       } else if (action.kind === 'loadPlaylist') {
         if (!contentList) contentList = makeContentListManager();
         openCardIdx = card ? card.index : -1;
@@ -18304,7 +18384,7 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
       pulseCard(card, 1.0);
       // queue 类型 → 直接播放, 不需要内容框
       if (action.kind === 'playQueue') {
-        playQueueAt(action.index);
+        if (!handleCurrentQueueCardWithoutReload(action, card)) playQueueAt(action.index);
         return;
       }
       if (action.kind === 'loadPlaylist') {
@@ -20489,7 +20569,7 @@ async function ensureDailyHotPlaylist(forceRefresh) {
 }
 function toggleHomeMorePlaylists() {
   homeMorePlaylistsExpanded = !homeMorePlaylistsExpanded;
-  try { localStorage.setItem(HOME_MORE_PLAYLISTS_EXPANDED_KEY, homeMorePlaylistsExpanded ? '1' : '0'); } catch (_error) {}
+  try { setPersistentLocalStorageItem(HOME_MORE_PLAYLISTS_EXPANDED_KEY, homeMorePlaylistsExpanded ? '1' : '0'); } catch (_error) {}
   renderHomeFolderPlaylists();
 }
 async function playHomeDailyRecommend() {
@@ -20546,7 +20626,7 @@ function readHomePlaylistOrder() {
   }
 }
 function saveHomePlaylistOrder(order) {
-  try { localStorage.setItem(HOME_PLAYLIST_ORDER_KEY, JSON.stringify((order || []).filter(Boolean))); } catch (_error) {}
+  try { setPersistentLocalStorageItem(HOME_PLAYLIST_ORDER_KEY, JSON.stringify((order || []).filter(Boolean))); } catch (_error) {}
 }
 function sortHomePlaylistCards(cards) {
   var order = readHomePlaylistOrder();
@@ -20928,8 +21008,10 @@ function renderHomeFolderPlaylists() {
   function makeAllMusicCard() {
     if (!allSongs.length) return null;
     return {
-      kind: 'all',
+      kind: '',
       index: -1,
+      orderKey: 'builtin:all-music',
+      sourceOrder: 2,
       label: 'ALL MUSIC',
       title: '全部本地音乐',
       sub: allSongs.length + ' 首 · 所有已导入文件夹',
@@ -20941,6 +21023,8 @@ function renderHomeFolderPlaylists() {
   var dailyCard = {
     kind: '',
     index: -1,
+    orderKey: 'builtin:daily-mix',
+    sourceOrder: 0,
     label: 'DAILY MIX',
     title: '每日推荐',
     sub: dailyHotCache && dailyHotCache.songs && dailyHotCache.songs.length ? ('全网热门 · ' + dailyHotCache.songs.length + ' 首') : '点击全网搜索热门 30 首',
@@ -20954,6 +21038,8 @@ function renderHomeFolderPlaylists() {
   var recentCard = {
     kind: '',
     index: -1,
+    orderKey: 'builtin:recent',
+    sourceOrder: 1,
     label: 'RECENT',
     title: '最近播放',
     sub: recentText,
@@ -20962,8 +21048,14 @@ function renderHomeFolderPlaylists() {
     tone: 'search',
     className: 'home-card-recent'
   };
+  sortableCards.push(dailyCard, recentCard);
+  var allCard = makeAllMusicCard();
+  if (allCard) sortableCards.push(allCard);
   var heartCard = heartbeatPlaylistCard();
-  if (heartCard) sortableCards.push(heartCard);
+  if (heartCard) {
+    heartCard.sourceOrder = sortableCards.length;
+    sortableCards.push(heartCard);
+  }
   customLists.forEach(function(list, listIndex){
     var songs = list && Array.isArray(list.songs) ? list.songs : [];
     sortableCards.push({
@@ -21010,12 +21102,8 @@ function renderHomeFolderPlaylists() {
     });
   });
   var sortedPlaylistCards = sortHomePlaylistCards(sortableCards);
-  var allCard = makeAllMusicCard();
-  cards.push(dailyCard, recentCard);
-  if (allCard) cards.push(allCard);
-  var topPlaylistSlots = Math.max(0, 4 - cards.length);
-  cards = cards.concat(sortedPlaylistCards.slice(0, topPlaylistSlots));
-  var foldedCards = sortedPlaylistCards.slice(topPlaylistSlots);
+  cards = sortedPlaylistCards.slice(0, 4);
+  var foldedCards = sortedPlaylistCards.slice(4);
   var importCard = {
     kind: '',
     index: -1,
@@ -21036,8 +21124,10 @@ function renderHomeFolderPlaylists() {
       kind: '',
       index: -1,
       label: 'MORE PLAYLIST',
-      title: '更多歌单',
-      sub: '共 ' + foldedCards.length + ' 个 · ' + (homeMorePlaylistsExpanded ? '收起' : '展开'),
+      title: homeMorePlaylistsExpanded ? '收起歌单' : '展开歌单',
+      sub: homeMorePlaylistsExpanded
+        ? '拖动任意歌单可调整最上面四个位置'
+        : '其余 ' + foldedCards.length + ' 个 · 展开后可拖到最上面',
       cover: '',
       action: 'toggleHomeMorePlaylists()',
       tone: 'library',
@@ -23309,7 +23399,7 @@ async function refreshLxSourceBadge() {
     var notConfigured = /LX_SOURCE_NOT_CONFIGURED|LX_SOURCE_NOT_FOUND|ENOENT[^\n]*user_api\.json/i.test(sourceError);
     if (button) {
       button.textContent = notConfigured ? '音源：未配置' : '音源：不可用';
-      button.title = notConfigured ? '尚未配置播放音源，点击“一键导入”批量选择音源文件' : '当前音源加载失败';
+      button.title = notConfigured ? '请到 DIY 预设里配置音源' : '当前音源加载失败';
     }
   }
 }
@@ -23496,7 +23586,8 @@ async function importLxSourceUrl() {
     modal.innerHTML =
       '<div style="width:min(560px,92vw);padding:24px;border:1px solid rgba(255,255,255,.18);border-radius:22px;background:#0b0d10;box-shadow:0 24px 80px rgba(0,0,0,.65)">' +
         '<div style="font-size:17px;font-weight:700;margin-bottom:8px">导入落雪兼容音源</div>' +
-        '<div style="font-size:12px;color:rgba(255,255,255,.5);margin-bottom:15px">粘贴音源 JS 链接，验证成功后会自动设为当前播放音源。</div>' +
+        '<div style="font-size:12px;color:rgba(255,255,255,.5);margin-bottom:7px">粘贴音源 JS 链接，验证成功后会自动设为当前播放音源。</div>' +
+        '<div style="font-size:12px;color:#f4d28a;margin-bottom:15px">安全提示：音源会执行代码，只导入你信任的来源。</div>' +
         '<input id="lx-source-url-value" type="text" placeholder="可粘贴音源链接，或直接粘贴 64 位 APIKEY" style="box-sizing:border-box;width:100%;height:44px;padding:0 14px;border:1px solid rgba(255,255,255,.18);border-radius:12px;background:rgba(255,255,255,.07);color:#fff;outline:none">' +
         '<div style="display:flex;justify-content:flex-end;gap:9px;margin-top:16px">' +
           '<button class="source-import-btn" type="button" onclick="closeLxSourceUrlModal()">取消</button>' +
@@ -25426,7 +25517,7 @@ async function playLxMirrorSong(playlistIndex, songIndex, directSong) {
     console.warn('[LXMirrorPlay]', e);
     var message = String(e && e.message || '未知错误');
     if (/LX_SOURCE_NOT_CONFIGURED|LX_SOURCE_NOT_FOUND|ENOENT[^\n]*user_api\.json/i.test(message)) {
-      message = '尚未配置播放音源，请点击顶部“一键导入”批量选择音源文件';
+      message = '请到 DIY 预设里配置音源';
       refreshLxSourceBadge();
     } else if (/All promises were rejected|AggregateError/i.test(message)) {
       message = '这首歌的所有可用音源和音质都无法播放，请稍后重试或更换音源';
@@ -30367,8 +30458,6 @@ function nfToggleLyricTranslation(e) {
 }
 function nfOpenQueue(e) {
   nfStop(e);
-  // An explicit queue-button click means the user wants the left panel to
-  // stay put. Edge-hover remains available for temporary peeking.
   if (typeof setPlaylistPanelPinned === 'function') setPlaylistPanelPinned(true, true);
   if (typeof openPlaylistPanelTab === 'function') openPlaylistPanelTab('queue');
   else if (typeof toggleMiniQueue === 'function') toggleMiniQueue(e);
@@ -30524,12 +30613,16 @@ function bindPlaybackProgressEvents(audioEl) {
  */
 function systemMediaSessionArtwork(meta) {
   var cover = meta && meta.cover ? String(meta.cover) : '';
-  if (!cover) return [];
-  return [
-    { src: cover, sizes: '96x96', type: 'image/png' },
-    { src: cover, sizes: '256x256', type: 'image/png' },
-    { src: cover, sizes: '512x512', type: 'image/png' }
-  ];
+  if (isProxyableCoverUrl(cover)) cover = coverProxySrc(coverUrlWithSize(cover, 512), false) || cover;
+  if (!cover) cover = '/tray-icon.png';
+  try {
+    if (!/^data:|^blob:/i.test(cover)) cover = new URL(cover, window.location.href).href;
+  } catch (_e) {}
+  // Do not claim every cover is PNG. Windows discards MediaMetadata artwork
+  // when the declared MIME type does not match the actual JPEG/WebP response.
+  // Supplying only src lets Chromium sniff the real format before publishing it
+  // to the system media flyout.
+  return [{ src: cover, sizes: '512x512' }];
 }
 /**
  * 同步系统媒体控制元数据，供 Windows 音量浮窗、键盘媒体键和蓝牙耳机控制显示。
@@ -33629,8 +33722,48 @@ function setCustomBackgroundMedia(media, silent) {
   if (!silent) showToast(media ? (media.type === 'video' ? '背景视频已应用' : '背景图片已应用') : '背景媒体已清除');
 }
 var wallpaperEngineLibrary = [];
+var wallpaperConverterCapabilities = {};
 var HIDDEN_WALLPAPER_STORE_KEY = 'mineradio-hidden-wallpapers-v1';
 var FAVORITE_WALLPAPER_STORE_KEY = 'mineradio-favorite-wallpapers-v1';
+var WALLPAPER_SCENE_RECORDINGS_STORE_KEY = 'mineradio-wallpaper-scene-recordings-v1';
+var WALLPAPER_RECORD_FPS_STORE_KEY = 'mineradio-wallpaper-record-fps-v2';
+var WALLPAPER_RECORD_DURATION_MS = 15000;
+var wallpaperSceneRecordBusy = false;
+var wallpaperRecordFps = (function(){
+  try { return localStorage.getItem(WALLPAPER_RECORD_FPS_STORE_KEY) === '30' ? 30 : 60; } catch (_e) { return 60; }
+})();
+var wallpaperSceneRecordings = (function(){
+  try {
+    var saved = JSON.parse(localStorage.getItem(WALLPAPER_SCENE_RECORDINGS_STORE_KEY) || '{}');
+    return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+  } catch (_e) { return {}; }
+})();
+function setWallpaperRecordFps(value) {
+  wallpaperRecordFps = Number(value) === 60 ? 60 : 30;
+  var select = document.getElementById('wallpaper-record-fps');
+  if (select) select.value = String(wallpaperRecordFps);
+  try { setPersistentLocalStorageItem(WALLPAPER_RECORD_FPS_STORE_KEY, String(wallpaperRecordFps)); } catch (_e) {}
+  showToast('Scene 转换帧率：' + wallpaperRecordFps + ' FPS');
+}
+function syncWallpaperRecordFpsControl() {
+  var select = document.getElementById('wallpaper-record-fps');
+  if (select) select.value = String(wallpaperRecordFps);
+}
+function saveWallpaperSceneRecordings() {
+  try { setPersistentLocalStorageItem(WALLPAPER_SCENE_RECORDINGS_STORE_KEY, JSON.stringify(wallpaperSceneRecordings)); } catch (_e) {}
+}
+function mergeWallpaperSceneRecordings() {
+  wallpaperEngineLibrary.forEach(function(item){
+    var saved = item && wallpaperSceneRecordings[String(item.id)];
+    if (!saved || !saved.blobId) return;
+    item.recordedBlobId = String(saved.blobId);
+    item.recordedFps = Number(saved.fps) === 60 ? 60 : 30;
+    item.recordedAt = Number(saved.recordedAt) || 0;
+    item.playable = true;
+    item.dynamic = true;
+    item.mediaType = 'video';
+  });
+}
 var hiddenWallpaperIds = (function(){
   try {
     var saved = JSON.parse(localStorage.getItem(HIDDEN_WALLPAPER_STORE_KEY) || '[]');
@@ -33655,18 +33788,36 @@ async function loadWallpaperEngineLibrary(showNotice) {
   try {
     var result = await apiJson('/api/wallpaper/list?t=' + Date.now());
     wallpaperEngineLibrary = result && Array.isArray(result.wallpapers) ? result.wallpapers : [];
+    wallpaperConverterCapabilities = result && result.converter || {};
+    mergeWallpaperSceneRecordings();
+    syncWallpaperRecordFpsControl();
+    updateWallpaperConverterStatus();
     renderWallpaperPicker();
     if (showNotice) showToast(wallpaperEngineLibrary.length ? ('已找到 ' + wallpaperEngineLibrary.length + ' 个 Wallpaper 壁纸') : '没有找到可用的 Wallpaper 壁纸');
     return wallpaperEngineLibrary;
   } catch (e) {
     wallpaperEngineLibrary = [];
+    wallpaperConverterCapabilities = {};
+    updateWallpaperConverterStatus();
     renderWallpaperPicker();
     if (showNotice) showToast('Wallpaper Engine 壁纸读取失败');
     return [];
   }
 }
+function updateWallpaperConverterStatus() {
+  var target = document.getElementById('wallpaper-converter-status');
+  if (!target) return;
+  var caps = wallpaperConverterCapabilities || {};
+  var encoders = Array.isArray(caps.h264Encoders) ? caps.h264Encoders : [];
+  if (!caps.ffmpeg) {
+    target.textContent = '未找到 FFmpeg，暂时无法输出 MP4';
+    return;
+  }
+  target.textContent = (caps.repkg ? 'RePKG scene.pkg 校验' : 'Scene 格式直读') +
+    ' · FFmpeg ' + (encoders[0] || 'H.264') + ' · 输出 MP4 / H.264';
+}
 function wallpaperMediaUrl(item, kind) {
-  return '/api/wallpaper/media?id=' + encodeURIComponent(item.id) + '&kind=' + encodeURIComponent(kind);
+  return '/api/wallpaper/media?id=' + encodeURIComponent(item.id) + '&kind=' + encodeURIComponent(kind) + (kind === 'preview' ? '&thumb=animated-v1' : '');
 }
 function normalizeWallpaperListTitle(value) {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -33705,16 +33856,20 @@ function renderWallpaperPicker() {
   grid.innerHTML = visibleItems.map(function(entry){
     var item = entry.item, index = entry.index;
     var preview = item.hasPreview ? wallpaperMediaUrl(item, 'preview') : '';
-    var scenePreviewOnly = (item.projectType === 'scene' || item.nativeScene) && !item.playable;
+    var nativeScene = item.projectType === 'scene' || item.nativeScene;
+    var scenePreviewOnly = nativeScene && !item.playable;
     var favorite = favoriteWallpaperIds.has(String(item.id));
-    return '<div class="wallpaper-card' + (favorite ? ' favorite' : '') + '" role="button" tabindex="0" onclick="importWallpaperEngineItem(' + index + ')">' +
+    return '<div class="wallpaper-card' + (favorite ? ' favorite' : '') + '" role="button" tabindex="0" onclick="activateWallpaperEngineItem(' + index + ',event)">' +
       '<button class="wallpaper-card-star' + (favorite ? ' active' : '') + '" type="button" title="' + (favorite ? '取消星标' : '星标并置顶') + '" aria-label="' + (favorite ? '取消星标' : '添加星标') + '" onclick="event.stopPropagation();toggleFavoriteWallpaperItem(' + index + ')">' + (favorite ? '★' : '☆') + '</button>' +
       '<button class="wallpaper-card-hide" type="button" title="从 MR 隐藏" onclick="event.stopPropagation();hideWallpaperEngineItem(' + index + ')">×</button>' +
+      (nativeScene ? '<button class="wallpaper-card-rerecord" type="button" title="' + (item.recordedBlobId ? '强制重新录制 Scene' : '直接转换 Scene') + '" aria-label="' + (item.recordedBlobId ? '强制重新录制 Scene' : '直接转换 Scene') + '" onclick="event.stopPropagation();rerecordWallpaperEngineScene(' + index + ',event)">↻ ' + (item.recordedBlobId ? '重录' : '转换') + '</button>' : '') +
       (preview ? '<img src="' + preview + '" alt="" loading="lazy" decoding="async">' : '<div class="wallpaper-card-placeholder"></div>') +
       '<span class="wallpaper-card-meta">' + escHtml(item.title || 'Wallpaper') + '<small>' +
-        (scenePreviewOnly
-          ? 'Scene · 点击导入 MR（静态预览）'
-          : (item.mediaType === 'video' ? '动态媒体 · 点击导入 MR' : '图片壁纸 · 点击导入 MR')) +
+        (item.recordedBlobId
+          ? ('scene.pkg → MP4 / H.264 · ' + (item.recordedFps || 30) + ' FPS · 点击导入 MR')
+          : nativeScene
+          ? 'scene.pkg → RePKG 校验 → MP4 / H.264 · ' + wallpaperRecordFps + ' FPS'
+          : (item.mediaType === 'video' ? String(item.sourceFormat || 'Video').toUpperCase() + ' → MP4 / H.264 · 点击导入 MR' : '图片壁纸 · 直接导入 MR')) +
       '</small></span>' +
     '</div>';
   }).join('');
@@ -33751,17 +33906,30 @@ function restoreHiddenWallpaperItems() {
 async function openWallpaperPicker() {
   var picker = document.getElementById('wallpaper-picker');
   if (picker) picker.classList.add('show');
+  syncWallpaperRecordFpsControl();
   if (!wallpaperEngineLibrary.length) await loadWallpaperEngineLibrary(false);
 }
 function closeWallpaperPicker() {
+  if (wallpaperRecordDelayResolver) finishWallpaperRecordDelay(false);
   var picker = document.getElementById('wallpaper-picker');
   if (picker) picker.classList.remove('show');
+}
+function activateWallpaperEngineItem(index, event) {
+  var item = wallpaperEngineLibrary[Number(index)];
+  if (!item) return;
+  var nativeScene = item.projectType === 'scene' || item.nativeScene;
+  if (nativeScene && !item.recordedBlobId) {
+    rerecordWallpaperEngineScene(index, event);
+    return;
+  }
+  importWallpaperEngineItem(index);
 }
 async function importWallpaperEngineItem(index) {
   var item = wallpaperEngineLibrary[Number(index)];
   if (!item) return;
 
-  var hasPlayableMedia = !!item.playable;
+  var hasRecordedScene = !!item.recordedBlobId;
+  var hasPlayableMedia = hasRecordedScene || !!item.playable;
   var hasScenePreview = !!item.hasPreview;
   if (!hasPlayableMedia && !hasScenePreview) {
     showToast('该壁纸没有可导入的媒体或预览图');
@@ -33775,7 +33943,13 @@ async function importWallpaperEngineItem(index) {
     ? (item.mediaType || (item.dynamic ? 'video' : 'image'))
     : 'image';
 
-  setCustomBackgroundMedia({
+  setCustomBackgroundMedia(hasRecordedScene ? {
+    type: 'video',
+    id: item.recordedBlobId,
+    name: (item.title || 'Wallpaper Engine') + '（Scene 动态转换）',
+    title: item.title || '',
+    wallpaper: true
+  } : {
     type: mediaType,
     src: wallpaperMediaUrl(item, kind),
     name: (item.title || 'Wallpaper Engine') + (isScenePreview ? '（Scene 静态预览）' : ''),
@@ -33796,6 +33970,339 @@ async function importWallpaperEngineItem(index) {
     showToast('Scene 已导入 Mineradio（静态预览），未切换桌面壁纸');
   } else {
     showToast('壁纸已导入 Mineradio 并应用');
+  }
+}
+function wallpaperRecorderMimeType() {
+  // VP8 is materially more stable than VP9 for live desktop capture on a
+  // number of Windows GPU/driver combinations. FFmpeg converts either codec
+  // to the same H.264 MP4 afterwards, so prefer stability here.
+  var candidates = ['video/webm;codecs=vp8', 'video/webm', 'video/webm;codecs=vp9'];
+  if (!window.MediaRecorder || typeof MediaRecorder.isTypeSupported !== 'function') return 'video/webm';
+  return candidates.find(function(type){ return MediaRecorder.isTypeSupported(type); }) || 'video/webm';
+}
+async function openWallpaperCaptureStream(sourceId, fps) {
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function' || !sourceId) {
+    throw new Error('WALLPAPER_CAPTURE_UNSUPPORTED');
+  }
+  // Capture the desktopCapturer source directly. Electron's getDisplayMedia
+  // route can terminate the GPU process on some Windows systems when the
+  // target is a Wallpaper Engine window; the explicit source route avoids
+  // the native picker/WGC hand-off that triggers that crash.
+  var maxFrameRate = Math.max(24, Math.min(60, Number(fps) || 30));
+  var legacyError = null;
+  try {
+    var legacyStream = await navigator.mediaDevices.getUserMedia({
+      audio:false,
+      video:{
+        mandatory:{
+          chromeMediaSource:'desktop',
+          chromeMediaSourceId:String(sourceId),
+          maxWidth:1920,
+          maxHeight:1080,
+          maxFrameRate:maxFrameRate
+        }
+      }
+    });
+    if (legacyStream && legacyStream.getVideoTracks && legacyStream.getVideoTracks().length) {
+      window.__mineradioWallpaperCaptureMethod = 'legacy-desktop-source';
+      return legacyStream;
+    }
+    if (legacyStream) legacyStream.getTracks().forEach(function(track){ try { track.stop(); } catch (_e) {} });
+    legacyError = new Error('WALLPAPER_CAPTURE_STREAM_EMPTY');
+  } catch (error) {
+    legacyError = error;
+    console.warn('[WallpaperCapture:legacy]', error);
+  }
+  // Newer Electron/Chromium builds can reject the legacy desktop constraints.
+  // The main process has already selected sourceId in setDisplayMediaRequestHandler,
+  // so this standards-based route opens the same Wallpaper Engine window without
+  // showing a system picker and is used as an automatic compatibility fallback.
+  if (typeof navigator.mediaDevices.getDisplayMedia === 'function') {
+    try {
+      var displayStream = await navigator.mediaDevices.getDisplayMedia({
+        audio:false,
+        video:{ width:{ ideal:1920 }, height:{ ideal:1080 }, frameRate:{ ideal:maxFrameRate, max:maxFrameRate } }
+      });
+      if (displayStream && displayStream.getVideoTracks && displayStream.getVideoTracks().length) {
+        window.__mineradioWallpaperCaptureMethod = 'display-media-fallback';
+        return displayStream;
+      }
+      if (displayStream) displayStream.getTracks().forEach(function(track){ try { track.stop(); } catch (_e) {} });
+    } catch (displayError) {
+      console.warn('[WallpaperCapture:display]', displayError);
+      var combined = new Error('WALLPAPER_CAPTURE_ALL_METHODS_FAILED: ' +
+        String(legacyError && (legacyError.message || legacyError.name) || 'legacy failed') + ' / ' +
+        String(displayError && (displayError.message || displayError.name) || 'display failed'));
+      combined.cause = displayError;
+      throw combined;
+    }
+  }
+  throw legacyError || new Error('WALLPAPER_CAPTURE_STREAM_EMPTY');
+}
+function waitWallpaperRecordDelay(ms) {
+  return new Promise(function(resolve){ setTimeout(resolve, Math.max(0, Number(ms) || 0)); });
+}
+var wallpaperRecordDelayResolver = null;
+var wallpaperRecordAbortRequested = false;
+var wallpaperRecordActiveStream = null;
+function setWallpaperRecordMonitor(status, detail, progress) {
+  var modal = document.getElementById('wallpaper-record-delay-modal');
+  var setup = document.getElementById('wallpaper-record-setup');
+  var live = document.getElementById('wallpaper-record-live');
+  var statusNode = document.getElementById('wallpaper-record-preview-status');
+  var detailNode = document.getElementById('wallpaper-record-live-detail');
+  var fill = document.getElementById('wallpaper-record-progress-fill');
+  if (modal) modal.classList.add('show');
+  if (setup) setup.hidden = true;
+  if (live) live.hidden = false;
+  if (statusNode && status != null) statusNode.textContent = String(status);
+  if (detailNode && detail != null) detailNode.textContent = String(detail);
+  if (fill && progress != null) fill.style.width = Math.max(0, Math.min(100, Number(progress) || 0)) + '%';
+}
+function attachWallpaperRecordPreview(stream) {
+  wallpaperRecordActiveStream = stream || null;
+  var video = document.getElementById('wallpaper-record-preview-video');
+  if (!video) return;
+  video.srcObject = stream || null;
+  if (stream) video.play().catch(function(){});
+}
+function closeWallpaperRecordMonitor() {
+  var modal = document.getElementById('wallpaper-record-delay-modal');
+  var setup = document.getElementById('wallpaper-record-setup');
+  var live = document.getElementById('wallpaper-record-live');
+  var fill = document.getElementById('wallpaper-record-progress-fill');
+  var video = document.getElementById('wallpaper-record-preview-video');
+  if (video) video.srcObject = null;
+  wallpaperRecordActiveStream = null;
+  if (fill) fill.style.width = '0%';
+  if (setup) setup.hidden = false;
+  if (live) live.hidden = true;
+  if (modal) modal.classList.remove('show');
+}
+function requestWallpaperRecordCancel() {
+  if (wallpaperRecordDelayResolver) {
+    finishWallpaperRecordDelay(false);
+    return;
+  }
+  if (!wallpaperSceneRecordBusy) {
+    closeWallpaperRecordMonitor();
+    return;
+  }
+  wallpaperRecordAbortRequested = true;
+  setWallpaperRecordMonitor('正在取消…', '正在安全停止录制与 Wallpaper Engine 窗口', 0);
+  if (wallpaperRecordActiveStream) {
+    wallpaperRecordActiveStream.getTracks().forEach(function(track){ try { track.stop(); } catch (_e) {} });
+  }
+}
+function ensureWallpaperRecordActive() {
+  if (wallpaperRecordAbortRequested) throw new Error('WALLPAPER_RECORD_CANCELLED');
+}
+function requestWallpaperRecordDelay(item) {
+  var modal = document.getElementById('wallpaper-record-delay-modal');
+  var input = document.getElementById('wallpaper-record-delay-input');
+  var desc = document.getElementById('wallpaper-record-delay-desc');
+  var setup = document.getElementById('wallpaper-record-setup');
+  var live = document.getElementById('wallpaper-record-live');
+  if (!modal || !input) return Promise.resolve(2);
+  if (wallpaperRecordDelayResolver) {
+    try { wallpaperRecordDelayResolver(null); } catch (_e) {}
+    wallpaperRecordDelayResolver = null;
+  }
+  wallpaperRecordAbortRequested = false;
+  input.value = '2';
+  if (setup) setup.hidden = false;
+  if (live) live.hidden = true;
+  if (desc) desc.textContent = '“' + String(item && item.title || 'Scene') + '”会立即显示实时画面，等待 ' + input.value + ' 秒后录制 15 秒并输出 ' + wallpaperRecordFps + ' FPS H.264 MP4。';
+  modal.classList.add('show');
+  requestAnimationFrame(function(){ input.focus(); input.select(); });
+  return new Promise(function(resolve){ wallpaperRecordDelayResolver = resolve; });
+}
+function finishWallpaperRecordDelay(confirmed) {
+  var modal = document.getElementById('wallpaper-record-delay-modal');
+  var input = document.getElementById('wallpaper-record-delay-input');
+  var resolve = wallpaperRecordDelayResolver;
+  wallpaperRecordDelayResolver = null;
+  if (!resolve) return;
+  if (!confirmed) {
+    if (modal) modal.classList.remove('show');
+    resolve(null);
+    return;
+  }
+  setWallpaperRecordMonitor('正在启动 Wallpaper Engine…', '正在快速检查 scene.pkg 并打开实时预览', 0);
+  resolve(Math.max(0, Math.min(30, Math.round(Number(input && input.value) || 0))));
+}
+function handleWallpaperRecordDelayKey(event) {
+  if (!event) return;
+  if (event.key === 'Enter') { event.preventDefault(); finishWallpaperRecordDelay(true); }
+  else if (event.key === 'Escape') { event.preventDefault(); finishWallpaperRecordDelay(false); }
+}
+async function recordWallpaperCaptureStream(stream, fps, onProgress) {
+  var mimeType = wallpaperRecorderMimeType();
+  var chunks = [];
+  var recorder = new MediaRecorder(stream, {
+    mimeType: mimeType,
+    videoBitsPerSecond: fps === 60 ? 8000000 : 5000000
+  });
+  var stopped = new Promise(function(resolve, reject){
+    recorder.ondataavailable = function(event){ if (event.data && event.data.size) chunks.push(event.data); };
+    recorder.onerror = function(event){ reject(event && event.error || new Error('WALLPAPER_RECORD_FAILED')); };
+    recorder.onstop = function(){ resolve(); };
+  });
+  recorder.start(500);
+  var startedAt = Date.now();
+  var lastRemaining = -1;
+  var loopError = null;
+  try {
+    while (Date.now() - startedAt < WALLPAPER_RECORD_DURATION_MS) {
+      ensureWallpaperRecordActive();
+      var elapsed = Date.now() - startedAt;
+      var remaining = Math.max(0, Math.ceil((WALLPAPER_RECORD_DURATION_MS - elapsed) / 1000));
+      if (remaining !== lastRemaining && onProgress) onProgress(remaining, elapsed);
+      lastRemaining = remaining;
+      await waitWallpaperRecordDelay(160);
+    }
+  } catch (error) {
+    loopError = error;
+  } finally {
+    if (recorder.state !== 'inactive') recorder.stop();
+  }
+  await stopped;
+  if (loopError) throw loopError;
+  if (!chunks.length) throw new Error('WALLPAPER_RECORD_EMPTY');
+  return new Blob(chunks, { type:(mimeType.split(';')[0] || 'video/webm') });
+}
+async function convertWallpaperRecordingBlob(item, blob, fps) {
+  var response = await fetch('/api/wallpaper/convert/recording?id=' + encodeURIComponent(item.id) + '&fps=' + encodeURIComponent(fps), {
+    method:'POST',
+    headers:{ 'Content-Type':blob.type || 'video/webm' },
+    body:blob
+  });
+  if (!response.ok) {
+    var detail = null;
+    try { detail = await response.json(); } catch (_e) {}
+    throw new Error(detail && detail.error || 'WALLPAPER_RECORDING_CONVERT_FAILED');
+  }
+  var converted = await response.blob();
+  if (!converted || converted.size < 1024) throw new Error('WALLPAPER_RECORDING_CONVERT_EMPTY');
+  return new Blob([converted], { type:'video/mp4' });
+}
+function setWallpaperSceneRecordButtonState(button, label) {
+  if (!button) return;
+  button.textContent = '↻ ' + label;
+}
+async function waitWallpaperSceneCountdown(seconds, button) {
+  var remaining = Math.max(0, Math.round(Number(seconds) || 0));
+  while (remaining > 0) {
+    ensureWallpaperRecordActive();
+    setWallpaperSceneRecordButtonState(button, '等待 ' + remaining + 's');
+    setWallpaperRecordMonitor('实时预览 · ' + remaining + ' 秒后录制', '现在看到的就是即将录制的画面；如有开屏广告可取消后重试', 0);
+    await waitWallpaperRecordDelay(1000);
+    remaining -= 1;
+  }
+}
+async function rerecordWallpaperEngineScene(index, event) {
+  var item = wallpaperEngineLibrary[Number(index)];
+  if (!item || wallpaperSceneRecordBusy) return;
+  var desktopApi = window.desktopWindow;
+  wallpaperSceneRecordBusy = true;
+  wallpaperRecordAbortRequested = false;
+  var button = event && event.currentTarget;
+  if (button && button.querySelector && !button.classList.contains('wallpaper-card-rerecord')) {
+    button = button.querySelector('.wallpaper-card-rerecord');
+  }
+  if (button) {
+    button.classList.add('busy');
+    setWallpaperSceneRecordButtonState(button, '准备中…');
+  }
+  var stream = null;
+  try {
+    var waitSeconds = await requestWallpaperRecordDelay(item);
+    if (waitSeconds == null) return;
+    if (!desktopApi || typeof desktopApi.prepareWallpaperCapture !== 'function' || !navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function' || !window.MediaRecorder) {
+      throw new Error('WALLPAPER_CAPTURE_UNSUPPORTED');
+    }
+    setWallpaperSceneRecordButtonState(button, '启动中…');
+    setWallpaperRecordMonitor('正在启动 Wallpaper Engine…', '快速检查 scene.pkg，随后马上显示实时画面', 0);
+    var start = await apiJson('/api/wallpaper/capture/start?id=' + encodeURIComponent(item.id) + '&width=1920&height=1080', {
+      method:'POST', timeoutMs:10000
+    });
+    if (!start || start.ok === false) throw new Error(start && start.error || 'WALLPAPER_CAPTURE_START_FAILED');
+    ensureWallpaperRecordActive();
+    setWallpaperRecordMonitor('正在连接实时画面…', 'Wallpaper Engine 已启动，正在寻找录制窗口', 0);
+    var prepared = await desktopApi.prepareWallpaperCapture({ windowTitle:start.windowTitle || 'Mineradio Wallpaper Capture' });
+    if (!prepared || !prepared.ok) throw new Error(prepared && prepared.error || 'WALLPAPER_CAPTURE_WINDOW_NOT_FOUND');
+    ensureWallpaperRecordActive();
+    stream = await openWallpaperCaptureStream(prepared.sourceId, wallpaperRecordFps);
+    if (!stream || !stream.getVideoTracks || !stream.getVideoTracks().length) throw new Error('WALLPAPER_CAPTURE_STREAM_EMPTY');
+    wallpaperRecordActiveStream = stream;
+    attachWallpaperRecordPreview(stream);
+    await waitWallpaperRecordDelay(180);
+    await waitWallpaperSceneCountdown(waitSeconds, button);
+    ensureWallpaperRecordActive();
+    setWallpaperSceneRecordButtonState(button, '录制中…');
+    showToast('实时录制已开始 · 15 秒 · ' + wallpaperRecordFps + ' FPS');
+    setWallpaperRecordMonitor('正在录制 · 15 秒', '实时画面已连接，请保持 Wallpaper Engine 窗口运行', 0);
+    var captureBlob = await recordWallpaperCaptureStream(stream, wallpaperRecordFps, function(seconds, elapsed){
+      setWallpaperSceneRecordButtonState(button, '录制 ' + seconds + 's');
+      setWallpaperRecordMonitor('正在录制 · 剩余 ' + seconds + ' 秒', '下方画面就是最终 MP4 的实时内容', Math.min(100, elapsed / WALLPAPER_RECORD_DURATION_MS * 100));
+    });
+    stream.getTracks().forEach(function(track){ try { track.stop(); } catch (_e) {} });
+    stream = null;
+    wallpaperRecordActiveStream = null;
+    setWallpaperSceneRecordButtonState(button, '编码 MP4…');
+    setWallpaperRecordMonitor('录制完成 · 正在编码 MP4…', 'FFmpeg 正在输出 H.264，硬件编码可用时会自动加速', 100);
+    var blob = await convertWallpaperRecordingBlob(item, captureBlob, wallpaperRecordFps);
+    var blobId = 'wallpaper-scene-recording-' + String(item.id);
+    await putCustomBackgroundBlob(blobId, blob, {
+      name:item.title || 'Wallpaper Engine Scene',
+      mime:'video/mp4',
+      size:blob.size || 0,
+      wallpaperItemId:String(item.id),
+      fps:wallpaperRecordFps
+    });
+    wallpaperSceneRecordings[String(item.id)] = {
+      blobId:blobId,
+      title:item.title || '',
+      mime:'video/mp4',
+      size:blob.size || 0,
+      fps:wallpaperRecordFps,
+      recordedAt:Date.now()
+    };
+    saveWallpaperSceneRecordings();
+    mergeWallpaperSceneRecordings();
+    renderWallpaperPicker();
+    setCustomBackgroundMedia({
+      type:'video', id:blobId, name:(item.title || 'Wallpaper Engine') + '（Scene 动态转换）',
+      title:item.title || '', wallpaper:true
+    }, true);
+    fx.backgroundOpacity = 1;
+    wallpaperCoverExpanded = false;
+    wallpaperCoverToggleTouched = true;
+    updateCustomBackgroundControls();
+    saveLyricLayout();
+    closeWallpaperPicker();
+    showToast('Scene 已转换并应用：' + wallpaperRecordFps + ' FPS');
+  } catch (error) {
+    console.warn('[WallpaperSceneRecord]', error);
+    var message = error && error.message || '';
+    if (message === 'WALLPAPER_RECORD_CANCELLED') showToast('已取消 Scene 录制');
+    else if (message === 'WALLPAPER_CAPTURE_UNSUPPORTED') showToast('当前环境不支持 Scene 动态转换，请从 Mineradio 本体打开');
+    else if (message === 'WALLPAPER_ENGINE_NOT_FOUND') showToast('没有找到 Wallpaper Engine 本体');
+    else if (message === 'WALLPAPER_CAPTURE_WINDOW_NOT_FOUND') showToast('没有找到 Scene 录制窗口，请确认 Wallpaper Engine 已启动');
+    else if (/WALLPAPER_CAPTURE_ALL_METHODS_FAILED/.test(message)) showToast('Scene 取画面失败：' + message.replace(/^WALLPAPER_CAPTURE_ALL_METHODS_FAILED:\s*/, '').slice(0, 120));
+    else showToast('Scene 转换失败：' + (message || '请确认 Wallpaper Engine 正在运行'));
+  } finally {
+    if (stream) stream.getTracks().forEach(function(track){ try { track.stop(); } catch (_e) {} });
+    wallpaperRecordActiveStream = null;
+    try { await desktopApi.finishWallpaperCapture(); } catch (_e) {}
+    try { await apiJson('/api/wallpaper/capture/stop', { method:'POST', timeoutMs:6000 }); } catch (_e) {}
+    wallpaperSceneRecordBusy = false;
+    wallpaperRecordAbortRequested = false;
+    closeWallpaperRecordMonitor();
+    if (button) {
+      button.classList.remove('busy');
+      setWallpaperSceneRecordButtonState(button, item && item.recordedBlobId ? '重录' : '转换');
+    }
   }
 }
 function readBackgroundImageFile(file) {
@@ -35225,7 +35732,30 @@ function executeHotkeyAction(actionKey, source) {
   if (actionKey === 'volumeUp') return adjustVolumeByKeyboard(0.05);
   if (actionKey === 'volumeDown') return adjustVolumeByKeyboard(-0.05);
   if (actionKey === 'toggleFullscreen') return toggleFullscreen();
+  if (actionKey === 'toggleDesktopInteraction') {
+    var api = getDesktopWindowApi && getDesktopWindowApi();
+    if (api && typeof api.getState === 'function') {
+      return api.getState().then(function(state){
+        if (state && state.isDesktopEmbedded) {
+          if (typeof api.toggleDesktopInteraction === 'function') return api.toggleDesktopInteraction();
+          return;
+        }
+        fx.wallpaperMode = true;
+        applyWallpaperModeState(true);
+        updateFxInputs();
+        saveLyricLayout();
+        showToast('桌面模式已开启 · ' + desktopInteractionHotkeyHint());
+      }).catch(function(){});
+    }
+    if (api && typeof api.toggleDesktopInteraction === 'function') return api.toggleDesktopInteraction();
+    return;
+  }
   if (actionKey === 'toggleDesktopLyrics') return toggleFx('desktopLyrics');
+}
+function desktopInteractionHotkeyHint() {
+  var binding = hotkeySettings && hotkeySettings.global && hotkeySettings.global.toggleDesktopInteraction;
+  if (!binding) return '可在 DIY → 热键 → 全局热键中设置操作层快捷键';
+  return '按 ' + formatHotkey(binding) + ' 切换操作播放器 / 桌面图标';
 }
 function handleConfiguredLocalHotkey(e) {
   if (!hotkeySettings || !hotkeySettings.local || isTypingTarget(e.target)) return false;
@@ -35988,7 +36518,7 @@ function toggleFx(key) {
   if (key === 'desktopLyricsGlow') showToast(fx.desktopLyricsGlow !== false ? '桌面歌词泛光已开启' : '桌面歌词泛光已关闭');
   if (key === 'desktopLyricsCinema') showToast(fx.desktopLyricsCinema !== false ? '桌面歌词电影震动已开启' : '桌面歌词电影震动已关闭，基础漂浮保留');
   if (key === 'desktopLyricsHighlight') showToast(fx.desktopLyricsHighlight === true ? '桌面歌词高亮跟随已开启' : '桌面歌词高亮跟随已关闭');
-  if (key === 'wallpaperMode') showToast(fx.wallpaperMode ? '桌面融合播放已开启' : '桌面融合播放已关闭');
+  if (key === 'wallpaperMode') showToast(fx.wallpaperMode ? ('桌面模式已开启 · ' + desktopInteractionHotkeyHint()) : '桌面融合播放已关闭');
   if (key === 'shelfShowPodcasts') showToast('3D歌单架已保持纯本地内容');
   if (key === 'shelfMergeCollections') showToast(fx.shelfMergeCollections === true ? '我的歌单与收藏歌单已合并滚动' : '收藏歌单恢复滚到底切页');
   if (key === 'liveBackgroundKeep') showToast(fx.liveBackgroundKeep ? '直播后台保持已开启' : '直播后台保持已关闭');
@@ -40023,8 +40553,8 @@ updateLikeButtons();
 if (LOCAL_ONLY_MODE) scheduleSavedLocalMusicFolderRestore(700);
 if (LOCAL_ONLY_MODE) setTimeout(function(){ loadLxMirrorPlaylists(true); }, 1100);
 if (LOCAL_ONLY_MODE && !PURE_MR_SOURCE_MODE) setInterval(function(){
-  if (!lxBridgeActive && !lxExternalActivationBusy) fetchLxBridgeStatus();
-}, 700);
+  if (!document.hidden && !lxBridgeActive && !lxExternalActivationBusy) fetchLxBridgeStatus();
+}, 5000);
 if (!LOCAL_ONLY_MODE) setTimeout(initUpdatePreview, 9000);
 
 // ============================================================
@@ -40054,6 +40584,14 @@ function getAdaptiveRenderFps() {
     if (tier >= 1) return RENDER_INTERACTION_LARGE_FPS;
     return RENDER_INTERACTION_FPS;
   }
+  // Playback and user interaction retain the full animation rate. A visible
+  // but genuinely idle player can render slower to reduce GPU/CPU use.
+  var playbackActive = !!(
+    (typeof playing !== 'undefined' && playing) ||
+    (typeof audio !== 'undefined' && audio && !audio.paused && !audio.ended) ||
+    (typeof lxBridgeActive !== 'undefined' && lxBridgeActive)
+  );
+  if (!playbackActive) return tier >= 1 ? RENDER_IDLE_LARGE_FPS : RENDER_IDLE_FPS;
   if (tier >= 2) return RENDER_HUGE_FPS;
   if (tier >= 1) return RENDER_LARGE_FPS;
   return RENDER_ACTIVE_FPS;
