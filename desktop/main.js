@@ -185,6 +185,10 @@ const DESKTOP_UI_STATE_KEYS = new Set([
   'mineradio-fx-fab-auto-hide-v1',
   'mineradio-controls-auto-hide-v1',
   'mineradio-ui-motion-v1',
+  'mineradio-primary-nav-auto-hide-v1',
+  'mineradio-primary-nav-auto-hide-v2',
+  'mineradio-primary-nav-auto-hide-v3',
+  'mineradio-primary-nav-manual-hidden-v1',
   'mineradio-free-camera-v1',
   'mineradio-local-library-folder-v1',
   'mineradio-local-library-folders-v2',
@@ -1149,7 +1153,9 @@ function getUpdateDownloadDir() {
 function shouldEnsureDesktopShortcut() {
   if (process.platform !== 'win32') return false;
   if (process.env.MINERADIO_NO_DESKTOP_SHORTCUT === '1') return false;
-  return app.isPackaged || process.env.MINERADIO_CREATE_DESKTOP_SHORTCUT === '1';
+  // The installer owns shortcut creation. Recreating a deleted shortcut on
+  // every packaged-app launch ignores the user's explicit deletion.
+  return process.env.MINERADIO_CREATE_DESKTOP_SHORTCUT === '1';
 }
 
 function ensureDesktopShortcut() {

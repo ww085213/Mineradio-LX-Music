@@ -14,7 +14,7 @@
     "build:mac": "electron-builder --mac dmg zip --universal --publish never"
   },
   "build": {
-    "buildVersion": "1.5.5",
+    "buildVersion": "1.5.5.1",
     "appId": "com.mineradio.desktop",
     "productName": "Mineradio",
     "directories": {
@@ -41,6 +41,7 @@
       "!updates/**/*",
       "!backups/**/*",
       "server.js",
+      "wallpaper-converter.js",
       "dj-analyzer.js",
       "lx-search.js",
       "lx-source-host.js",
@@ -81,10 +82,10 @@
           ]
         }
       ],
-      "artifactName": "Mineradio-1.5.5-mac-${arch}.${ext}"
+      "artifactName": "Mineradio-1.5.5.1-mac-${arch}.${ext}"
     },
     "dmg": {
-      "artifactName": "Mineradio-1.5.5-mac-${arch}.${ext}"
+      "artifactName": "Mineradio-1.5.5.1-mac-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -95,11 +96,8 @@
       "shortcutName": "Mineradio",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
-      "installerSidebar": "build/installerSidebar.bmp",
-      "uninstallerSidebar": "build/installerSidebar.bmp",
-      "installerHeader": "build/installerHeader.bmp",
       "include": "build/installer.nsh",
-      "artifactName": "Mineradio.Setup.1.5.5.${ext}"
+      "artifactName": "Mineradio.Setup.1.5.5.1.${ext}"
     },
     "publish": [
       {
@@ -110,7 +108,7 @@
     ]
   },
   "mineradio": {
-    "releaseVersion": "1.5.5",
+    "releaseVersion": "1.5.5.1",
     "update": {
       "provider": "github",
       "owner": "ww085213",

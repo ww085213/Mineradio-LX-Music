@@ -198,6 +198,64 @@ function finalizeImportedSongs(songs, prefix) {
     .filter(song => song && song.name && song.songmid);
 }
 
+function platformMatchText(value) {
+  return String(value || '').normalize('NFKC').toLowerCase()
+    .replace(/^https?:\/\/\S+$/i, '')
+    .replace(/&amp;/g, '&')
+    .replace(/[\s·•・,，、/\\|_\-—–:：;；'"“”‘’()（）\[\]【】]+/g, ' ')
+    .trim();
+}
+
+function platformMatchScore(reference, candidate) {
+  const wantedTitle = platformMatchText(reference && reference.name);
+  const title = platformMatchText(candidate && candidate.name);
+  if (!wantedTitle || !title) return -1;
+  let score = title === wantedTitle ? 100 : (title.includes(wantedTitle) || wantedTitle.includes(title) ? 62 : 0);
+  const wantedSinger = platformMatchText(reference && reference.singer);
+  const singer = platformMatchText(candidate && candidate.singer);
+  if (wantedSinger && singer) {
+    if (wantedSinger === singer) score += 45;
+    else {
+      const tokens = wantedSinger.split(' ').filter(token => token.length > 1);
+      score += tokens.filter(token => singer.includes(token)).length * 12;
+    }
+  }
+  return score;
+}
+
+async function matchReferenceSongsForPlayback(rows, metaKey) {
+  const matched = new Array((rows || []).length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < rows.length) {
+      const index = cursor++;
+      const row = rows[index];
+      try {
+        const found = await lxSearch.searchAll([row.name, platformMatchText(row.singer)].filter(Boolean).join(' '), {
+          sources:'tx,wy,kw,kg,mg', limit:10,
+        });
+        const candidates = found && Array.isArray(found.songs) ? found.songs.slice() : [];
+        candidates.sort((a, b) => platformMatchScore(row, b) - platformMatchScore(row, a));
+        const best = candidates[0];
+        if (best && platformMatchScore(row, best) >= 62) {
+          matched[index] = Object.assign({}, best, {
+            picUrl:best.picUrl || row.picUrl || '',
+            [metaKey]:Object.assign({}, row),
+            needsCrossPlatformMatch:false,
+          });
+          continue;
+        }
+      } catch (_error) {}
+      matched[index] = Object.assign({}, row, {
+        singer:platformMatchText(row.singer) || '未知歌手',
+        needsCrossPlatformMatch:true,
+      });
+    }
+  }
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  return matched.filter(Boolean);
+}
+
 function parseAssignedJson(html, marker) {
   const markerIndex = String(html || '').indexOf(marker);
   if (markerIndex < 0) return null;
@@ -1957,37 +2015,36 @@ async function importSpotify(id, input, context = {}) {
     const publicPageUrl = new URL(sourceUrl);
     publicPageUrl.search = '';
     publicPageUrl.hash = '';
-    // Spotify's compact embed endpoint is substantially faster and already
-    // contains up to 50 public tracks in __NEXT_DATA__. Prefer it before the
-    // much larger consumer page, especially on restricted networks.
+    // Keep the compact embed page only as a network fallback.  Its trackList
+    // is capped and omits per-track album artwork, so returning it first made
+    // large playlists look complete at 100 songs and left old imports without
+    // covers.
+    let embedFallback = null;
     try {
       const embedUrl = `https://open.spotify.com/embed/playlist/${encodeURIComponent(id)}`;
-      const embedResult = spotifyEmbedResult(parseSpotifyEmbedPage(await fetchText(embedUrl, { timeoutMs:7000 })));
-      if (embedResult) return embedResult;
+      embedFallback = spotifyEmbedResult(parseSpotifyEmbedPage(await fetchText(embedUrl, { timeoutMs:7000 })));
     } catch (_error) {}
     let html = /^https?:\/\/open\.spotify\.com\/playlist\//i.test(String(context.resolvedUrl || '')) && context.html
       ? context.html
       : await fetchText(publicPageUrl.href, { timeoutMs:8000 }).catch(error => {
+          if (embedFallback) return '';
           if (/HTTP_404/i.test(String(error && error.message || ''))) throw new Error('小绿歌单未公开或仅自己可见；请在小绿中设为公开后重新复制链接');
           throw new Error('小绿连接受限，未能读取公开歌单；请稍后重试或切换可访问 Spotify 的网络');
         });
     let entity = parseSpotifyPage(html);
     if (!entity) {
+      if (embedFallback) {
+        embedFallback.songs = await matchReferenceSongsForPlayback(embedFallback.songs, 'spotifyMeta');
+        embedFallback.totalTracks = embedFallback.songs.length;
+        embedFallback.previewTracks = embedFallback.songs.length;
+        embedFallback.partial = false;
+        return embedFallback;
+      }
       if (/Page not found|status["']?\s*:\s*404/i.test(html)) throw new Error('小绿歌单未公开或仅自己可见；请在小绿中设为公开后重新复制链接');
       throw new Error('小绿公开歌单页面没有返回曲目，请确认分享链接有效');
     }
     let wrappers = Array.isArray(entity?.content?.items) ? entity.content.items.slice() : [];
-    const rawNextOffset = entity?.content?.pagingInfo?.nextOffset;
-    const nextOffset = rawNextOffset != null ? Number(rawNextOffset) : (wrappers.length >= 30 ? 30 : 0);
-    if (Number.isFinite(nextOffset) && nextOffset > 0) {
-      try {
-        const pageUrl = new URL(sourceUrl);
-        pageUrl.search = '';
-        pageUrl.searchParams.set('offset', String(nextOffset));
-        const nextEntity = parseSpotifyPage(await fetchText(pageUrl.href));
-        if (nextEntity?.content?.items?.length) wrappers = wrappers.concat(nextEntity.content.items);
-      } catch (_error) {}
-    }
+    const totalTracks = Math.max(wrappers.length, Number(entity?.content?.totalCount) || 0);
     const rows = uniqueBy(wrappers.map(wrapper => wrapper?.itemV2?.data || wrapper?.item?.data || wrapper?.track).filter(Boolean).map(track => {
       const artists = (track?.artists?.items || track?.artists || []).map(item => item?.profile?.name || item?.name).filter(Boolean).join('、');
       const sources = track?.albumOfTrack?.coverArt?.sources || track?.album?.coverArt?.sources || [];
@@ -2003,7 +2060,15 @@ async function importSpotify(id, input, context = {}) {
     }).filter(row => row.name && row.singer), row => `${row.spotifyId || row.name}|${row.singer}`);
     if (!rows.length) throw new Error('小绿歌单没有可导入的公开曲目');
     const cover = entity?.images?.items?.[0]?.sources?.[0]?.url || rows.find(row => row.picUrl)?.picUrl || '';
-    return { name:entity.name || '小绿歌单', cover, songs:rows };
+    return {
+      name:entity.name || '小绿歌单',
+      cover,
+      songs:await matchReferenceSongsForPlayback(rows, 'spotifyMeta'),
+      totalTracks,
+      previewTracks:rows.length,
+      partial:totalTracks > rows.length,
+      importLimitReason:totalTracks > rows.length ? 'SPOTIFY_PUBLIC_PREVIEW_LIMIT' : '',
+    };
   }
   if (!/\/track\//i.test(sourceUrl)) {
     throw new Error('无法识别小绿分享链接，请粘贴公开歌单或单曲链接');
@@ -2237,6 +2302,10 @@ async function importPlaylist(input, preferredSource) {
       sourceListId:parsed.id,
       sourceInput:parsed.input || originalInput || parsed.id,
       imported:true,
+      totalTracks:Number(result.totalTracks) || (result.songs || []).length,
+      previewTracks:Number(result.previewTracks) || (result.songs || []).length,
+      partial:result.partial === true,
+      importLimitReason:String(result.importLimitReason || ''),
       songs:result.songs,
     },
   };

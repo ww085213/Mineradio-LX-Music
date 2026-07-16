@@ -905,6 +905,9 @@ async function probeAudioUrl(url, playbackHeaders) {
     if (bytes.length >= 4 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
       return { codec: 'wav', lossless: true, bitrate: 0, sampleRate: 0 };
     }
+    if (bytes.length >= 12 && bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
+      return { codec: 'm4a', lossless: false, bitrate: 0, sampleRate: 0 };
+    }
     const mp3 = readMp3FrameInfo(bytes);
     if (mp3) return mp3;
     throw new Error('LX_AUDIO_FORMAT_UNVERIFIED');
@@ -970,19 +973,25 @@ async function resolveMusicUrl(source, musicInfo, quality, options) {
   const cached = musicUrlCache.get(cacheKey);
   if (!excludedResolvers.size && cached && Date.now() - cached.time < 90 * 1000) return cached.value;
   const activeHost = await getRuntime();
-  const hostPromises = [Promise.resolve(activeHost)];
+  // Follow LX Music's selected-source-first behaviour.  Initialising every
+  // installed script here used to make one click fan out across 20+ sources
+  // and wait for the global 45 second timeout.  Fallback runtimes are now
+  // created lazily and tried in a short, deterministic sequence.
+  const hostLoaders = [async() => activeHost];
   for (const record of allScriptRecords()) {
     if (record.id === activeHost.id) continue;
-    if (!fallbackRuntimeCache.has(record.id)) {
-      fallbackRuntimeCache.set(record.id, createRuntime(record).catch(err => {
-        fallbackRuntimeCache.delete(record.id);
-        throw err;
-      }));
-    }
-    hostPromises.push(fallbackRuntimeCache.get(record.id));
+    hostLoaders.push(async() => {
+      if (!fallbackRuntimeCache.has(record.id)) {
+        fallbackRuntimeCache.set(record.id, createRuntime(record).catch(err => {
+          fallbackRuntimeCache.delete(record.id);
+          throw err;
+        }));
+      }
+      return fallbackRuntimeCache.get(record.id);
+    });
   }
-  const attempts = hostPromises.map(async hostPromise => {
-    const host = await hostPromise;
+  const maxResolvers = Math.max(1, Math.min(8, Number(options.maxResolvers) || 6));
+  const resolveWithHost = async(host) => {
     if (excludedResolvers.has(String(host.name || '').trim().toLowerCase()) ||
         excludedResolvers.has(String(host.id || '').trim().toLowerCase())) {
       throw new Error('LX_SOURCE_EXCLUDED');
@@ -993,13 +1002,13 @@ async function resolveMusicUrl(source, musicInfo, quality, options) {
       : (fallbackMap[requested] || [requested, 'flac', '320k', '128k']);
     const candidates = rawCandidates
       .filter((item, index, all) => item && sourceSupportsQuality(supported, item) && all.indexOf(item) === index)
-      .slice(0, 4);
+      .slice(0, 2);
     if (!host.sources[source] || !candidates.length) throw new Error('LX_QUALITY_UNSUPPORTED');
     const errors = [];
     for (const candidate of candidates) {
       const candidateVariants = qualityVariants(candidate)
         .filter((item, index, all) => item && sourceSupportsQuality(supported, item) && all.indexOf(item) === index)
-        .slice(0, 4);
+        .slice(0, 2);
       for (const candidateVariant of candidateVariants) {
       try {
         const result = await withTimeout(
@@ -1014,16 +1023,31 @@ async function resolveMusicUrl(source, musicInfo, quality, options) {
         }
         if (url) {
           let probe = null;
+          let probeWarning = '';
           try {
             probe = await probeAudioUrl(url, playbackHeaders);
             if (!audioProbeSatisfiesQuality(probe, requested)) {
-              errors.push(`${candidate}:LX_AUDIO_QUALITY_DOWNGRADED_${probe.codec}_${probe.bitrate || 0}`);
-              if (requested && !['master', 'flac24bit', 'hires', 'flac'].includes(requested)) continue;
+              // The resolver's URL is still useful even when the provider
+              // silently downgrades quality. Playback should verify whether
+              // Chromium can decode it, while downloads validate the actual
+              // response again before saving. Rejecting here made every
+              // source unusable when a 128K request returned a valid VBR MP3.
+              probeWarning = `LX_AUDIO_QUALITY_DOWNGRADED_${probe.codec}_${probe.bitrate || 0}`;
+              errors.push(`${candidate}:${probeWarning}`);
             }
           } catch (probeErr) {
-            errors.push(`${candidate}:${probeErr && probeErr.message ? probeErr.message : 'LX_AUDIO_PROBE_FAILED'}_ACCEPTED`);
+            const probeMessage = probeErr && probeErr.message ? probeErr.message : 'LX_AUDIO_PROBE_FAILED';
+            errors.push(`${candidate}:${probeMessage}`);
+            // A large number of otherwise playable providers reject Range
+            // probes, return AAC/M4A headers, or require Chromium's media
+            // request shape. Treat probing as advisory and let the playback
+            // proxy / download writer perform the definitive validation.
+            probeWarning = probeMessage;
+            // A definite missing resource should still advance to the next
+            // resolver instead of making the player retry a known dead URL.
+            if (/^LX_AUDIO_PROBE_HTTP_(?:404|410)$/i.test(probeMessage)) continue;
           }
-          return { url, headers: playbackHeaders, quality: candidateVariant, requestedQuality: candidate, actual: probe, resolver: host.name };
+          return { url, headers: playbackHeaders, quality: candidateVariant, requestedQuality: candidate, actual: probe, probeWarning, resolver: host.name };
         }
         errors.push(`${candidateVariant}:LX_SOURCE_URL_INVALID`);
       } catch (err) {
@@ -1032,25 +1056,31 @@ async function resolveMusicUrl(source, musicInfo, quality, options) {
       }
     }
     throw new Error(errors.join(';') || 'LX_SOURCE_RESOLVE_FAILED');
-  });
-  try {
-    const value = await Promise.race([
-      Promise.any(attempts),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('所有音源解析超时')), 45000)),
-    ]);
-    if (value && value.url) {
-      musicUrlCache.set(cacheKey, { time:Date.now(), value });
-      if (musicUrlCache.size > 120) musicUrlCache.delete(musicUrlCache.keys().next().value);
+  };
+  const errors = [];
+  let tried = 0;
+  for (const loadHost of hostLoaders) {
+    if (tried >= maxResolvers) break;
+    let host;
+    try {
+      host = await withTimeout(loadHost(), 2500, 'LX_SOURCE_INIT_TIMEOUT');
+      if (excludedResolvers.has(String(host.name || '').trim().toLowerCase()) ||
+          excludedResolvers.has(String(host.id || '').trim().toLowerCase())) continue;
+      tried++;
+      const value = await withTimeout(resolveWithHost(host), 8000, 'LX_SOURCE_RESOLVER_TIMEOUT');
+      if (value && value.url) {
+        musicUrlCache.set(cacheKey, { time:Date.now(), value });
+        if (musicUrlCache.size > 120) musicUrlCache.delete(musicUrlCache.keys().next().value);
+        return value;
+      }
+    } catch (error) {
+      errors.push(`${host && host.name ? host.name : 'unknown'}:${error && error.message ? error.message : 'LX_SOURCE_RESOLVE_FAILED'}`);
     }
-    return value;
-  } catch (error) {
-    if (error && error.message === '所有音源解析超时') throw error;
-    const reasons = error && Array.isArray(error.errors)
-      ? error.errors.map(item => item && item.message).filter(Boolean)
-      : [];
-    if (reasons.length) console.warn('[LXSourceAllRejected]', reasons);
-    throw new Error('这首歌的所有可用音源和音质均解析失败，请稍后重试或更换音源');
   }
+  if (errors.length) console.warn('[LXSourceSequentialRejected]', errors);
+  throw new Error(tried
+    ? '当前音源及备用音源均解析失败，请切换音源后重试'
+    : '没有可用于这首歌的音源');
 }
 
 async function resolveLyrics(source, musicInfo) {
