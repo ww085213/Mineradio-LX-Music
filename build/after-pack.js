@@ -51,7 +51,7 @@ module.exports = async function afterPack(context) {
   if (!fs.existsSync(exePath)) throw new Error(`Mineradio executable was not found: ${exePath}`);
   if (!fs.existsSync(iconPath)) throw new Error(`Mineradio icon was not found: ${iconPath}`);
 
-  const version = context.packager.appInfo.version;
+  const version = context.packager.appInfo.buildVersion || context.packager.appInfo.version;
   console.log(`  • injecting Mineradio resources  rcedit=${rceditPath}`);
   execFileSync(rceditPath, [
     exePath,

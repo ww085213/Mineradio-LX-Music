@@ -148,7 +148,7 @@ function applySecurityHeaders(res) {
   res.setHeader('Permissions-Policy', 'camera=(self), geolocation=(), microphone=()');
   res.setHeader('Content-Security-Policy', [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' blob:",
+    "script-src 'self' 'unsafe-inline' blob: https://cdn.jsdelivr.net https://unpkg.com",
     "worker-src 'self' blob:",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "img-src 'self' data: blob: http: https:",
@@ -1899,7 +1899,7 @@ function readBinaryRequestBody(req, maxBytes) {
 //  Daily hot 30 recommendation
 // ====================================================================
 const DAILY_HOT_CACHE_MS = 6 * 60 * 60 * 1000;
-let dailyHotCache = null;
+let dailyHotCache = Object.create(null);
 function dailyHotDurationText(seconds) {
   seconds = Math.max(0, Math.round(Number(seconds) || 0));
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
@@ -1931,6 +1931,29 @@ async function dailyHotFetchJson(targetUrl, options = {}) {
     });
     if (!response.ok) throw new Error(`HTTP_${response.status}`);
     return await response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function dailyHotFetchText(targetUrl, options = {}) {
+  const fetchImpl = electronNet && typeof electronNet.fetch === 'function'
+    ? electronNet.fetch.bind(electronNet)
+    : globalThis.fetch;
+  if (typeof fetchImpl !== 'function') throw new Error('FETCH_UNAVAILABLE');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Number(options.timeoutMs) || 12000);
+  try {
+    const response = await fetchImpl(targetUrl, {
+      method: options.method || 'GET',
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: {
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        ...(options.headers || {}),
+      },
+    });
+    if (!response.ok) throw new Error(`HTTP_${response.status}`);
+    return await response.text();
   } finally {
     clearTimeout(timer);
   }
@@ -1989,26 +2012,195 @@ async function fetchNeteaseHotSeeds(limit) {
   if (lastError) throw lastError;
   return [];
 }
-const DAILY_HOT_FALLBACK_SEEDS = [
-  ['句号', 'G.E.M.邓紫棋'], ['悬溺', '葛东琪'], ['若月亮没来', '王宇宙Leto / 乔浚丞'], ['凄美地', '郭顶'],
-  ['离别开出花', '就是南方凯'], ['唯一', '告五人'], ['不如见一面', '海来阿木'], ['晴天', '周杰伦'],
-  ['起风了', '买辣椒也用券'], ['可能', '程响'], ['后来', '刘若英'], ['反方向的钟', '周杰伦'],
-  ['你不是真正的快乐', '五月天'], ['如愿', '王菲'], ['嘉宾', '张远'], ['爱人错过', '告五人'],
-  ['一路生花', '温奕心'], ['我记得', '赵雷'], ['Night Dancer', 'imase'], ['APT.', 'ROSÉ / Bruno Mars'],
-  ['Die With A Smile', 'Lady Gaga / Bruno Mars'], ['Espresso', 'Sabrina Carpenter'], ['Birds of a Feather', 'Billie Eilish'], ['Lose Control', 'Teddy Swims'],
-  ['Cruel Summer', 'Taylor Swift'], ['Seven', 'Jung Kook'], ['Supernova', 'aespa'], ['Drama', 'aespa'],
-  ['Magnetic', 'ILLIT'], ['Ditto', 'NewJeans'], ['青花瓷', '周杰伦'], ['稻香', '周杰伦'],
-].map(([name, singer]) => ({ name, singer, source: 'wy', songmid: '', id: '', interval: '', types: ['flac', '320k', '128k'] }));
-async function resolveDailyHotSeedsAcrossSources(seeds, limit) {
-  const out = [];
+function dailyHotSongFromQQRank(item) {
+  item = item?.data || item || {};
+  const albumMid = item.albummid || item.album?.mid || '';
+  const mediaMid = item.strMediaMid || item.file?.media_mid || item.songmid || item.mid || '';
+  return {
+    id: item.songid || item.id,
+    songmid: item.songmid || item.mid,
+    name: item.songname || item.title || item.name || '',
+    singer: dailyHotSingers(item.singer),
+    albumName: item.albumname || item.album?.name || '',
+    albumId: albumMid,
+    albumMid,
+    strMediaMid: mediaMid,
+    picUrl: albumMid ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${albumMid}.jpg` : '',
+    interval: dailyHotDurationText(item.interval),
+    source: 'tx',
+    types: ['flac', '320k', '128k'],
+  };
+}
+async function fetchQQHotSeeds(limit) {
+  const target = `https://c.y.qq.com/v8/fcg-bin/fcg_v8_toplist_cp.fcg?topid=26&page=detail&type=top&song_begin=0&song_num=${Math.max(30, limit)}&g_tk=5381&format=json`;
+  const data = await dailyHotFetchJson(target, {
+    timeoutMs: 14000,
+    headers: { referer:'https://y.qq.com/n/ryqq/toplist/26' },
+  });
+  return (data?.songlist || []).map(dailyHotSongFromQQRank).filter(song => song.name).slice(0, limit);
+}
+function dailyHotSplitTopLevelArguments(text) {
+  const output = [];
+  let start = 0;
+  let depth = 0;
+  let quote = '';
+  let escaped = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (quote) {
+      if (escaped) { escaped = false; continue; }
+      if (char === '\\') { escaped = true; continue; }
+      if (char === quote) quote = '';
+      continue;
+    }
+    if (char === '"' || char === "'") { quote = char; continue; }
+    if (char === '(' || char === '[' || char === '{') depth += 1;
+    else if (char === ')' || char === ']' || char === '}') depth -= 1;
+    else if (char === ',' && depth === 0) {
+      output.push(text.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  output.push(text.slice(start).trim());
+  return output;
+}
+function dailyHotDecodeNuxtToken(token, argumentMap) {
+  token = String(token || '').trim();
+  if (Object.prototype.hasOwnProperty.call(argumentMap, token) && argumentMap[token] !== token) {
+    return dailyHotDecodeNuxtToken(argumentMap[token], argumentMap);
+  }
+  if (/^"(?:\\.|[^"\\])*"$/.test(token)) {
+    try { return JSON.parse(token); } catch (_error) {}
+  }
+  return '';
+}
+async function fetchKuwoHotSeeds(limit) {
+  const html = await dailyHotFetchText('https://m.kuwo.cn/newh5app/ranklist_detail/16', {
+    timeoutMs: 16000,
+    headers: { referer:'https://m.kuwo.cn/newh5app/ranklist' },
+  });
+  const match = html.match(/<script>\s*window\.__NUXT__=([\s\S]*?)<\/script>/i);
+  if (!match) throw new Error('KUWO_CHART_DATA_MISSING');
+  const expression = match[1].trim().replace(/;$/, '');
+  const functionMatch = expression.match(/^\(function\(([^)]*)\)\{([\s\S]*)\}\(([\s\S]*)\)\)$/);
+  if (!functionMatch) throw new Error('KUWO_CHART_FORMAT_CHANGED');
+  const parameters = functionMatch[1].split(',').map(value => value.trim());
+  const argumentsList = dailyHotSplitTopLevelArguments(functionMatch[3]);
+  const argumentMap = Object.create(null);
+  parameters.forEach((parameter, index) => { argumentMap[parameter] = argumentsList[index]; });
+  const rows = [];
+  const rowPattern = /\w+\[\d+\]=\{id:(\d+),name:([^,]+),pic:("(?:\\.|[^"\\])*"|[^,]+),album_name:([^,]+),artist_name:("(?:\\.|[^"\\])*"|[^,]+)/g;
+  let rowMatch;
+  while ((rowMatch = rowPattern.exec(functionMatch[2])) && rows.length < limit) {
+    rows.push({
+      id:rowMatch[1],
+      name:dailyHotDecodeNuxtToken(rowMatch[2], argumentMap),
+      pic:dailyHotDecodeNuxtToken(rowMatch[3], argumentMap),
+      albumName:dailyHotDecodeNuxtToken(rowMatch[4], argumentMap),
+      singer:dailyHotDecodeNuxtToken(rowMatch[5], argumentMap),
+    });
+  }
+  return rows.map(item => ({
+    id: item.id,
+    songmid: item.id,
+    name: item.name || '',
+    singer: item.singer || '',
+    albumName: item.albumName || '',
+    albumId: '',
+    picUrl: item.pic || '',
+    interval: '',
+    source: 'kw',
+    types: ['flac24bit', 'flac', '320k', '128k'],
+  })).filter(song => song.name);
+}
+async function fetchKugouHotSeeds(limit) {
+  const output = [];
   const seen = new Set();
+  const pageCount = Math.max(1, Math.ceil(limit / 22));
+  for (let page = 1; page <= pageCount && output.length < limit; page += 1) {
+    const html = await dailyHotFetchText(`https://www.kugou.com/yy/rank/home/${page}-8888.html`, {
+      timeoutMs: 16000,
+      headers: { referer:'https://www.kugou.com/yy/html/rank.html' },
+    });
+    const match = html.match(/global\.features\s*=\s*(\[[\s\S]*?\]);/i);
+    if (!match) continue;
+    let rows = [];
+    try { rows = JSON.parse(match[1]); } catch (_error) { rows = []; }
+    rows.forEach(item => {
+      const hash = String(item.Hash || item.hash || '');
+      if (!hash || seen.has(hash) || output.length >= limit) return;
+      seen.add(hash);
+      const singer = String(item.author_name || '').trim();
+      const fileName = String(item.FileName || item.filename || '').trim();
+      let name = fileName;
+      const prefix = singer ? `${singer} - ` : '';
+      if (prefix && fileName.startsWith(prefix)) name = fileName.slice(prefix.length);
+      else if (fileName.includes(' - ')) name = fileName.split(' - ').slice(1).join(' - ');
+      output.push({
+        id: item.audio_id || item.Audioid || hash,
+        songmid: item.audio_id || item.Audioid || hash,
+        hash,
+        name,
+        singer,
+        albumId: item.album_id || '',
+        interval: dailyHotDurationText(item.timeLen),
+        source:'kg',
+        types:['flac24bit', 'flac', '320k', '128k'],
+      });
+    });
+  }
+  return output;
+}
+const DAILY_HOT_PLATFORM_FALLBACKS = {
+  tx: [
+    ['稻香','周杰伦'],['年轮说','杨丞琳'],['达尔文','蔡健雅'],['泡沫','G.E.M.邓紫棋'],['小幸运','田馥甄'],['天黑黑','孙燕姿'],['修炼爱情','林俊杰'],['刻在我心底的名字','卢广仲'],['如果可以','韦礼安'],['突然好想你','五月天'],['说谎','林宥嘉'],['慢冷','梁静茹']
+  ],
+  wy: [
+    ['悬溺','葛东琪'],['若月亮没来','王宇宙Leto / 乔浚丞'],['凄美地','郭顶'],['离别开出花','就是南方凯'],['唯一','告五人'],['起风了','买辣椒也用券'],['可能','程响'],['我记得','赵雷'],['如愿','王菲'],['嘉宾','张远'],['爱人错过','告五人'],['一路生花','温奕心']
+  ],
+  kw: [
+    ['你有没有真的爱过我','阿图表妹'],['岁月如笔写春秋','河南三妹5233'],['人生路漫漫','白小白'],['街角的晚风','陈小春'],['半壶纱','刘珂矣'],['青花','周传雄'],['搀扶','马健涛'],['天地龙鳞','王力宏'],['黄昏','周传雄'],['无人之岛','任然'],['奢香夫人','凤凰传奇'],['野心家','张靓颖']
+  ],
+  kg: [
+    ['吹吹山顶的风','巴扎黑'],['甲乙丙丁','李佳薇'],['樱花草','Sweety'],['抽离','徐良 / 刘丹萌'],['雨爱','杨丞琳'],['有风的日落','万海东'],['街道','林俊杰'],['恋人','李荣浩'],['偏爱','张芸京'],['下雨天','南拳妈妈'],['无人之岛','任然'],['枪火','宝石Gem']
+  ],
+  mg: [
+    ['不为谁而作的歌','林俊杰'],['世界第一等','伍佰 & China Blue'],['特别的人','方大同'],['光亮','周深'],['来自天堂的魔鬼','G.E.M.邓紫棋'],['百年孤寂','王菲'],['阴天','莫文蔚'],['孤勇者','陈奕迅'],['倒带','蔡依林'],['遇见','孙燕姿'],['听海','张惠妹'],['情歌','梁静茹'],['带我去找夜生活','告五人'],['无与伦比的美丽','苏打绿'],['温柔','五月天'],['身骑白马','徐佳莹'],['如果爱忘了','戚薇'],['我怀念的','孙燕姿'],['爱错','王力宏'],['爱我还是他','陶喆'],['爱你','王心凌'],['我们的爱','F.I.R.飞儿乐团'],['开始懂了','孙燕姿'],['遗失的美好','张韶涵'],['你就不要想起我','田馥甄'],['光年之外','G.E.M.邓紫棋'],['可惜没如果','林俊杰'],['任性','五月天'],['这世界那么多人','莫文蔚'],['推开世界的门','杨乃文']
+  ],
+};
+const PLATFORM_CHART_EXPANSION_QUERIES = {
+  tx: ['周杰伦','林俊杰','邓紫棋','孙燕姿','五月天','蔡健雅','陈奕迅','田馥甄','王力宏','陶喆','梁静茹','张惠妹'],
+  wy: ['告五人','赵雷','郭顶','陈粒','房东的猫','许嵩','毛不易','草东没有派对','万能青年旅店','李荣浩','莫文蔚','王菲'],
+  kw: ['周传雄','任然','凤凰传奇','张靓颖','刘珂矣','程响','海来阿木','王琪','刀郎','云朵','韩红','张韶涵'],
+  kg: ['徐良','杨丞琳','张芸京','南拳妈妈','宝石Gem','汪苏泷','许嵩','By2','庄心妍','六哲','李佳薇','小阿七'],
+  mg: ['伍佰','方大同','周深','莫文蔚','王菲','蔡依林','苏打绿','徐佳莹','陶喆','王心凌','F.I.R.飞儿乐团','杨乃文'],
+};
+function dailyHotFallbackSeeds(source) {
+  return (DAILY_HOT_PLATFORM_FALLBACKS[source] || []).map(([name, singer]) => ({
+    name, singer, source, songmid:'', id:'', interval:'', types:['flac', '320k', '128k'],
+  }));
+}
+async function fetchPlatformNativeHotSeeds(source, limit) {
+  if (source === 'tx') return fetchQQHotSeeds(limit);
+  if (source === 'wy') return fetchNeteaseHotSeeds(limit);
+  if (source === 'kw') return fetchKuwoHotSeeds(limit);
+  if (source === 'kg') return fetchKugouHotSeeds(limit);
+  return [];
+}
+async function resolveDailyHotSeedsAcrossSources(seeds, limit, requestedSource) {
+  const source = /^(tx|wy|kw|kg|mg)$/.test(String(requestedSource || '').toLowerCase())
+    ? String(requestedSource).toLowerCase()
+    : 'all';
+  const workSeeds = seeds.slice(0, Math.min(seeds.length, Math.max(limit * 2, limit + 6)));
+  const resolved = new Array(workSeeds.length);
   let cursor = 0;
-  const workers = Array.from({ length: Math.min(4, seeds.length) }, async () => {
-    while (cursor < seeds.length && out.length < limit) {
-      const seed = seeds[cursor++];
+  const workers = Array.from({ length: Math.min(4, workSeeds.length) }, async () => {
+    while (cursor < workSeeds.length) {
+      const seedIndex = cursor++;
+      const seed = workSeeds[seedIndex];
       const query = [seed.name, seed.singer].filter(Boolean).join(' ');
       try {
-        const result = await lxSearch.searchAll(query || seed.name, { sources: 'tx,wy,kw,kg,mg', limit: 5 });
+        const result = await lxSearch.searchAll(query || seed.name, { sources: source === 'all' ? 'tx,wy,kw,kg,mg' : source, limit: 5 });
         const candidates = Array.isArray(result?.songs) ? result.songs : [];
         const seedName = dailyHotNormalizeText(seed.name);
         const seedSinger = dailyHotNormalizeText(seed.singer);
@@ -2017,33 +2209,141 @@ async function resolveDailyHotSeedsAcrossSources(seeds, limit) {
           const singer = dailyHotNormalizeText(song.singer);
           return sameName && (!seedSinger || !singer || seedSinger.includes(singer) || singer.includes(seedSinger));
         });
-        dailyHotPushUnique(out, exact || candidates[0] || seed, seen, limit);
+        resolved[seedIndex] = exact || candidates[0] || (source === 'all' ? seed : null);
       } catch (err) {
         console.warn('[DailyHotResolve]', query, err.message || err);
-        dailyHotPushUnique(out, seed, seen, limit);
+        resolved[seedIndex] = source === 'all' ? seed : null;
       }
     }
   });
   await Promise.all(workers);
-  for (const seed of seeds) dailyHotPushUnique(out, seed, seen, limit);
+  const out = [];
+  const seen = new Set();
+  for (let index = 0; index < resolved.length && out.length < limit; index++) {
+    dailyHotPushUnique(out, resolved[index], seen, limit);
+  }
+  if (source === 'all') {
+    for (const seed of seeds) dailyHotPushUnique(out, seed, seen, limit);
+  }
   return out.slice(0, limit);
 }
-async function getDailyHotSongs(limit) {
-  limit = Math.min(Math.max(Number(limit) || 30, 1), 30);
-  const now = Date.now();
-  if (dailyHotCache && now - dailyHotCache.time < DAILY_HOT_CACHE_MS && dailyHotCache.songs.length >= Math.min(10, limit)) {
-    return { ok: true, songs: dailyHotCache.songs.slice(0, limit), cached: true, updatedAt: dailyHotCache.time };
+async function fillPlatformChartSongs(source, initialSongs, limit) {
+  const output = [];
+  const seen = new Set();
+  const append = song => {
+    if (!song || !song.name || output.length >= limit) return;
+    const key = dailyHotContentKey(song);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    output.push(song);
+  };
+  (initialSongs || []).forEach(append);
+  if (output.length >= limit) return output.slice(0, limit);
+
+  const fallbackSeeds = dailyHotFallbackSeeds(source);
+  if (fallbackSeeds.length) {
+    try {
+      const resolved = await resolveDailyHotSeedsAcrossSources(fallbackSeeds, Math.min(limit, fallbackSeeds.length), source);
+      resolved.forEach(append);
+    } catch (error) {
+      console.warn('[PlatformChartFallbackFill]', source, error?.message || error);
+    }
   }
-  let seeds = [];
+  if (output.length >= limit) return output.slice(0, limit);
+
+  const queries = (PLATFORM_CHART_EXPANSION_QUERIES[source] || []).slice();
+  const batches = new Array(queries.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(4, queries.length) }, async () => {
+    while (cursor < queries.length) {
+      const index = cursor++;
+      try {
+        const result = await lxSearch.searchAll(queries[index], { sources:source, limit:25 });
+        batches[index] = Array.isArray(result?.songs) ? result.songs : [];
+      } catch (error) {
+        console.warn('[PlatformChartSearchFill]', source, queries[index], error?.message || error);
+        batches[index] = [];
+      }
+    }
+  });
+  await Promise.all(workers);
+  for (const songs of batches) {
+    (songs || []).forEach(append);
+    if (output.length >= limit) break;
+  }
+  return output.slice(0, limit);
+}
+async function fetchSinglePlatformHotResult(source, limit) {
+  let nativeSongs = [];
+  let nativeError = '';
   try {
-    seeds = await fetchNeteaseHotSeeds(Math.max(limit, 30));
-  } catch (_err) {
-    seeds = [];
+    nativeSongs = await fetchPlatformNativeHotSeeds(source, Math.max(limit, 30));
+  } catch (error) {
+    nativeError = error?.message || String(error || 'PLATFORM_CHART_FAILED');
+    console.warn('[PlatformChart]', source, nativeError);
   }
-  if (!seeds.length) seeds = DAILY_HOT_FALLBACK_SEEDS;
-  const songs = await resolveDailyHotSeedsAcrossSources(seeds, limit);
-  dailyHotCache = { time: now, songs };
-  return { ok: songs.length > 0, songs, cached: false, updatedAt: now, source: seeds === DAILY_HOT_FALLBACK_SEEDS ? 'fallback-seeds' : 'netease-hot-3778678+multi-source-search' };
+  const songs = await fillPlatformChartSongs(source, nativeSongs, limit);
+  const label = { tx:'小秋热歌榜', wy:'小芸热歌榜', kw:'小蜗热歌榜', kg:'小狗 TOP 榜', mg:'小菇热歌发现' }[source] || `${source.toUpperCase()} 热榜`;
+  return {
+    songs,
+    chartMode:nativeSongs.length >= limit ? 'native' : (nativeSongs.length ? 'native-supplemented' : 'platform-expanded'),
+    chartLabel:songs.length >= limit ? `${label} · ${songs.length} 首` : label,
+    nativeError,
+  };
+}
+function dailyHotContentKey(song) {
+  return `${dailyHotNormalizeText(song?.name)}|${dailyHotNormalizeText(song?.singer || song?.artist)}`;
+}
+function mixPlatformCharts(results, limit) {
+  const output = [];
+  const seen = new Set();
+  let row = 0;
+  while (output.length < limit) {
+    let added = false;
+    for (const result of results) {
+      const song = result?.songs?.[row];
+      if (!song) continue;
+      const key = dailyHotContentKey(song);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      output.push(song);
+      added = true;
+      if (output.length >= limit) break;
+    }
+    row += 1;
+    if (!added && results.every(result => !result?.songs?.[row])) break;
+  }
+  return output;
+}
+async function getDailyHotSongs(limit, requestedSource, forceRefresh) {
+  limit = Math.min(Math.max(Number(limit) || 100, 1), 100);
+  const source = /^(tx|wy|kw|kg|mg)$/.test(String(requestedSource || '').toLowerCase())
+    ? String(requestedSource).toLowerCase()
+    : 'all';
+  const cacheKey = source;
+  const cached = dailyHotCache[cacheKey];
+  const now = Date.now();
+  if (!forceRefresh && cached && now - cached.time < DAILY_HOT_CACHE_MS && cached.songs.length >= limit) {
+    return { ok: true, songs: cached.songs.slice(0, limit), cached: true, updatedAt: cached.time, chartSource:source, chartMode:cached.chartMode, chartLabel:cached.chartLabel };
+  }
+  let songs = [];
+  let chartMode = 'native';
+  let chartLabel = '';
+  if (source === 'all') {
+    const sources = ['tx', 'wy', 'kw', 'kg', 'mg'];
+    const perPlatformLimit = Math.min(60, Math.max(25, Math.ceil(limit / sources.length) + 15));
+    const results = await Promise.all(sources.map(item => fetchSinglePlatformHotResult(item, perPlatformLimit)));
+    songs = mixPlatformCharts(results, limit);
+    chartMode = results.some(result => result.chartMode !== 'native') ? 'mixed-expanded' : 'mixed-native';
+    chartLabel = '五个平台独立榜单混合';
+  } else {
+    const result = await fetchSinglePlatformHotResult(source, limit);
+    songs = result.songs;
+    chartMode = result.chartMode;
+    chartLabel = result.chartLabel;
+  }
+  dailyHotCache[cacheKey] = { time:now, songs, chartMode, chartLabel };
+  return { ok:songs.length > 0, songs, cached:false, updatedAt:now, chartSource:source, chartMode, chartLabel };
 }
 
 // ====================================================================
@@ -2095,6 +2395,7 @@ const server = http.createServer(async (req, res) => {
       const musicInfo = body.musicInfo && typeof body.musicInfo === 'object' ? body.musicInfo : {};
       const result = await lxSourceHost.resolveMusicUrl(source, musicInfo, String(body.quality || ''), {
         excludeResolvers: Array.isArray(body.excludeResolvers) ? body.excludeResolvers : [],
+        maxResolvers: Math.max(1, Math.min(8, Number(body.maxResolvers) || 6)),
       });
       sendJSON(res, { ok: true, source, ...result, proxyUrl: audioProxyUrl(result && result.url, result && result.headers) });
     } catch (err) {
@@ -2379,7 +2680,11 @@ const server = http.createServer(async (req, res) => {
 
   if (pn === '/api/daily-hot') {
     try {
-      const result = await getDailyHotSongs(url.searchParams.get('limit'));
+      const result = await getDailyHotSongs(
+        url.searchParams.get('limit'),
+        url.searchParams.get('source'),
+        url.searchParams.get('refresh') === '1'
+      );
       sendJSON(res, result, result.ok ? 200 : 502);
     } catch (err) {
       sendJSON(res, { ok: false, songs: [], error: err.message || 'DAILY_HOT_FAILED' }, 502);
@@ -2411,7 +2716,13 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const controller = new AbortController();
-    req.on('close', () => controller.abort());
+    // IncomingMessage 的 close 也可能在请求体正常接收完毕时触发，不能据此
+    // 中止仍在向客户端传输的长音频。只有请求被明确中断，或响应连接在完成前
+    // 关闭时才取消上游请求。
+    req.on('aborted', () => controller.abort());
+    res.on('close', () => {
+      if (!res.writableEnded) controller.abort();
+    });
     try {
       const fetchImpl = electronNet && typeof electronNet.fetch === 'function'
         ? electronNet.fetch.bind(electronNet)
