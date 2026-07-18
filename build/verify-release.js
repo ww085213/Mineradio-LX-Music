@@ -54,6 +54,10 @@ requireText('desktop/main.js', mainSource, "writeStartupDiagnostic('app-when-rea
 requireText('desktop/main.js', mainSource, 'setIgnoreMouseEvents(true)');
 requireText('public/index.html', indexSource, 'id="now-flow-time"');
 requireText('public/index.html', indexSource, 'function setPlaybackTimeText(text)');
+requireText('public/index.html', indexSource, "nowFlowProgressBar.addEventListener('click'");
+const nowFlowRootTag = (indexSource.match(/<div id="now-flow"[^>]*>/) || [''])[0];
+if (!nowFlowRootTag) fail('public/index.html 缺少 Now Flow 播放条根节点');
+if (/onclick\s*=/.test(nowFlowRootTag)) fail('Now Flow 播放条空白区域仍会切换播放状态');
 requireText('public/index.html', indexSource, 'function getAdaptiveRenderFps()');
 requireText('public/index.html', indexSource, 'remaining = (1000 / fps)');
 requireText('public/index.html', indexSource, "performanceQuality: 'ultra'");

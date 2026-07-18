@@ -13,6 +13,8 @@
 
 ## 播放与界面
 
+- 修复拖动或点击 Now Flow 进度条时，合成点击事件冒泡到外层并误触发暂停的问题。
+- 点击和拖动进度条现在只调整播放位置；Now Flow 空白区域不再切换播放状态，播放和暂停只由专门按钮触发。
 - Now Flow 底部进度条新增当前时间和总时长，支持点击、拖动、方向键调整，并兼容落雪联动 seek。
 - 优化进度条视觉层次、拖动热区、滑块反馈与无障碍状态。
 - 桌面融合固定后彻底忽略鼠标移动，不再因指针经过弹出被隐藏的操作控件。
@@ -31,6 +33,6 @@
 
 - Windows 安装包：`Mineradio.Setup.1.5.6.exe`
 - Windows 文件版本：`1.5.6.0`
-- SHA-256：`2D085E34AD7559EED5C562C6B0C92A7FF6EBF21D2C8F5CD94A68BB4E9BF003FA`
+- SHA-256：`FE896798B10142A1139FC150BF7BA30CC5B8FC684268F6E37238E3860FCF5667`
 - 干净克隆执行 `npm run build:win` 时会自动下载固定版本的 FFmpeg/RePKG，并在 SHA-256 校验通过后打包；正式包包含 GPL-3.0、FFmpeg 与 RePKG 许可说明。
 - 本安装包暂未使用 Authenticode 商业代码签名证书，Windows SmartScreen 仍可能显示“未知发布者”；请从官方 Release 下载并核对随包提供的 SHA-256。
