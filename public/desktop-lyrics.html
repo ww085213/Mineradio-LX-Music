@@ -87,7 +87,7 @@
     text:'Mineradio',items:[],stageKey:'',progress:0,progressSpan:4.8,progressScale:1,
     progressAt:performance.now(),playing:false,size:1,opacity:.92,clickThrough:true,
     lyricMotion:true,lyricGlowParticles:true,cinema:true,highlightFollow:false,
-    frameRate:60,fontFamily:'"Microsoft YaHei",sans-serif',fontWeight:900,
+    frameRate:120,fontFamily:'"Microsoft YaHei",sans-serif',fontWeight:900,
     letterSpacing:0,lineHeight:1,rows:'double',align:'center',lyricScale:1,feather:.055,
     colors:{primary:'#ff9fa7',secondary:'#ffc0b4',highlight:'#fff0df',glow:'#ff847f'},
     motion:{lyricGlow:true,lyricGlowBeat:true,lyricGlowStrength:.35,highBloom:0,beatGlow:0,beatPulse:0,bass:0},
@@ -131,8 +131,11 @@
   function resize(){
     w=innerWidth;h=innerHeight;
     var rawDpr=Math.max(1,devicePixelRatio||1),pixels=w*h*rawDpr;
-    // 透明桌面窗口里高 DPR Canvas 很吃显卡。这里优先保证移动和律动顺滑。
-    dpr=Math.min(pixels>2600000?1.25:1.5,rawDpr);
+    // High refresh is useful for motion, while a restrained backing-store DPR
+    // prevents 120/165 Hz from multiplying transparent-window fill cost.
+    var refresh=Number(state.frameRate)||120;
+    var dprCap=refresh>120?1.0:(refresh>90?1.12:(pixels>2600000?1.25:1.5));
+    dpr=Math.min(dprCap,rawDpr);
     canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);canvas.style.width=w+'px';canvas.style.height=h+'px';
     ctx.setTransform(dpr,0,0,dpr,0,0);textLayerCache.clear();measureCache.clear();lastHitKey='';lastHotKey='';layoutHit();
   }
@@ -160,6 +163,20 @@
     var duration=Number(pb.duration)||0;
     if(duration>0)t=clamp(t,0,duration,t);
     return Math.max(0,t);
+  }
+  function wordTimedProgress(line,t){
+    var words=line&&Array.isArray(line.words)?line.words:[];
+    if(!words.length)return null;
+    var charCount=Math.max(1,Number(line.charCount)||String(line.text||'').split('\n')[0].length||1),last=0;
+    for(var i=0;i<words.length;i++){
+      var word=words[i]||{},start=Number(word.t)||0,end=start+Math.max(.04,Number(word.d)||.12);
+      if(t<start)return last;
+      var local=t>=end?1:clamp((t-start)/Math.max(.04,end-start),0,1,0);
+      var c0=Math.max(0,Number(word.c0)||0),c1=Math.max(c0,Number(word.c1)||c0+String(word.text||'').length);
+      last=Math.max(last,(c0+(c1-c0)*local)/charCount);
+      if(t<end)return clamp(last,0,1,0);
+    }
+    return 1;
   }
   function updateFromLocalTimeline(now){
     now=now||performance.now();
@@ -189,10 +206,14 @@
     state.items=items;
     var currentRows=items.filter(function(item){return item.role==='current'}).map(function(item){return item.text});
     state.text=currentRows.join('\n')||items.map(function(item){return item.text}).join('\n')||state.text;
-    state.progress=clamp((t-curT)/span,0,1,0);
+    var timedProgress=wordTimedProgress(cur,t);
+    // Line-only LRC still flows between its own timestamps; native word timing
+    // remains authoritative whenever it is available.
+    var lineProgress=clamp((t-curT)/span,0,1,0);
+    state.progress=timedProgress==null?smooth01(lineProgress):clamp(timedProgress,0,1,0);
     state.progressAt=now;
     state.progressSpan=span;
-    state.progressScale=1;
+    state.progressScale=0;
   }
   function updateSmoothMotion(){
     var src=state.motion||{};
@@ -335,7 +356,7 @@
   }
   function draw(now){
     frame=requestAnimationFrame(draw);
-    var fps=Number(state.frameRate)||60;fps=Math.max(30,Math.min(60,fps||60));
+    var fps=Number(state.frameRate)||120;fps=Math.max(24,Math.min(240,fps||120));
     var step=1000/fps,elapsed=now-lastFrame;if(elapsed<step-1.5)return;lastFrame=now-(elapsed%step);perfFrame++;
     updateSmoothMotion();
     ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
@@ -423,6 +444,7 @@
   }
   function applyState(next){
     next=next||{};
+    var oldFrameRate=Number(state.frameRate)||120;
     var hasTimeline=Array.isArray(next.timeline)&&next.timeline.length>0;
     var changed=!hasTimeline&&next.stageKey&&next.stageKey!==lastStageKey;
     Object.keys(next).forEach(function(k){
@@ -455,6 +477,7 @@
     setSize(state.size,false);
     var nextLocked=state.clickThrough!==false;
     if(lastLocked!==nextLocked)applyLock(nextLocked);
+    if(Math.abs((Number(state.frameRate)||120)-oldFrameRate)>.5)resize();
   }
   var gesture=null;
   var moveDragActive=false,lastDragPaintAt=0;

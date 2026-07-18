@@ -48,6 +48,9 @@ html.desktop-shell-root body,body.desktop-shell{background:transparent;border:0;
 html.desktop-shell-root #desktop-window-shell,body.desktop-shell #desktop-window-shell{display:block;position:fixed;inset:0;overflow:hidden;border:0;outline:0;border-radius:34px;clip-path:inset(0 round 34px);background:#050608;box-shadow:none;transform:translateZ(0)}
 body.desktop-shell.desktop-maximized,body.desktop-shell.desktop-fullscreen,html:fullscreen body.desktop-shell{border-radius:0!important;clip-path:none!important}
 body.desktop-shell.desktop-maximized #desktop-window-shell,body.desktop-shell.desktop-fullscreen #desktop-window-shell,html:fullscreen body.desktop-shell #desktop-window-shell{border-radius:0!important;clip-path:none!important;box-shadow:none!important}
+body.desktop-shell.desktop-embedded{border-radius:0!important;clip-path:none!important}
+body.desktop-shell.desktop-embedded #desktop-window-shell{border-radius:0!important;clip-path:none!important;box-shadow:none!important}
+body.desktop-shell.desktop-embedded #desktop-resize-handles{display:none!important}
 body.desktop-shell #desktop-titlebar{position:fixed;z-index:500;top:0;left:0;right:0;height:44px;padding:0 12px 0 18px;display:flex;align-items:center;justify-content:space-between;background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none;-webkit-app-region:drag;pointer-events:none}
 body.desktop-shell #desktop-titlebar::after{content:none}
 .desktop-drag-region{height:100%;flex:1;display:flex;align-items:center;gap:9px;min-width:0;color:rgba(224,250,255,.74);font-size:12px;font-weight:600;letter-spacing:0;text-transform:uppercase;-webkit-app-region:drag;pointer-events:auto}
@@ -105,10 +108,19 @@ body.desktop-shell.desktop-fullscreen #top-right{top:24px}
 @media (max-width:720px){#fullscreen-diy-zone{height:48px}#fullscreen-diy-btn{min-width:96px;height:32px}}
 
 /* ---------- 背景 ---------- */
-#custom-bg{position:fixed;inset:0;z-index:0;background:var(--custom-bg-color,#000);overflow:hidden;transition:background .35s ease}
+#custom-bg{position:fixed;inset:0;z-index:0;background:var(--custom-bg-color,#000);overflow:hidden;transition:background .35s ease;transform-origin:center center}
 #custom-bg-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;opacity:var(--custom-bg-video-opacity,0);filter:none;transition:opacity .35s ease;pointer-events:none;background:#000}
 #custom-bg::before{content:'';position:absolute;inset:0;background-image:var(--custom-bg-image,none);background-size:cover;background-repeat:no-repeat;background-position:center;opacity:var(--custom-bg-image-opacity,0);filter:none;transition:opacity .35s ease,background-image .35s ease;pointer-events:none}
 #custom-bg::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.06),rgba(0,0,0,.16));opacity:var(--custom-bg-overlay-opacity,0);pointer-events:none}
+body.wallpaper-parallax-active #custom-bg{transform:translate3d(var(--wallpaper-parallax-x,0px),var(--wallpaper-parallax-y,0px),0) scale(1.055);will-change:transform}
+@media (prefers-reduced-motion:reduce){body.wallpaper-parallax-active #custom-bg{transform:none!important;will-change:auto}}
+/* Balanced runtime profile: keep the glass look while avoiding several
+   full-window blur passes over animated/video wallpaper. */
+body.performance-balanced .home-hero,body.performance-balanced .home-card,body.performance-balanced .home-tile,body.performance-balanced #app-primary-nav,body.performance-balanced .secondary-shell{backdrop-filter:blur(14px) saturate(1.08)!important;-webkit-backdrop-filter:blur(14px) saturate(1.08)!important}
+body.performance-balanced #search-box,body.performance-balanced #search-results,body.performance-balanced .source-toolbar{backdrop-filter:blur(16px) saturate(1.10)!important;-webkit-backdrop-filter:blur(16px) saturate(1.10)!important}
+body.performance-eco .home-hero,body.performance-eco .home-card,body.performance-eco .home-tile,body.performance-eco #app-primary-nav,body.performance-eco .secondary-shell{backdrop-filter:blur(8px) saturate(1.04)!important;-webkit-backdrop-filter:blur(8px) saturate(1.04)!important}
+body.desktop-embedded .home-hero,body.desktop-embedded .home-card,body.desktop-embedded .home-tile{backdrop-filter:blur(10px) saturate(1.05)!important;-webkit-backdrop-filter:blur(10px) saturate(1.05)!important}
+.search-result,.pl-detail-row,.library-track-row,.secondary-track-row{content-visibility:auto;contain-intrinsic-size:auto 64px}
 .wallpaper-picker{display:none;position:fixed;inset:0;z-index:1900;align-items:center;justify-content:center;padding:34px;background:rgba(0,0,0,.66);backdrop-filter:blur(16px)}
 .wallpaper-picker.show{display:flex}
 .wallpaper-picker-card{width:min(1080px,96vw);max-height:min(820px,90vh);overflow:auto;border-radius:24px;padding:20px;background:rgba(10,11,15,.94);border:1px solid rgba(255,255,255,.14);box-shadow:0 32px 100px rgba(0,0,0,.62)}
@@ -188,6 +200,9 @@ body.idle-guide-dragging #canvas-container{cursor:grabbing}
 #free-camera-hint{position:fixed;z-index:22;left:24px;bottom:92px;max-width:min(420px,calc(100vw - 48px));padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(5,6,8,.78);box-shadow:0 18px 52px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,255,255,.08);backdrop-filter:blur(18px) saturate(1.08);-webkit-backdrop-filter:blur(18px) saturate(1.08);color:rgba(255,255,255,.72);font-size:11px;line-height:1.45;opacity:0;transform:translateY(8px);pointer-events:none;transition:opacity .2s,transform .2s}
 #free-camera-hint.show{opacity:1;transform:translateY(0)}
 #free-camera-hint b{color:#fff;font-weight:780}
+#render-fps-hud{position:fixed;z-index:9998;right:16px;top:54px;min-width:126px;padding:8px 10px;border:1px solid rgba(255,255,255,.15);border-radius:11px;background:rgba(7,10,14,.66);backdrop-filter:blur(14px) saturate(1.15);-webkit-backdrop-filter:blur(14px) saturate(1.15);box-shadow:0 10px 30px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.08);color:rgba(255,255,255,.72);font:700 10px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.2px;pointer-events:none;white-space:nowrap}
+#render-fps-hud b{color:#8fffd4;font-size:16px;line-height:1}
+#render-fps-hud.hidden{display:none}
 
 /* ---------- 启动页 ---------- */
 #splash{position:fixed;inset:0;z-index:300;background:#010304;display:flex;align-items:center;justify-content:center;pointer-events:auto;opacity:1;overflow:hidden;transition:opacity 1180ms cubic-bezier(.16,1,.3,1),transform 1180ms cubic-bezier(.16,1,.3,1);box-shadow:inset 0 0 180px rgba(0,0,0,.88)}
@@ -355,6 +370,20 @@ body.empty-home-active.diy-mode #search-area:not(.has-results) #search-mode-tabs
 .podcast-back-btn:hover{color:#fff0bf;border-color:rgba(244,210,138,.35);background:rgba(244,210,138,.10)}
 .search-result .add-btn{width:28px;height:28px;border-radius:50%;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:rgba(255,255,255,.55);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s}
 .search-result .add-btn:hover{background:rgba(0,245,212,.12);color:#eafffb;border-color:rgba(0,245,212,.34)}
+.search-batch-toolbar{position:sticky;top:0;z-index:5;min-height:44px;margin:4px 5px 7px;padding:7px 10px;display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid rgba(255,255,255,.24);border-radius:16px;background:linear-gradient(132deg,rgba(255,255,255,.17),rgba(255,255,255,.045) 30%,transparent 58%,rgba(120,220,255,.06)),rgba(18,22,30,.34);box-shadow:inset 0 1px 0 rgba(255,255,255,.46),inset 1px 0 0 rgba(255,120,180,.09),inset -1px 0 0 rgba(90,225,255,.11),0 12px 34px rgba(0,0,0,.18);backdrop-filter:blur(28px) saturate(1.52) brightness(1.07);-webkit-backdrop-filter:blur(28px) saturate(1.52) brightness(1.07)}
+.search-batch-toggle,.search-batch-action{height:29px;padding:0 11px;border:1px solid rgba(255,255,255,.20);border-radius:999px;background:linear-gradient(145deg,rgba(255,255,255,.15),rgba(255,255,255,.045)),rgba(7,9,14,.18);box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 6px 18px rgba(0,0,0,.12);backdrop-filter:blur(12px) saturate(1.28);-webkit-backdrop-filter:blur(12px) saturate(1.28);color:rgba(255,255,255,.78);font:700 10.5px var(--font-sans);cursor:pointer;transition:background .18s,border-color .18s,color .18s,box-shadow .18s,transform .18s}
+.search-batch-toggle:hover,.search-batch-action:hover{background:linear-gradient(145deg,rgba(255,255,255,.22),rgba(var(--fc-accent-rgb),.09));border-color:rgba(255,255,255,.34);box-shadow:inset 0 1px 0 rgba(255,255,255,.38),0 8px 22px rgba(0,0,0,.15),0 0 18px rgba(var(--fc-accent-rgb),.07);color:#fff;transform:translateY(-1px)}
+.search-batch-action.primary{background:linear-gradient(145deg,rgba(255,255,255,.18),rgba(var(--fc-accent-rgb),.15));border-color:rgba(var(--fc-accent-rgb),.38);color:#fff}
+.search-batch-action:disabled{opacity:.38;cursor:default;pointer-events:none}
+.search-batch-actions{display:none;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}
+#search-results.search-batch-mode .search-batch-actions{display:flex}
+.search-batch-count{min-width:54px;color:rgba(255,255,255,.58);font-size:10.5px;text-align:right;white-space:nowrap}
+.search-batch-check{display:none;width:24px;height:24px;flex:0 0 24px;align-items:center;justify-content:center;padding:0;border:1px solid rgba(255,255,255,.16);border-radius:7px;background:rgba(0,0,0,.24);color:transparent;font:900 14px/1 var(--font-sans);cursor:pointer;transition:background .16s,border-color .16s,color .16s,transform .16s}
+#search-results.search-batch-mode .search-batch-check{display:flex}
+.search-batch-check:hover{transform:scale(1.06);border-color:rgba(var(--fc-accent-rgb),.48)}
+.search-result.batch-selected{background:rgba(var(--fc-accent-rgb),.10)!important;box-shadow:inset 3px 0 0 rgba(var(--fc-accent-rgb),.68)}
+.search-result.batch-selected .search-batch-check{background:rgba(var(--fc-accent-rgb),.78);border-color:rgba(var(--fc-accent-rgb),.88);color:#07110f}
+@media (max-width:620px){.search-batch-toolbar{align-items:flex-start}.search-batch-actions{gap:4px}.search-batch-action{padding:0 8px}.search-batch-count{width:100%;text-align:left}}
 
 html.simple-mode-preload #search-mode-tabs,
 html.simple-mode-preload #upload-actions,
@@ -464,10 +493,11 @@ html.local-only-mode body.home-has-library #empty-home .home-grid{
   grid-auto-rows:auto;
   gap:16px;
 }
-.daily-review-card{position:relative;z-index:2;height:100%;min-height:420px;display:flex;flex-direction:column;justify-content:flex-end;padding:clamp(22px,3vw,38px);box-sizing:border-box;background-size:cover;background-position:center;overflow:hidden}
-.daily-review-card::before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(4,7,12,.08),rgba(4,7,12,.22) 36%,rgba(3,5,9,.90) 100%),linear-gradient(110deg,rgba(0,0,0,.18),transparent 58%);pointer-events:none}
+.daily-review-card{position:relative;z-index:2;height:100%;min-height:420px;display:flex;flex-direction:column;justify-content:flex-end;padding:clamp(22px,3vw,38px);box-sizing:border-box;background-size:cover;background-position:center;overflow:hidden;filter:brightness(1) saturate(1);transition:filter .28s ease}
+.daily-review-card::before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(4,7,12,.08),rgba(4,7,12,.22) 36%,rgba(3,5,9,.90) 100%),linear-gradient(110deg,rgba(0,0,0,.18),transparent 58%);opacity:1;pointer-events:none;transition:opacity .28s ease}
 .daily-review-card::before{z-index:1}
 .daily-review-card>*{position:relative;z-index:2}
+@media (hover:hover){.daily-review-card:hover{filter:brightness(1.055) saturate(1.06)}.daily-review-card:hover::before{opacity:.56}}
 .daily-review-video{position:absolute!important;z-index:0!important;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;max-width:none;pointer-events:none;transform-origin:center center;background:#050608}
 .daily-review-date{font-size:11px;font-weight:800;letter-spacing:.15em;color:rgba(255,255,255,.62);text-transform:uppercase}
 .daily-review-time{margin-top:6px;font-size:clamp(38px,5vw,66px);font-weight:760;line-height:1;color:#fff;font-variant-numeric:tabular-nums;text-shadow:0 12px 38px rgba(0,0,0,.54)}
@@ -1295,12 +1325,12 @@ html.local-only-mode #ai-depth-chip{display:none!important;visibility:hidden!imp
 /* ============================================================ */
 /*  控制台 — 简化版                                              */
 /* ============================================================ */
-#fx-panel{position:fixed;z-index:18;right:-460px;bottom:92px;width:min(444px,calc(100vw - 48px));max-height:min(650px,calc(100vh - 132px));overflow:auto;overscroll-behavior:contain;background:var(--glass-bg);border:1px solid rgba(0,245,212,0.16);border-radius:20px;padding:18px 18px 20px;backdrop-filter:blur(44px) saturate(1.34);-webkit-backdrop-filter:blur(44px) saturate(1.34);box-shadow:var(--glass-shadow);opacity:0;transition:right .55s cubic-bezier(.16,1,.3,1),opacity .45s cubic-bezier(.16,1,.3,1),transform .55s cubic-bezier(.16,1,.3,1);pointer-events:none;transform:translateY(18px) scale(.97);scrollbar-width:thin;scrollbar-color:rgba(0,245,212,.22) transparent}
+#fx-panel{position:fixed;z-index:18;right:-460px;bottom:92px;width:min(444px,calc(100vw - 48px));max-height:min(650px,calc(100vh - 132px));max-height:min(650px,calc(100dvh - 132px));min-height:0;box-sizing:border-box;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-gutter:stable;background:var(--glass-bg);border:1px solid rgba(0,245,212,0.16);border-radius:20px;padding:18px 18px 32px;backdrop-filter:blur(44px) saturate(1.34);-webkit-backdrop-filter:blur(44px) saturate(1.34);box-shadow:var(--glass-shadow);opacity:0;transition:right .55s cubic-bezier(.16,1,.3,1),opacity .45s cubic-bezier(.16,1,.3,1),transform .55s cubic-bezier(.16,1,.3,1);pointer-events:none;transform:translateY(18px) scale(.97);scrollbar-width:auto;scrollbar-color:rgba(0,245,212,.42) transparent}
 #fx-panel.show, #fx-panel.peek{right:24px;opacity:1;pointer-events:auto;transform:translateY(0)}
 #fx-panel.show{animation:fx-panel-in .56s cubic-bezier(.16,1,.3,1)}
 #fx-panel.closing{animation:fx-panel-out .26s cubic-bezier(.5,0,.7,1)}
-#fx-panel::-webkit-scrollbar{width:3px}
-#fx-panel::-webkit-scrollbar-thumb{background:rgba(0,245,212,.24);border-radius:3px}
+#fx-panel::-webkit-scrollbar{width:8px}
+#fx-panel::-webkit-scrollbar-thumb{background:rgba(0,245,212,.42);border-radius:8px;border:2px solid transparent;background-clip:padding-box}
 #fx-fab{position:fixed;z-index:19;right:24px;bottom:24px;width:54px;height:54px;border-radius:50%;border:1px solid rgba(0,245,212,.30);background:linear-gradient(145deg,rgba(255,255,255,.16),rgba(255,255,255,.055) 48%,rgba(0,245,212,.055));color:rgba(232,236,239,.88);display:flex;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(26px) saturate(1.34);-webkit-backdrop-filter:blur(26px) saturate(1.34);box-shadow:0 14px 40px rgba(0,0,0,.34),0 0 24px rgba(0,245,212,.07),inset 0 1px 0 rgba(255,255,255,.18);transition:bottom .38s cubic-bezier(.16,1,.3,1),transform .28s cubic-bezier(.16,1,.3,1),background .28s,border-color .28s,color .28s,box-shadow .28s}
 #fx-fab:hover,#fx-fab.active{transform:translateY(-2px) scale(1.04);background:rgba(0,245,212,.075);border-color:rgba(0,245,212,.50);color:#fff}
 #fx-fab svg{transition:transform .38s cubic-bezier(.16,1,.3,1)}
@@ -1315,7 +1345,7 @@ body.fx-fab-auto-hide.fx-fab-peek #fx-fab-hide-btn{right:84px;opacity:1;visibili
 body.controls-visible #fx-fab-hide-btn,
 body.desktop-shell.diy-mode.controls-visible #fx-fab-hide-btn{bottom:139px}
 body.immersive-mode #fx-fab-hide-btn{opacity:0!important;visibility:hidden!important;pointer-events:none!important}
-body.desktop-shell.diy-mode #fx-panel{top:64px;bottom:132px;max-height:none}
+body.desktop-shell.diy-mode #fx-panel{top:64px;bottom:132px;height:auto;max-height:calc(100dvh - 196px)}
 body.desktop-shell.diy-mode #fx-fab{bottom:24px}
 body.desktop-shell.diy-mode #fx-fab-hide-btn{bottom:37px}
 body.controls-visible #fx-fab,
@@ -1323,16 +1353,25 @@ body.desktop-shell.diy-mode.controls-visible #fx-fab{bottom:126px}
 body.desktop-shell.diy-mode #bottom-bar,
 body.desktop-shell.diy-mode #bottom-bar.stage-mode{left:50%;width:min(1080px,calc(100vw - 72px))}
 @media (max-height:760px){
-  body.desktop-shell.diy-mode #fx-panel{top:56px;bottom:116px;width:min(410px,calc(100vw - 48px));padding:14px}
+  body.desktop-shell.diy-mode #fx-panel{top:50px;bottom:92px;width:min(410px,calc(100vw - 48px));height:auto;max-height:calc(100dvh - 142px);padding:14px 14px 28px}
   body.desktop-shell.diy-mode #fx-fab{bottom:22px}
   body.desktop-shell.diy-mode #fx-fab-hide-btn{bottom:35px}
   body.desktop-shell.diy-mode.controls-visible #fx-fab{bottom:112px}
   body.desktop-shell.diy-mode.controls-visible #fx-fab-hide-btn{bottom:125px}
 }
+@media (max-height:600px){
+  body.desktop-shell.diy-mode #fx-panel{top:42px;bottom:76px;max-height:calc(100dvh - 118px);padding-bottom:26px}
+}
 @media (max-width:980px){
   body.desktop-shell.diy-mode #fx-panel{left:18px;right:18px;width:auto;top:62px;bottom:132px}
   body.desktop-shell.diy-mode #fx-panel.show,
   body.desktop-shell.diy-mode #fx-panel.peek{right:18px}
+}
+@media (max-width:980px) and (max-height:760px){
+  body.desktop-shell.diy-mode #fx-panel{top:50px;bottom:92px;max-height:calc(100dvh - 142px)}
+}
+@media (max-width:980px) and (max-height:600px){
+  body.desktop-shell.diy-mode #fx-panel{top:42px;bottom:76px;max-height:calc(100dvh - 118px)}
 }
 @keyframes fx-panel-in{0%{opacity:0;transform:translateX(32px) translateY(18px) scale(.96);filter:blur(8px)}100%{opacity:1;transform:translateX(0) translateY(0) scale(1);filter:blur(0)}}
 @keyframes fx-panel-out{0%{opacity:1;transform:translateX(0) translateY(0) scale(1);filter:blur(0)}100%{opacity:0;transform:translateX(24px) translateY(12px) scale(.97);filter:blur(6px)}}
@@ -2411,7 +2450,7 @@ body.empty-home-active.lyric-animation-stage-on #lyric-viz-stage-host.active{dis
 .lx-source-manager-list::-webkit-scrollbar{width:6px}
 .lx-source-manager-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.24);border-radius:999px}
 .lx-source-manager-list::-webkit-scrollbar-track{background:transparent}
-.lx-source-row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px;width:100%;padding:10px 10px 10px 13px;border-radius:13px;border:1px solid rgba(255,255,255,.075);background:rgba(255,255,255,.045);color:rgba(255,255,255,.78);transition:background .18s,border-color .18s,transform .18s,box-shadow .18s}
+.lx-source-row{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;width:100%;padding:10px 10px 10px 13px;border-radius:13px;border:1px solid rgba(255,255,255,.075);background:rgba(255,255,255,.045);color:rgba(255,255,255,.78);transition:background .18s,border-color .18s,transform .18s,box-shadow .18s}
 .lx-source-row:hover{background:rgba(255,255,255,.075);border-color:rgba(255,255,255,.14);transform:translateY(-1px)}
 .lx-source-row.active{border-color:rgba(156,255,223,.34);background:rgba(156,255,223,.085);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 10px 28px rgba(156,255,223,.055)}
 .lx-source-row-main{min-width:0;text-align:left;cursor:pointer}
@@ -2420,6 +2459,13 @@ body.empty-home-active.lyric-animation-stage-on #lyric-viz-stage-host.active{dis
 .lx-source-row-actions{display:flex;align-items:center;gap:6px;flex:0 0 auto}
 .lx-source-delete-btn{height:26px;padding:0 9px;border-radius:999px;border:1px solid rgba(255,86,100,.24);background:rgba(255,86,100,.08);color:rgba(255,160,170,.86);font-size:10.5px;font-weight:760;letter-spacing:.4px;cursor:pointer;transition:background .18s,color .18s,border-color .18s,transform .18s}
 .lx-source-delete-btn:hover{background:rgba(255,86,100,.82);border-color:rgba(255,86,100,.90);color:#fff;transform:translateY(-1px)}
+.lx-source-bulk-bar{display:flex;align-items:center;gap:9px;margin-top:12px;padding:8px 10px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(255,255,255,.045)}
+.lx-source-bulk-check{display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.78);font-size:11px;font-weight:720;cursor:pointer;user-select:none}
+.lx-source-check{width:17px;height:17px;margin:0;accent-color:#76e2c0;cursor:pointer}
+.lx-source-bulk-count{margin-left:auto;color:rgba(255,255,255,.48);font-size:10.5px;white-space:nowrap}
+.lx-source-bulk-delete{height:29px;padding:0 11px;border-radius:999px;border:1px solid rgba(255,86,100,.30);background:rgba(255,86,100,.10);color:rgba(255,165,174,.95);font-size:10.5px;font-weight:780;cursor:pointer}
+.lx-source-bulk-delete:disabled{opacity:.35;cursor:not-allowed}
+.lx-source-bulk-delete:not(:disabled):hover{background:rgba(255,86,100,.82);color:#fff}
 #manual-cover-btn,#manual-lyric-btn{font-weight:850;font-size:12.5px;letter-spacing:.2px}
 .custom-lyric-file-btn{min-width:96px}
 #custom-bg.mirrored::before,#custom-bg-video.mirrored{transform:scaleX(-1);transform-origin:center center}
@@ -3111,25 +3157,56 @@ body.now-flow-only #now-flow .now-flow-lyric-scroll{
 
 /* Now Flow 进度条优化：更细、更贴底、更柔和，拖动区域保持好点 */
 body.now-flow-only #now-flow #now-flow-progress{
+  z-index:4!important;
   left:84px!important;
   right:calc(14px + 418px)!important;
-  bottom:6px!important;
-  height:3px!important;
-  border-radius:999px!important;
+  bottom:0!important;
+  height:28px!important;
   overflow:visible!important;
-  background:linear-gradient(90deg,rgba(255,255,255,.055),rgba(255,255,255,.11),rgba(255,255,255,.055))!important;
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.045),0 0 18px rgba(0,0,0,.14)!important;
-  opacity:.86!important;
+  border-radius:8px!important;
+  background:transparent!important;
+  box-shadow:none!important;
+  opacity:1!important;
+  cursor:ew-resize!important;
+  touch-action:none;
+  transition:right .24s ease!important;
 }
-body.now-flow-only #now-flow #now-flow-progress::before{
-  content:'';
+body.now-flow-only #now-flow #now-flow-progress-track{
   position:absolute;
   left:0;
   right:0;
-  top:-9px;
-  bottom:-9px;
+  top:18px;
+  height:4px;
   border-radius:999px;
-  background:transparent;
+  overflow:visible;
+  background:linear-gradient(90deg,rgba(255,255,255,.065),rgba(255,255,255,.15),rgba(255,255,255,.065));
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.055),0 0 18px rgba(0,0,0,.14);
+  opacity:.90;
+  transition:height .16s ease,top .16s ease,opacity .16s ease,background .16s ease,box-shadow .16s ease;
+}
+body.now-flow-only #now-flow #now-flow-time{
+  position:absolute;
+  left:0;
+  right:0;
+  top:1px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  color:rgba(255,255,255,.58);
+  font-size:10px;
+  font-weight:760;
+  line-height:12px;
+  letter-spacing:.18px;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+  pointer-events:none;
+  text-shadow:0 1px 6px rgba(0,0,0,.42);
+}
+body.now-flow-only #now-flow #now-flow-current{color:rgba(255,255,255,.84)}
+body.now-flow-only #now-flow #now-flow-duration{color:rgba(255,255,255,.46)}
+body.now-flow-only #now-flow #now-flow-progress::before{
+  display:none!important;
 }
 body.now-flow-only #now-flow #now-flow-progress-fill{
   position:relative!important;
@@ -3139,6 +3216,14 @@ body.now-flow-only #now-flow #now-flow-progress-fill{
   background:linear-gradient(90deg,rgba(255,255,255,.90),rgba(var(--fc-accent-rgb),.82),rgba(164,205,255,.72))!important;
   box-shadow:0 0 12px rgba(var(--fc-accent-rgb),.18),0 0 24px rgba(164,205,255,.08)!important;
   transition:width .12s linear!important;
+}
+body.now-flow-only #now-flow #now-flow-progress-fill::before{
+  content:'';
+  position:absolute;
+  inset:0 0 50%;
+  border-radius:inherit;
+  background:linear-gradient(90deg,rgba(255,255,255,.34),rgba(255,255,255,.06));
+  pointer-events:none;
 }
 body.now-flow-only #now-flow #now-flow-progress-fill::after{
   content:'';
@@ -3150,24 +3235,63 @@ body.now-flow-only #now-flow #now-flow-progress-fill::after{
   border-radius:50%;
   background:radial-gradient(circle at 35% 30%,#fff 0,#fff 34%,rgba(210,236,255,.92) 72%,rgba(var(--fc-accent-rgb),.62) 100%);
   box-shadow:0 0 0 1px rgba(255,255,255,.25),0 0 16px rgba(var(--fc-accent-rgb),.20);
-  transform:translateY(-50%) scale(.58);
-  opacity:0;
+  transform:translateY(-50%) scale(.72);
+  opacity:.68;
   pointer-events:none;
   transition:opacity .16s ease,transform .16s ease;
 }
-body.now-flow-only #now-flow:hover #now-flow-progress,
-body.now-flow-only #now-flow:focus-within #now-flow-progress,
-body.now-flow-only #now-flow.nf-controls-awake #now-flow-progress{
-  height:4px!important;
-  opacity:1!important;
-  background:linear-gradient(90deg,rgba(255,255,255,.075),rgba(255,255,255,.16),rgba(255,255,255,.075))!important;
-}
-body.now-flow-only #now-flow:hover #now-flow-progress-fill::after,
-body.now-flow-only #now-flow:focus-within #now-flow-progress-fill::after,
-body.now-flow-only #now-flow.nf-controls-awake #now-flow-progress-fill::after{
+body.now-flow-only #now-flow #now-flow-progress:hover #now-flow-progress-track,
+body.now-flow-only #now-flow #now-flow-progress:focus-visible #now-flow-progress-track,
+body.now-flow-only #now-flow #now-flow-progress.is-dragging #now-flow-progress-track{
+  top:17px!important;
+  height:7px!important;
   opacity:1;
-  transform:translateY(-50%) scale(1);
+  background:linear-gradient(90deg,rgba(255,255,255,.12),rgba(255,255,255,.24),rgba(255,255,255,.12));
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.13),0 0 0 3px rgba(var(--fc-accent-rgb),.08),0 0 18px rgba(var(--fc-accent-rgb),.16);
 }
+body.now-flow-only #now-flow #now-flow-progress:hover #now-flow-progress-fill::after,
+body.now-flow-only #now-flow #now-flow-progress:focus-visible #now-flow-progress-fill::after,
+body.now-flow-only #now-flow #now-flow-progress.is-dragging #now-flow-progress-fill::after{
+  opacity:1;
+  transform:translateY(-50%) scale(1.18);
+}
+body.now-flow-only #now-flow #now-flow-progress:focus-visible,
+body.now-flow-only #now-flow #now-flow-progress.is-dragging{
+  outline:none;
+}
+body.now-flow-only #now-flow #now-flow-progress:focus-visible #now-flow-progress-fill::after,
+body.now-flow-only #now-flow #now-flow-progress.is-dragging #now-flow-progress-fill::after{
+  opacity:1;
+  transform:translateY(-50%) scale(1.12);
+}
+body.now-flow-only #now-flow #now-flow-seek-preview{
+  position:absolute;
+  left:0;
+  top:-24px;
+  min-width:46px;
+  padding:4px 7px;
+  border:1px solid rgba(255,255,255,.16);
+  border-radius:8px;
+  background:rgba(8,11,16,.88);
+  box-shadow:0 8px 24px rgba(0,0,0,.34),0 0 18px rgba(var(--fc-accent-rgb),.10);
+  color:rgba(255,255,255,.92);
+  font:760 10px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace;
+  font-variant-numeric:tabular-nums;
+  text-align:center;
+  white-space:nowrap;
+  opacity:0;
+  transform:translateX(-50%) translateY(4px) scale(.96);
+  pointer-events:none;
+  transition:opacity .12s ease,transform .12s ease;
+}
+body.now-flow-only #now-flow #now-flow-progress:hover #now-flow-seek-preview,
+body.now-flow-only #now-flow #now-flow-progress:focus-visible #now-flow-seek-preview,
+body.now-flow-only #now-flow #now-flow-progress.is-dragging #now-flow-seek-preview{
+  opacity:1;
+  transform:translateX(-50%) translateY(0) scale(1);
+}
+body.now-flow-only #now-flow #now-flow-progress:hover #now-flow-time,
+body.now-flow-only #now-flow #now-flow-progress.is-dragging #now-flow-time{color:rgba(255,255,255,.74)}
 body.now-flow-only #now-flow:not(:hover):not(:focus-within):not(.nf-controls-awake):not(.nf-volume-open) #now-flow-progress{
   right:calc(14px + 418px)!important;
 }
@@ -3183,7 +3307,7 @@ body.now-flow-only #now-flow:not(:hover):not(:focus-within):not(.nf-controls-awa
   body.now-flow-only #now-flow:not(:hover):not(:focus-within):not(.nf-controls-awake):not(.nf-volume-open) #now-flow-progress{
     left:68px!important;
     right:46px!important;
-    bottom:5px!important;
+    bottom:0!important;
   }
 }
 
@@ -3541,9 +3665,90 @@ html.local-only-mode body.home-has-library #empty-home .home-rail.home-insight-r
 .home-radio-entry-art::before{content:'';width:19px;height:19px;border:2px solid rgba(255,255,255,.88);border-radius:50%;box-shadow:0 0 0 7px rgba(var(--fc-accent-rgb),.12),0 0 22px rgba(var(--fc-accent-rgb),.24)}
 .home-radio-entry-art i,.home-radio-entry-art i::before,.home-radio-entry-art i::after{position:absolute;display:block;width:3px;border-radius:999px;background:rgba(255,255,255,.72);content:''}
 .home-radio-entry-art i{height:13px;left:10px}.home-radio-entry-art i::before{height:25px;left:6px;top:-6px}.home-radio-entry-art i::after{height:19px;left:12px;top:-3px}.home-radio-entry-art i:last-child{left:auto;right:10px;transform:scaleX(-1)}
+.home-discovery-strip{grid-column:1 / -1;min-height:104px;padding:12px 14px;display:grid;grid-template-columns:minmax(150px,.48fr) minmax(0,1.52fr);align-items:center;gap:14px;border:1px solid rgba(255,255,255,.09);border-radius:21px;background:linear-gradient(120deg,rgba(16,20,27,.55),rgba(7,9,13,.66));box-shadow:0 14px 38px rgba(0,0,0,.20),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(25px) saturate(1.18);-webkit-backdrop-filter:blur(25px) saturate(1.18);color:#fff;contain:layout paint style;overflow:hidden;transition:transform .22s,border-color .22s,background .22s,box-shadow .22s,backdrop-filter .22s,-webkit-backdrop-filter .22s}
+.home-discovery-copy{min-width:0;padding-left:4px}.home-discovery-title{display:block;margin-top:7px;font-size:17px;font-weight:790;color:rgba(255,255,255,.96)}.home-discovery-sub{display:block;margin-top:5px;font-size:10px;color:rgba(255,255,255,.43)}
+.home-discovery-list{min-width:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.home-discovery-song{min-width:0;height:78px;padding:8px;border:1px solid rgba(255,255,255,.075);border-radius:16px;background:rgba(255,255,255,.035);color:#fff;display:grid;grid-template-columns:58px minmax(0,1fr);align-items:center;gap:10px;text-align:left;font-family:inherit;cursor:pointer;transition:transform .18s,border-color .18s,background .18s}
+.home-discovery-song:hover{transform:translateY(-2px);border-color:rgba(var(--fc-accent-rgb),.32);background:rgba(var(--fc-accent-rgb),.07)}
+#empty-home .home-grid.home-quick-grid .home-card-quick{transition:transform .22s cubic-bezier(.16,1,.3,1),border-color .22s,background .22s,box-shadow .22s,backdrop-filter .22s,-webkit-backdrop-filter .22s}
+#empty-home .home-grid.home-quick-grid .home-card-quick:not(:hover){background:linear-gradient(142deg,rgba(18,21,26,.70),rgba(7,9,13,.80))!important;box-shadow:var(--saved-panel-glass-shadow)!important;backdrop-filter:blur(24px) saturate(1.12)!important;-webkit-backdrop-filter:blur(24px) saturate(1.12)!important}
+#empty-home .home-grid.home-quick-grid .home-card-quick:hover{background:var(--saved-button-glass-hover-bg)!important;box-shadow:var(--saved-button-glass-hover-shadow)!important;backdrop-filter:var(--saved-button-glass-filter)!important;-webkit-backdrop-filter:var(--saved-button-glass-filter)!important}
+@media (hover:hover){
+  .home-listen-card:hover,.home-next-card:hover,.home-discovery-strip:hover,.home-discovery-song:hover,.home-ranking-entry:hover{transform:translateY(-2px);border-color:transparent!important;background:var(--saved-button-glass-hover-bg)!important;box-shadow:var(--saved-button-glass-hover-shadow)!important;backdrop-filter:var(--saved-button-glass-filter)!important;-webkit-backdrop-filter:var(--saved-button-glass-filter)!important}
+  html.control-glass-svg-ok .home-listen-card:hover,html.control-glass-svg-ok .home-next-card:hover,html.control-glass-svg-ok .home-discovery-strip:hover,html.control-glass-svg-ok .home-discovery-song:hover,html.control-glass-svg-ok .home-ranking-entry:hover{backdrop-filter:var(--saved-button-glass-svg-filter)!important;-webkit-backdrop-filter:var(--saved-button-glass-svg-filter)!important}
+  .home-discovery-strip:hover{background:rgba(0,0,0,.035)!important;border-color:rgba(255,255,255,.10)!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+  .home-discovery-song:hover{background:rgba(255,255,255,.035)!important;border-color:rgba(255,255,255,.12)!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+  html.control-glass-svg-ok .home-discovery-strip:hover,html.control-glass-svg-ok .home-discovery-song:hover{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+}
+.home-discovery-cover{width:58px;height:58px;border-radius:13px;background:linear-gradient(135deg,rgba(var(--fc-accent-rgb),.30),rgba(36,66,255,.24),rgba(8,10,14,.86));background-size:cover;background-position:center;box-shadow:0 8px 20px rgba(0,0,0,.25)}.home-discovery-song-copy{min-width:0}.home-discovery-song-name{display:block;font-size:12px;font-weight:760;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.home-discovery-song-artist{display:block;margin-top:6px;font-size:9.5px;color:rgba(255,255,255,.44);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .home-legacy-rail{display:none!important}
 @media (max-width:1320px){.home-insight-dock{grid-template-columns:1fr}.home-next-card{min-height:118px}.home-insight-card{min-height:118px}}
-@media (max-width:760px){html.local-only-mode body.home-has-library #empty-home .home-rail.home-insight-rail{grid-column:1;grid-row:3;padding-top:0}.home-insight-dock{grid-template-columns:1fr}.home-listen-metrics{gap:8px}.home-listen-metric + .home-listen-metric{padding-left:8px}.home-listen-value{font-size:18px}}
+@media (max-width:760px){html.local-only-mode body.home-has-library #empty-home .home-rail.home-insight-rail{grid-column:1;grid-row:3;padding-top:0}.home-insight-dock{grid-template-columns:1fr}.home-listen-metrics{gap:8px}.home-listen-metric + .home-listen-metric{padding-left:8px}.home-listen-value{font-size:18px}.home-discovery-strip{grid-template-columns:1fr}.home-discovery-list{grid-template-columns:1fr}.home-discovery-song{height:70px}}
+/* Compact desktop windows: the quick-card row must size to its content so the
+   ranking/radio dock can follow it, and the whole home surface can scroll. */
+@media (max-height:980px){
+  html.local-only-mode body.desktop-shell.home-has-library #empty-home .empty-home-shell{
+    grid-template-rows:auto minmax(0,1fr)!important;
+    align-content:stretch;
+    min-height:0;
+    overflow-x:hidden!important;
+    overflow-y:auto!important;
+    overscroll-behavior-y:contain;
+    scrollbar-gutter:stable;
+    scrollbar-width:auto;
+    scrollbar-color:rgba(var(--fc-accent-rgb),.46) transparent;
+    padding:2px 8px 28px 2px;
+    contain:layout paint style;
+    transform:translateZ(0);
+  }
+  html.local-only-mode body.desktop-shell.home-has-library #empty-home .home-grid.home-quick-grid{
+    height:auto!important;
+    min-height:0!important;
+  }
+  html.local-only-mode body.desktop-shell.home-has-library #empty-home .home-hero{
+    height:auto;
+    min-height:100%;
+    align-self:stretch;
+  }
+  html.local-only-mode body.desktop-shell.home-has-library #empty-home .home-rail.home-insight-rail{
+    align-self:stretch;
+    padding-bottom:8px;
+  }
+  /* A compact window scrolls a large translucent surface. Avoid recomputing
+     live backdrop blur for every card on every scroll frame. The translucent
+     gradients preserve the same visual hierarchy at a much lower GPU cost. */
+  html.local-only-mode body.desktop-shell.home-has-library #empty-home .home-card,
+  html.local-only-mode body.desktop-shell.home-has-library #empty-home .home-insight-card{
+    backdrop-filter:none!important;
+    -webkit-backdrop-filter:none!important;
+    animation:none!important;
+    contain:layout paint style;
+    box-shadow:0 12px 34px rgba(0,0,0,.24),inset 0 1px 0 rgba(255,255,255,.065);
+  }
+  html.local-only-mode body.desktop-shell.home-has-library #empty-home .home-card-art,
+  html.local-only-mode body.desktop-shell.home-has-library #empty-home .home-next-cover{
+    box-shadow:0 10px 26px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.12);
+  }
+  html.local-only-mode body.desktop-shell.home-has-library #empty-home .empty-home-shell::-webkit-scrollbar{width:9px}
+  html.local-only-mode body.desktop-shell.home-has-library #empty-home .empty-home-shell::-webkit-scrollbar-thumb{
+    border:2px solid transparent;
+    border-radius:999px;
+    background:rgba(var(--fc-accent-rgb),.46);
+    background-clip:padding-box;
+  }
+}
+@media (min-width:1321px) and (max-height:980px){
+  html.local-only-mode body.desktop-shell.home-has-library #empty-home .home-insight-dock{
+    height:auto;
+    grid-template-rows:auto auto auto;
+    align-content:start;
+    row-gap:12px;
+  }
+  html.local-only-mode body.desktop-shell.home-has-library #empty-home .home-insight-card,
+  html.local-only-mode body.desktop-shell.home-has-library #empty-home .home-discovery-strip{
+    height:auto;
+  }
+}
 @media (max-width:1320px){
   html.local-only-mode body.desktop-shell.home-has-library #empty-home .home-grid.home-quick-grid,#empty-home .home-grid.home-quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
   #empty-home .home-grid.home-quick-grid .home-card-featured{grid-column:1 / -1!important}
@@ -3551,6 +3756,59 @@ html.local-only-mode body.home-has-library #empty-home .home-rail.home-insight-r
 @media (max-width:720px){
   html.local-only-mode body.desktop-shell.home-has-library #empty-home .home-grid.home-quick-grid,#empty-home .home-grid.home-quick-grid{grid-template-columns:1fr!important}
   #empty-home .home-grid.home-quick-grid .home-card-featured{grid-column:auto!important}
+}
+
+/* The daily-review artwork is static while tracks change. Keep it on its own
+   compositor layer and out of the live glass/backdrop pipeline; otherwise a
+   cover-texture update invalidates and briefly flashes this entire large card. */
+html.local-only-mode body.desktop-shell.home-has-library #empty-home .home-hero,
+html.control-glass-svg-ok body.desktop-shell.home-has-library #empty-home .home-hero{
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+  contain:layout paint style;
+  isolation:isolate;
+  transform:translateZ(0);
+  backface-visibility:hidden;
+  animation:none!important;
+}
+html.local-only-mode body.desktop-shell.home-has-library #empty-home .daily-review-card{
+  contain:layout paint style;
+  isolation:isolate;
+  transform:translateZ(0);
+  backface-visibility:hidden;
+  animation:none!important;
+}
+html.local-only-mode body.desktop-shell.home-has-library #empty-home .daily-review-card::before{
+  transform:translateZ(0);
+  backface-visibility:hidden;
+}
+
+/* Showing or waking the player strip must not resize Home. Track switches
+   briefly toggle controls-visible; the old 46px -> 126px bottom inset made the
+   whole dashboard (most visibly the tall daily-review card) shrink and grow. */
+@media (min-width:761px){
+  body.desktop-shell:not(.desktop-fullscreen).empty-home-active #empty-home,
+  body.desktop-shell:not(.desktop-fullscreen).empty-home-active.controls-visible #empty-home{
+    bottom:46px!important;
+  }
+}
+@media (min-width:761px) and (max-height:760px){
+  body.desktop-shell:not(.desktop-fullscreen).empty-home-active #empty-home,
+  body.desktop-shell:not(.desktop-fullscreen).empty-home-active.controls-visible #empty-home{
+    bottom:34px!important;
+  }
+}
+@media (min-width:761px) and (max-height:700px){
+  body.desktop-shell:not(.desktop-fullscreen).empty-home-active #empty-home,
+  body.desktop-shell:not(.desktop-fullscreen).empty-home-active.controls-visible #empty-home{
+    bottom:30px!important;
+  }
+}
+body.desktop-shell.desktop-fullscreen.empty-home-active #empty-home,
+body.desktop-shell.desktop-fullscreen.empty-home-active.controls-visible #empty-home,
+html:fullscreen body.desktop-shell.empty-home-active #empty-home,
+html:fullscreen body.desktop-shell.empty-home-active.controls-visible #empty-home{
+  bottom:52px!important;
 }
 
 /* Platform charts: a focused second-level destination opened from Home. */
@@ -3759,6 +4017,8 @@ body.secondary-view-active #playlist-panel{
 #secondary-library-page .library-track-row:hover{background:linear-gradient(90deg,rgba(var(--fc-accent-rgb),.075),rgba(255,255,255,.025));transform:translateX(2px)}
 #secondary-library-page .library-track-cover{box-shadow:0 7px 16px rgba(0,0,0,.24),inset 0 0 0 1px rgba(255,255,255,.08)}
 #secondary-library-page .library-track-row.can-reorder{grid-template-columns:22px 30px 34px minmax(0,1fr) auto 54px}
+#secondary-library-page .library-track-row.can-remove{grid-template-columns:30px 34px minmax(0,1fr) auto 28px}
+#secondary-library-page .library-track-row.can-reorder.can-remove{grid-template-columns:22px 30px 34px minmax(0,1fr) auto 54px 28px}
 #secondary-library-page .library-track-row.batch-mode{grid-template-columns:22px 30px 34px minmax(0,1fr) auto}
 .library-track-drag-handle{height:30px;display:grid;place-items:center;color:rgba(255,255,255,.42);cursor:grab;touch-action:none;font-size:13px;letter-spacing:-3px;border-radius:8px}
 .library-track-drag-handle:hover{color:#fff;background:rgba(255,255,255,.08)}
@@ -3768,6 +4028,15 @@ body.secondary-view-active #playlist-panel{
 .library-track-order-btn{width:24px;height:24px;padding:0;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.055);color:rgba(255,255,255,.64);font:800 12px/1 inherit;cursor:pointer}
 .library-track-order-btn:hover:not(:disabled){color:#fff;border-color:rgba(var(--fc-accent-rgb),.42);background:rgba(var(--fc-accent-rgb),.12)}
 .library-track-order-btn:disabled{opacity:.22;cursor:default}
+.library-track-remove{width:26px;height:26px;flex:0 0 26px;padding:0;border:1px solid rgba(255,110,125,.20);border-radius:8px;background:rgba(255,78,96,.07);color:rgba(255,170,180,.78);font:800 16px/1 var(--font-sans);cursor:pointer}
+.library-track-remove:hover{border-color:rgba(255,110,125,.46);background:rgba(255,78,96,.16);color:#fff}
+.secondary-library-manage-actions{display:inline-flex;align-items:center;gap:7px}
+.secondary-library-manage-actions[hidden]{display:none}
+#secondary-library-page .library-card.manage-mode{position:relative;padding-right:42px}
+#secondary-library-page .library-card.manage-disabled{opacity:.48;cursor:not-allowed}
+.library-card-manage-check{position:absolute;right:12px;top:12px;width:20px;height:20px;display:grid;place-items:center;border:1px solid rgba(255,255,255,.24);border-radius:7px;background:rgba(0,0,0,.22);color:transparent;font:900 13px/1 var(--font-sans);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.library-card.manage-selected{border-color:rgba(var(--fc-accent-rgb),.56)!important;background:linear-gradient(135deg,rgba(var(--fc-accent-rgb),.18),rgba(255,255,255,.045))!important;box-shadow:inset 3px 0 0 rgba(var(--fc-accent-rgb),.88),0 16px 38px rgba(0,0,0,.20)!important}
+.library-card.manage-selected .library-card-manage-check{border-color:rgba(var(--fc-accent-rgb),.72);background:rgba(var(--fc-accent-rgb),.25);color:#fff}
 
 @media (max-width:1500px) and (min-width:901px){
   #app-secondary-view{width:calc(100vw - 72px);height:calc(100vh - 104px)}
@@ -3811,10 +4080,10 @@ body.secondary-view-active #playlist-panel{
   #app-nav-edge-handle{right:395px;width:72px}
   #app-secondary-view{top:58px}
 }
-@media (min-width:621px) and (max-width:1320px){
+@media (min-width:621px) and (max-width:1500px){
   html.local-only-mode body.desktop-shell.home-has-library #empty-home .home-grid.home-quick-grid,
-  #empty-home .home-grid.home-quick-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}
-  #empty-home .home-grid.home-quick-grid .home-card-featured{grid-column:1 / -1!important}
+  #empty-home .home-grid.home-quick-grid{grid-template-columns:minmax(250px,1.55fr) repeat(3,minmax(110px,1fr))!important}
+  #empty-home .home-grid.home-quick-grid .home-card-featured{grid-column:auto!important}
   #empty-home .home-grid.home-quick-grid .home-card-quick{min-height:142px!important;padding:16px!important}
   #empty-home .home-grid.home-quick-grid .home-card-quick .home-card-title{font-size:16px!important;max-width:calc(100% - 62px)!important}
   #empty-home .home-grid.home-quick-grid .home-card-quick .home-card-art{width:58px!important;height:58px!important;right:11px!important;bottom:11px!important;border-radius:15px!important}
@@ -3822,6 +4091,7 @@ body.secondary-view-active #playlist-panel{
 @media (min-width:621px) and (max-width:1060px){
   html.local-only-mode body.desktop-shell.home-has-library #empty-home .home-grid.home-quick-grid,
   #empty-home .home-grid.home-quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  #empty-home .home-grid.home-quick-grid .home-card-featured{grid-column:1 / -1!important}
 }
 
 /* Unified liquid-glass navigation replaces the duplicate top-right buttons. */
@@ -4264,6 +4534,14 @@ body.now-flow-only #now-flow,body.now-flow-only #now-flow:hover,body.now-flow-on
           </span>
           <span class="home-next-arrow" aria-hidden="true">›</span>
         </button>
+        <section class="home-discovery-strip" aria-label="为你挑选">
+          <div class="home-discovery-copy">
+            <span class="home-insight-kicker">FOR YOU · 为你挑选</span>
+            <span class="home-discovery-title">换一首，也许正合心意</span>
+            <span class="home-discovery-sub">从你的音乐与偏好中挑选</span>
+          </div>
+          <div id="home-discovery-list" class="home-discovery-list"></div>
+        </section>
         <button id="home-ranking-entry" class="home-insight-card home-ranking-entry" type="button" onclick="openPlatformRanking('all')" aria-label="打开各平台排行榜">
           <span class="home-ranking-entry-copy">
             <span class="home-insight-kicker">PLATFORM CHARTS · 音乐发现</span>
@@ -4309,7 +4587,15 @@ body.now-flow-only #now-flow,body.now-flow-only #now-flow:hover,body.now-flow-on
         <input id="secondary-library-search" class="secondary-search" type="search" name="library-search" autocomplete="off" placeholder="搜索歌名、歌手、专辑或歌单…" aria-label="搜索音乐库（按 Enter 搜索）" oninput="handleSecondaryLibrarySearchInput(event)" oncompositionstart="secondaryLibrarySearchComposing=true" oncompositionend="secondaryLibrarySearchComposing=false" onkeydown="handleSecondaryLibrarySearchKeydown(event)">
         <button class="secondary-action primary" type="button" onclick="openLocalFolderImport()">导入文件夹</button>
         <button class="secondary-action" type="button" onclick="openPlatformPlaylistImport()">导入歌单</button>
+        <button id="secondary-lx-sync-all" class="secondary-action" type="button" onclick="syncAllSecondaryLxPlaylists()" title="从落雪电脑端重新读取全部歌单，并保留 Mineradio 手动添加的歌曲">同步落雪</button>
+        <button class="secondary-action" type="button" onclick="openLxPlaylistImport()" title="选择落雪最新导出的 .lxmc 文件，按歌单 ID 更新已有导入歌单">更新 .lxmc</button>
         <button class="secondary-action" type="button" onclick="createEmptySecondaryPlaylist()">新建歌单</button>
+        <button id="secondary-library-manage-toggle" class="secondary-action" type="button" onclick="toggleSecondaryLibraryManageMode()">批量管理</button>
+        <span id="secondary-library-manage-actions" class="secondary-library-manage-actions" hidden>
+          <button class="secondary-action" type="button" onclick="selectAllSecondaryLibraryManage()">全选可管理歌单</button>
+          <button id="secondary-library-manage-commit" class="secondary-action danger" type="button" onclick="openSecondaryLibraryBatchManageDialog()" disabled>删除/隐藏（0）</button>
+          <button class="secondary-action" type="button" onclick="toggleSecondaryLibraryManageMode(false)">取消</button>
+        </span>
       </div>
       <div class="secondary-content">
         <div class="library-layout">
@@ -4572,7 +4858,7 @@ body.now-flow-only #now-flow,body.now-flow-only #now-flow:hover,body.now-flow-on
         <button data-desktop-lyrics-fps="30">30</button>
         <button data-desktop-lyrics-fps="60">60</button>
         <button data-desktop-lyrics-fps="120">120</button>
-        <button data-desktop-lyrics-fps="0">无上限</button>
+        <button data-desktop-lyrics-fps="165">165</button>
       </div>
       <div class="fx-section-label">桌面歌词布局</div>
       <div class="fx-seg" id="desktop-lyrics-rows-seg">
@@ -5137,7 +5423,11 @@ body.now-flow-only #now-flow,body.now-flow-only #now-flow:hover,body.now-flow-on
     <button id="nf-autohide-btn" class="nf-btn nf-round nf-hide-xs" data-nf-icon="hide" type="button" onclick="nfToggleNowFlowAutoHide(event)" title="播放条自动隐藏" aria-label="播放条自动隐藏"></button>
   </div>
   <div class="now-flow-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-  <div id="now-flow-progress" onclick="nfSeek(event)" title="点击跳转播放进度"><div id="now-flow-progress-fill"></div></div>
+  <div id="now-flow-progress" role="slider" tabindex="0" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0:00 / 0:00" title="点击或拖动调整播放进度">
+    <div id="now-flow-progress-track"><div id="now-flow-progress-fill"></div></div>
+    <span id="now-flow-seek-preview" aria-hidden="true">0:00</span>
+    <div id="now-flow-time" aria-live="off"><span id="now-flow-current">0:00</span><span id="now-flow-duration">0:00</span></div>
+  </div>
 </div>
 
 <input type="file" id="file-input" accept=".mp3,.flac,.wav,.ogg,.opus,.m4a,.mp4,.aac,.webm,.ape,.wma,.aiff,.aif,.aifc,.caf,.amr,.awb,.oga,.mka,.mkv,.m4b,.alac,.ac3,.dts,.tta,.tak,.wv,.au,.snd,.ra,.rm,.lrc,.txt,.jpg,.jpeg,.png,.webp" multiple style="display:none">
@@ -5145,6 +5435,7 @@ body.now-flow-only #now-flow,body.now-flow-only #now-flow:hover,body.now-flow-on
 <input type="file" id="background-image-input" accept=".jpg,.jpeg,.png,.webp,.mp4,.webm,.mov,image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime" style="display:none">
 <div id="drop-overlay"><div class="drop-text">拖放音乐或封面</div></div>
 <div id="free-camera-hint"><b>自由镜头</b> R 固定/退出 · WASD 移动 · 鼠标转向 · Shift 加速 · Space/Ctrl 升降 · Q/E 轻微旋转 · 滚轮景深 · K 回正</div>
+<div id="render-fps-hud" title="按 F8 隐藏/显示帧率"><b>-- FPS</b><br><span>正在采样 · F8 隐藏</span></div>
 <div id="loading-overlay"><div class="spinner"></div></div>
 
 <!-- 封面裁剪模态 -->
@@ -5264,7 +5555,7 @@ body.now-flow-only #now-flow,body.now-flow-only #now-flow:hover,body.now-flow-on
         <div>
           <div class="update-kicker">MINERADIO 二创版</div>
           <div id="update-modal-title" class="update-title">New release</div>
-          <div id="update-modal-version" class="update-version">Mineradio v1.5.5.1</div>
+          <div id="update-modal-version" class="update-version">Mineradio v1.5.6</div>
         </div>
       </div>
       <div class="update-hero">
@@ -5471,6 +5762,11 @@ function nowFlowScheduleControlsHide(delay) {
 function nowFlowWakeControls(delay) {
   var root = document.getElementById('now-flow');
   if (!root) return;
+  if (isDesktopFusionFixed()) {
+    root.classList.remove('nf-controls-awake', 'nf-volume-open', 'nf-option-open');
+    if (nowFlowAutoHideEnabled() && root.classList.contains('visible')) root.classList.add('nf-auto-hidden');
+    return;
+  }
   root.classList.remove('nf-auto-hidden');
   root.classList.add('nf-controls-awake');
   if (nowFlowAutoHideEnabled()) nowFlowScheduleControlsHide(delay || 2600);
@@ -5727,8 +6023,8 @@ var updatePreviewState = {
   installerPath: '',
   installerOpened: false,
   cached: false,
-  currentVersion: '1.5.5.1',
-  version: '1.5.5.1',
+  currentVersion: '1.5.6',
+  version: '1.5.6',
   configured: false,
   preview: true,
   updateAvailable: false,
@@ -5823,6 +6119,7 @@ function collapsePrimaryNav(delay) {
   }, Math.max(0, Number(delay) || 0));
 }
 function revealPrimaryNav(linger) {
+  if (isDesktopFusionFixed()) return;
   clearPrimaryNavHideTimer();
   if (primaryNavManualHidden) {
     primaryNavManualHidden = false;
@@ -5920,6 +6217,10 @@ function toggleFxFabAutoHide(e) {
   showToast(fxFabAutoHide ? '视觉控制台按钮已自动隐藏' : '视觉控制台按钮已固定显示');
 }
 function updateFxFabAutoHideFromPointer(x, y) {
+  if (isDesktopFusionFixed()) {
+    document.body.classList.remove('fx-fab-peek');
+    return;
+  }
   if (!fxFabAutoHide || !diyPlayerMode || immersiveMode) {
     document.body.classList.remove('fx-fab-peek');
     fxFabAutoHideRevealArmed = true;
@@ -5969,6 +6270,10 @@ function shouldSuppressFullscreenDiyPeek() {
   return !!(visualGuideActive || fxPanelOpen || hotkeyOpen);
 }
 function updateFullscreenDiyPeekFromPointer(x, y) {
+  if (isDesktopFusionFixed()) {
+    document.body.classList.remove('fullscreen-diy-peek');
+    return;
+  }
   var isFullscreen = !!(desktopRuntimeState.fullscreen || desktopFullscreenActive || document.fullscreenElement || document.body.classList.contains('desktop-fullscreen'));
   if (!isFullscreen || immersiveMode || shouldSuppressFullscreenDiyPeek()) {
     document.body.classList.remove('fullscreen-diy-peek');
@@ -6200,6 +6505,10 @@ function ensureAudioOutputModal() {
 function openAudioOutputSettings() {
   var modal = ensureAudioOutputModal();
   modal.classList.add('show');
+  if (!audioOutputDeviceChangeBound && navigator.mediaDevices && typeof navigator.mediaDevices.addEventListener === 'function') {
+    audioOutputDeviceChangeBound = true;
+    navigator.mediaDevices.addEventListener('devicechange', function(){ refreshAudioOutputDevices(); });
+  }
   refreshAudioOutputDevices();
 }
 function closeAudioOutputSettings() {
@@ -6208,11 +6517,9 @@ function closeAudioOutputSettings() {
 }
 function bindAudioOutputSettings() {
   ensureAudioOutputModal();
-  if (!audioOutputDeviceChangeBound && navigator.mediaDevices && typeof navigator.mediaDevices.addEventListener === 'function') {
-    audioOutputDeviceChangeBound = true;
-    navigator.mediaDevices.addEventListener('devicechange', function(){ refreshAudioOutputDevices(); });
-  }
-  refreshAudioOutputDevices();
+  // Device enumeration spins up Chromium's video-capture utility process even
+  // when only audio outputs are needed. Defer it until this panel is opened.
+  renderAudioOutputDevices();
 }
 function syncAudioSingleLoopMode() {
   if (!audio) return false;
@@ -6793,7 +7100,7 @@ var fxDefaults = {
   desktopLyricsGlow: true,
   desktopLyricsCinema: true,
   desktopLyricsHighlight: false,
-  desktopLyricsFps: 60,
+  desktopLyricsFps: 120,
   desktopLyricsRows: 'double',
   desktopLyricsAlign: 'center',
   desktopLyricsFont: 'follow',
@@ -6835,7 +7142,7 @@ var fxDefaults = {
   shelfBgOpacity: 0.90,
   shelfAccentColor: '#ffffff',
   performanceBackground: 'auto',
-  performanceQuality: 'balanced',
+  performanceQuality: 'ultra',
   liveBackgroundKeep: false,
   cam: 'off',
 };
@@ -6907,7 +7214,7 @@ var PACKAGED_DEFAULT_FX_SNAPSHOT = Object.freeze({
   desktopLyricsGlow: true,
   desktopLyricsCinema: true,
   desktopLyricsHighlight: false,
-  desktopLyricsFps: 60,
+  desktopLyricsFps: 120,
   desktopLyricsRows: 'double',
   desktopLyricsAlign: 'center',
   desktopLyricsFont: 'follow',
@@ -6915,7 +7222,7 @@ var PACKAGED_DEFAULT_FX_SNAPSHOT = Object.freeze({
   stageLyricsVertical: false,
   immersiveAutoFullscreen: true,
   performanceBackground: 'auto',
-  performanceQuality: 'balanced',
+  performanceQuality: 'ultra',
   liveBackgroundKeep: false,
   particleLyrics: true,
   lyricAnimationMode: 'off',
@@ -6981,23 +7288,47 @@ var startupVisualPreviewActive = false;
 var fx = Object.assign({}, fxDefaults, readSavedLyricLayout());
 fx.preset = playbackVisualPreset;
 try {
-  if (!localStorage.getItem('mineradio-performance-balanced-migration-v1')) {
-    var migratedPerfQuality = false;
-    if (fx.performanceQuality === 'high' || fx.performanceQuality === 'ultra') {
-      fx.performanceQuality = 'balanced';
-      migratedPerfQuality = true;
+  if (!localStorage.getItem('mineradio-performance-runtime-guard-v2')) {
+    if (!Number(fx.desktopLyricsFps) || Number(fx.desktopLyricsFps) > 60) fx.desktopLyricsFps = 60;
+    if (fx.performanceBackground === 'keep' || fx.liveBackgroundKeep === true) {
+      fx.performanceBackground = 'auto';
+      fx.liveBackgroundKeep = false;
     }
-    if (migratedPerfQuality) {
-      try {
-        var perfRawLayout = JSON.parse(localStorage.getItem(LYRIC_LAYOUT_STORE_KEY) || '{}') || {};
-        perfRawLayout.performanceQuality = 'balanced';
-        localStorage.setItem(LYRIC_LAYOUT_STORE_KEY, JSON.stringify(perfRawLayout));
-      } catch (_savePerfMigrationError) {}
-    }
-    localStorage.setItem('mineradio-performance-balanced-migration-v1', '1');
+    try {
+      var perfGuardLayout = JSON.parse(localStorage.getItem(LYRIC_LAYOUT_STORE_KEY) || '{}') || {};
+      perfGuardLayout.performanceQuality = fx.performanceQuality;
+      perfGuardLayout.desktopLyricsFps = fx.desktopLyricsFps;
+      perfGuardLayout.performanceBackground = fx.performanceBackground;
+      perfGuardLayout.liveBackgroundKeep = fx.liveBackgroundKeep;
+      localStorage.setItem(LYRIC_LAYOUT_STORE_KEY, JSON.stringify(perfGuardLayout));
+      localStorage.setItem(WALLPAPER_RECORD_FPS_STORE_KEY || 'mineradio-wallpaper-record-fps-v2', '30');
+    } catch (_savePerfGuardError) {}
+    localStorage.setItem('mineradio-performance-runtime-guard-v2', '1');
   }
-} catch (_perfMigrationError) {
-  if (fx.performanceQuality === 'high' || fx.performanceQuality === 'ultra') fx.performanceQuality = 'balanced';
+} catch (_perfGuardError) {
+  if (!Number(fx.desktopLyricsFps) || Number(fx.desktopLyricsFps) > 60) fx.desktopLyricsFps = 60;
+}
+try {
+  if (!localStorage.getItem('mineradio-performance-ultra-default-v1')) {
+    fx.performanceQuality = 'ultra';
+    var ultraDefaultLayout = JSON.parse(localStorage.getItem(LYRIC_LAYOUT_STORE_KEY) || '{}') || {};
+    ultraDefaultLayout.performanceQuality = 'ultra';
+    localStorage.setItem(LYRIC_LAYOUT_STORE_KEY, JSON.stringify(ultraDefaultLayout));
+    localStorage.setItem('mineradio-performance-ultra-default-v1', '1');
+  }
+} catch (_ultraDefaultError) {
+  fx.performanceQuality = 'ultra';
+}
+try {
+  if (!localStorage.getItem('mineradio-high-refresh-lyrics-v3')) {
+    fx.desktopLyricsFps = Math.max(120, Number(fx.desktopLyricsFps) || 0);
+    var highRefreshLayout = JSON.parse(localStorage.getItem(LYRIC_LAYOUT_STORE_KEY) || '{}') || {};
+    highRefreshLayout.desktopLyricsFps = fx.desktopLyricsFps;
+    localStorage.setItem(LYRIC_LAYOUT_STORE_KEY, JSON.stringify(highRefreshLayout));
+    localStorage.setItem('mineradio-high-refresh-lyrics-v3', '1');
+  }
+} catch (_highRefreshMigrationError) {
+  if (!Number(fx.desktopLyricsFps)) fx.desktopLyricsFps = 120;
 }
 normalizeDevelopmentLockedFxState();
 var presetTransition = { active:false, start:-10, duration:0.92, from:0, to:0 };
@@ -7086,7 +7417,10 @@ var desktopRuntimeState = {
   minimized: false,
   visible: true,
   focused: true,
-  fullscreen: false
+  fullscreen: false,
+  desktopEmbedded: false,
+  desktopInteractive: false,
+  displayFrequency: 60
 };
 var renderPowerState = { mode: '', width: 0, height: 0, pixelRatio: 0 };
 var backgroundCacheTrimTimer = 0;
@@ -7320,7 +7654,10 @@ function applyRendererPowerMode() {
   var height = deep ? 4 : Math.max(1, innerHeight);
   var pixelRatio = getRenderPixelRatio();
   var mode = deep ? 'sleep' : 'active';
-  if (renderPowerState.mode === mode && renderPowerState.width === width && renderPowerState.height === height && Math.abs(renderPowerState.pixelRatio - pixelRatio) < 0.001) return;
+  if (renderPowerState.mode === mode && renderPowerState.width === width && renderPowerState.height === height && Math.abs(renderPowerState.pixelRatio - pixelRatio) < 0.001) {
+    if (typeof updateCustomBackgroundVideoPowerState === 'function') updateCustomBackgroundVideoPowerState();
+    return;
+  }
   renderPowerState = { mode: mode, width: width, height: height, pixelRatio: pixelRatio };
   renderer.setPixelRatio(pixelRatio);
   renderer.setSize(width, height, false);
@@ -7329,6 +7666,7 @@ function applyRendererPowerMode() {
     if (renderer.renderLists && renderer.renderLists.dispose) renderer.renderLists.dispose();
     scheduleBackgroundCacheTrim();
   }
+  if (typeof updateCustomBackgroundVideoPowerState === 'function') updateCustomBackgroundVideoPowerState();
 }
 function updateDesktopRuntimeState(state) {
   state = state || {};
@@ -7339,8 +7677,12 @@ function updateDesktopRuntimeState(state) {
   desktopRuntimeState.visible = state.isVisible !== false;
   desktopRuntimeState.focused = state.isFocused !== false;
   desktopRuntimeState.fullscreen = !!(state.isFullScreen || state.isNativeFullScreen || state.isHtmlFullScreen || state.isWindowFullScreen);
+  desktopRuntimeState.desktopEmbedded = !!state.isDesktopEmbedded;
+  desktopRuntimeState.desktopInteractive = !!state.isDesktopInteractive;
+  desktopRuntimeState.displayFrequency = Math.max(30, Math.min(240, Number(state.displayFrequency) || desktopRuntimeState.displayFrequency || 60));
   updateRenderPowerClasses();
   applyRendererPowerMode();
+  if (typeof wakeMainRenderLoop === 'function') wakeMainRenderLoop();
   if (fx && (fx.desktopLyrics || fx.wallpaperMode)) setTimeout(syncDesktopOverlayState, 0);
   if (wasDeep && !isDeepBackgroundMode()) recoverVisualsAfterBackground('desktop-runtime-state');
   if (desktopRuntimeState.fullscreen !== wasFullscreen) scheduleMainRendererViewportRefresh('desktop-runtime-state');
@@ -7350,12 +7692,14 @@ function installRenderPowerHooks() {
   document.addEventListener('visibilitychange', function(){
     updateRenderPowerClasses();
     applyRendererPowerMode();
+    if (typeof wakeMainRenderLoop === 'function') wakeMainRenderLoop();
     if (!isDeepBackgroundMode()) recoverVisualsAfterBackground('visibilitychange');
   });
   window.addEventListener('focus', function(){
     desktopRuntimeState.focused = true;
     updateRenderPowerClasses();
     applyRendererPowerMode();
+    if (typeof wakeMainRenderLoop === 'function') wakeMainRenderLoop();
     if (!isDeepBackgroundMode()) recoverVisualsAfterBackground('focus');
   });
   window.addEventListener('blur', function(){
@@ -7388,27 +7732,27 @@ function installRenderPowerHooks() {
 var scene = new THREE.Scene();
 scene.background = null;
 var camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
-var RENDER_DPR_CAP = 1.12;
-var RENDER_PIXEL_BUDGET = 3600000;
-var RENDER_MIN_DPR = 0.62;
+var RENDER_DPR_CAP = 1.00;
+var RENDER_PIXEL_BUDGET = 2800000;
+var RENDER_MIN_DPR = 0.56;
 // Keep interaction fluid while avoiding needless 90/120/144 Hz GPU work.
 var RENDER_VISIBLE_VSYNC = false; // 锁定目标帧率，避免高刷屏持续满负载渲染。
-var RENDER_ACTIVE_FPS = 60;
-var RENDER_LARGE_FPS = 50;
-var RENDER_HUGE_FPS = 60;
-var RENDER_IDLE_FPS = 30;
-var RENDER_IDLE_LARGE_FPS = 24;
-var RENDER_INTERACTION_FPS = 72;
-var RENDER_INTERACTION_LARGE_FPS = 60;
-var RENDER_INTERACTION_HUGE_FPS = 60;
+var RENDER_ACTIVE_FPS = 165;
+var RENDER_LARGE_FPS = 120;
+var RENDER_HUGE_FPS = 90;
+var RENDER_IDLE_FPS = 16;
+var RENDER_IDLE_LARGE_FPS = 14;
+var RENDER_INTERACTION_FPS = 165;
+var RENDER_INTERACTION_LARGE_FPS = 120;
+var RENDER_INTERACTION_HUGE_FPS = 90;
 var RENDER_INTERACTION_HOLD_MS = 650;
 var renderInteractionBoostUntil = 0;
 var renderInteractionReason = '';
 function renderQualityProfile() {
   var quality = normalizePerformanceQuality(fx && fx.performanceQuality);
-  if (quality === 'eco') return { cap: 0.85, min: 0.50, budget: 1900000 };
-  if (quality === 'balanced') return { cap: 1.00, min: 0.58, budget: 2800000 };
-  if (quality === 'ultra') return { cap: 1.35, min: 0.72, budget: 5200000 };
+  if (quality === 'eco') return { cap: 0.78, min: 0.46, budget: 1450000 };
+  if (quality === 'balanced') return { cap: 0.92, min: 0.54, budget: 2100000 };
+  if (quality === 'ultra') return { cap: 1.18, min: 0.66, budget: 4000000 };
   return { cap: RENDER_DPR_CAP, min: RENDER_MIN_DPR, budget: RENDER_PIXEL_BUDGET };
 }
 function getRenderPixelRatio() {
@@ -9054,6 +9398,7 @@ function scheduleControlsHide(delay) {
 }
 
 function revealBottomControls(delay) {
+  if (isDesktopFusionFixed()) return;
   if (document.body.classList.contains('home-controls-locked')) return;
   var bar = document.getElementById('bottom-bar');
   if (isBottomControlsSuppressedForShelf()) return;
@@ -9073,6 +9418,10 @@ function updateControlsChromeState() {
 }
 
 function wakeBottomHandle(duration) {
+  if (isDesktopFusionFixed()) {
+    document.body.classList.remove('controls-handle-awake');
+    return;
+  }
   document.body.classList.add('controls-handle-awake');
   if (controlsHandleDimTimer) clearTimeout(controlsHandleDimTimer);
   controlsHandleDimTimer = setTimeout(function(){
@@ -9344,6 +9693,7 @@ window.addEventListener('mousedown', function(e){
   beginParticlePointerDrag(e);
 }, true);
 window.addEventListener('mousemove', function(e){
+  if (isDesktopFusionFixed()) return;
   updateControlsAutoHideFromPointer(e.clientX, e.clientY);
   idleGuidePointerMove(e);
   if (freeCamera && freeCamera.active) {
@@ -12115,11 +12465,14 @@ function normalizeHexColor(value, fallback) {
 }
 function normalizeDesktopLyricsFps(value) {
   var n = Number(value);
-  if (!isFinite(n) || n <= 0) return 0;
+  if (!isFinite(n) || n <= 0) return 120;
   if (n <= 26) return 24;
   if (n <= 45) return 30;
-  if (n <= 90) return 60;
-  return 120;
+  if (n <= 75) return 60;
+  if (n <= 105) return 90;
+  if (n <= 142) return 120;
+  if (n <= 202) return 165;
+  return 240;
 }
 /**
  * 归一化桌面歌词行数模式，返回 overlay 可直接消费的稳定契约值。
@@ -12433,6 +12786,8 @@ var CUSTOM_BG_DB_NAME = 'mineradio-custom-background-v1';
 var CUSTOM_BG_STORE = 'media';
 var customBgObjectUrl = '';
 var customBgApplyToken = 0;
+var customBgVideoPowerTimer = 0;
+var customBgVideoReleasedForPower = false;
 var wallpaperCoverExpanded = false;
 var wallpaperCoverToggleTouched = false;
 var coverToggleTransitionUntil = 0;
@@ -14496,6 +14851,8 @@ function getLyricLineProgress(line, nextLine, now) {
     }
     return 1;
   }
+  // Plain LRC only identifies line boundaries. Keep the karaoke flow by
+  // interpolating inside the current lyric line, never from the UI progress bar.
   var externalDuration = lxBridgeActive && lxBridgeStatus ? Number(lxBridgeStatus.duration) || 0 : 0;
   var nextT = nextLine && nextLine.t > line.t ? nextLine.t : Math.min((audio && audio.duration) || externalDuration || now + 4, line.t + (line.duration || 4.8));
   var span = Math.max(0.75, nextT - line.t);
@@ -17506,7 +17863,7 @@ function updateLocalLibraryProcessingProgress(done) {
 }
 function localAssetBackgroundDelayMs() {
   var activePlayback = playing || (audio && audio.src && !audio.paused);
-  var delay = isHiddenForBackgroundOptimization() ? 120 : LOCAL_ASSET_IDLE_DELAY_MS;
+  var delay = isHiddenForBackgroundOptimization() ? 2400 : LOCAL_ASSET_IDLE_DELAY_MS;
   if (!activePlayback && document.hasFocus && document.hasFocus()) delay = Math.min(delay, 380);
   if (activePlayback) delay = Math.max(delay, LOCAL_ASSET_PLAYING_DELAY_MS);
   if (typeof isRenderInteractionActive === 'function' && isRenderInteractionActive()) delay = Math.max(delay, activePlayback ? 2200 : 820);
@@ -17897,8 +18254,7 @@ function loadCoverFromUrl(directUrl, opts) {
     setControlCoverSrc('');
     return;
   }
-  document.getElementById('album-bg').style.backgroundImage = "url(" + mobileRemoteCoverSrc(directUrl) + ")";
-  document.getElementById('album-bg').classList.add('visible');
+  setAlbumBackground(directUrl);
   var proxiedUrl = coverProxySrc(directUrl);
   if (!proxiedUrl) {
     uniforms.uHasCover.value = 0; setCoverDepthState(0, 0, 1);
@@ -17940,6 +18296,11 @@ function loadCoverFromUrl(directUrl, opts) {
 function setAlbumBackground(src) {
   var bg = document.getElementById('album-bg');
   if (!bg) return;
+  if (document.body.classList.contains('custom-background-override') || document.body.classList.contains('song-adaptive-background')) {
+    bg.classList.remove('visible');
+    if (bg.style.backgroundImage) bg.style.backgroundImage = '';
+    return;
+  }
   if (!src) {
     bg.classList.remove('visible');
     bg.style.backgroundImage = '';
@@ -21095,6 +21456,7 @@ var HOME_DAILY_HOT_CACHE_KEY = 'mineradio-daily-hot-30-cache-v1';
 var HOME_DAILY_HOT_HISTORY_KEY = 'mineradio-daily-hot-history-v2';
 var HOME_DAILY_HOT_STRATEGY = 'taste-random-v2';
 var homeDailyHotBusy = false;
+var homeDiscoverySeedBusy = false;
 var homePlaylistDragKey = '';
 var homePlaylistPointerDrag = null;
 var homePlaylistSuppressClick = false;
@@ -21406,6 +21768,20 @@ async function fetchDailyHotSongs(limit, forceRefresh) {
   var songs = selectDailyHotSongsForToday(candidates, limit);
   if (songs.length) writeHomeDailyHotCache(songs);
   return songs;
+}
+function ensureHomeDiscoverySeed() {
+  var cached = readHomeDailyHotCache();
+  if (homeDiscoverySeedBusy || (cached && cached.songs && cached.songs.length)) return;
+  homeDiscoverySeedBusy = true;
+  fetchDailyHotSongs(12, false).then(function(songs){
+    if (!songs || !songs.length) return;
+    renderHomeFolderPlaylists();
+    renderHomeInsightDock();
+  }).catch(function(error){
+    console.warn('[HomeDiscoverySeed]', error);
+  }).finally(function(){
+    homeDiscoverySeedBusy = false;
+  });
 }
 function upsertDailyHotPlaylist(songs) {
   songs = uniqueDailyHotSongs(songs, 30);
@@ -22027,6 +22403,30 @@ function homeNextQueueInfo() {
   var pool = localSearchPool();
   return { song:pool[0] || null, index:0, queued:false };
 }
+function setStableBackgroundImage(element, src) {
+  if (!element) return;
+  src = String(src || '');
+  if (element.__stableBgRequestedSrc === src) return;
+  element.__stableBgRequestedSrc = src;
+  if (!src) {
+    element.__stableBgSrc = '';
+    element.style.backgroundImage = '';
+    return;
+  }
+  var img = new Image();
+  img.decoding = 'async';
+  function commit() {
+    if (!element.isConnected || element.__stableBgRequestedSrc !== src) return;
+    element.__stableBgSrc = src;
+    element.style.backgroundImage = 'url("' + cssImageUrl(src) + '")';
+  }
+  img.onload = function(){
+    if (typeof img.decode === 'function') img.decode().catch(function(){}).then(commit);
+    else commit();
+  };
+  img.onerror = function(){};
+  img.src = src;
+}
 function renderHomeInsightDock() {
   var dock = document.getElementById('home-insight-dock');
   if (!dock) return;
@@ -22048,8 +22448,9 @@ function renderHomeInsightDock() {
   if (title) title.textContent = song ? (song.name || song.title || '未知歌曲') : '队列里还没有歌曲';
   if (sub) sub.textContent = song ? (songDisplaySubtitle(song) || songSourceLabel(song)) : '点击打开音乐库';
   var coverUrl = song ? songCoverSrc(song, 220) : '';
-  if (cover) cover.style.backgroundImage = coverUrl ? 'url("' + cssImageUrl(coverUrl) + '")' : '';
+  if (cover) setStableBackgroundImage(cover, coverUrl);
   if (card) card.setAttribute('aria-label', song ? ('播放下一首：' + (song.name || song.title || '未知歌曲')) : '打开音乐库');
+  renderHomeDiscoveryStrip();
 }
 function playHomeNextFromDock() {
   var next = homeNextQueueInfo();
@@ -22065,6 +22466,50 @@ function playHomeNextFromDock() {
     return;
   }
   openPrimaryView('library');
+}
+var homeDiscoveryCache = [];
+function homeDiscoverySongs() {
+  var heart = heartbeatPlaylist();
+  var daily = readHomeDailyHotCache();
+  var source = heart && heart.songs && heart.songs.length
+    ? heart.songs
+    : (daily && daily.songs && daily.songs.length ? daily.songs : localSearchPool());
+  source = source.filter(function(song){ return song && song.id; });
+  if (!source.length) return [];
+  var day = Math.floor(Date.now() / 86400000);
+  var step = Math.max(1, Math.floor(source.length / 3));
+  var picked = [];
+  for (var i = 0; i < Math.min(3, source.length); i++) {
+    var song = source[(day * 17 + i * step + i * 7) % source.length];
+    if (song && picked.indexOf(song) < 0) picked.push(song);
+  }
+  return picked.map(cloneSong);
+}
+function renderHomeDiscoveryStrip() {
+  var root = document.getElementById('home-discovery-list');
+  if (!root) return;
+  homeDiscoveryCache = homeDiscoverySongs();
+  var renderKey = homeDiscoveryCache.map(function(song){
+    return queueItemKey(song) + '|' + (songCoverSrc(song, 180) || '');
+  }).join('||');
+  if (root.__homeDiscoveryRenderKey === renderKey && root.children.length === homeDiscoveryCache.length) return;
+  root.__homeDiscoveryRenderKey = renderKey;
+  root.innerHTML = homeDiscoveryCache.map(function(song, index){
+    var cover = songCoverSrc(song, 180);
+    var coverStyle = cover ? ' style="background-image:url(&quot;' + escHtml(cssImageUrl(cover)) + '&quot;)"' : '';
+    return '<button class="home-discovery-song" type="button" onclick="playHomeDiscoverySong(' + index + ')">' +
+      '<span class="home-discovery-cover"' + coverStyle + '></span><span class="home-discovery-song-copy">' +
+      '<span class="home-discovery-song-name">' + escHtml(song.name || song.title || '未知歌曲') + '</span>' +
+      '<span class="home-discovery-song-artist">' + escHtml(songDisplaySubtitle(song) || songSourceLabel(song)) + '</span></span></button>';
+  }).join('');
+}
+function playHomeDiscoverySong(index) {
+  if (!homeDiscoveryCache.length) homeDiscoveryCache = homeDiscoverySongs();
+  if (!homeDiscoveryCache.length) { openPrimaryView('library'); return; }
+  playQueue = homeDiscoveryCache.map(cloneSong);
+  currentIdx = Math.max(0, Math.min(playQueue.length - 1, Number(index) || 0));
+  safeRenderQueuePanel('home-discovery', { scrollCurrent:true });
+  playQueueAt(currentIdx, { manual:true, context:{ type:'home-discovery', playlistName:'为你挑选' } }).catch(function(error){ console.warn('[HomeDiscovery]', error); });
 }
 setInterval(function(){
   if (emptyHomeActive && !document.hidden) renderHomeInsightDock();
@@ -22107,20 +22552,52 @@ function renderHomeFolderPlaylists() {
     }
   ];
   grid.classList.add('home-quick-grid');
-  grid.innerHTML = cards.map(function(card){
-    var fallbackCover = homeGeneratedCover(card.title, card.label, card.tone);
-    var displayCover = card.cover || fallbackCover;
-    var artClass = 'home-card-art' + (displayCover ? ' has-cover' : '');
-    var artStyle = displayCover ? ' style="background-image:url(&quot;' + escHtml(cssImageUrl(displayCover)) + '&quot;)"' : '';
-    var className = 'home-card' + (card.className ? ' ' + card.className : '');
-    return '<button class="' + className + '" data-home-tone="' + escHtml(card.tone) + '"' +
-      ' type="button" onclick="' + card.action + '">' +
-      '<div class="home-card-label">' + escHtml(card.label) + '</div>' +
-      '<div class="home-card-title">' + escHtml(card.title) + '</div>' +
-      '<div class="home-card-sub">' + escHtml(card.sub) + '</div>' +
-      '<div class="' + artClass + '"' + artStyle + '></div>' +
-    '</button>';
-  }).join('');
+  var existingCards = Array.prototype.slice.call(grid.children).filter(function(node){
+    return node && node.classList && node.classList.contains('home-card');
+  });
+  if (existingCards.length === cards.length) {
+    cards.forEach(function(card, index){
+      var button = existingCards[index];
+      var fallbackCover = homeGeneratedCover(card.title, card.label, card.tone);
+      var displayCover = card.cover || fallbackCover;
+      var className = 'home-card' + (card.className ? ' ' + card.className : '');
+      if (button.className !== className) button.className = className;
+      if (button.getAttribute('data-home-tone') !== card.tone) button.setAttribute('data-home-tone', card.tone);
+      if (button.getAttribute('onclick') !== card.action) button.setAttribute('onclick', card.action);
+      var label = button.querySelector('.home-card-label');
+      var title = button.querySelector('.home-card-title');
+      var sub = button.querySelector('.home-card-sub');
+      var art = button.querySelector('.home-card-art');
+      if (label && label.textContent !== card.label) label.textContent = card.label;
+      if (title && title.textContent !== card.title) title.textContent = card.title;
+      if (sub && sub.textContent !== card.sub) sub.textContent = card.sub;
+      if (art) {
+        art.className = 'home-card-art' + (displayCover ? ' has-cover' : '');
+        setStableBackgroundImage(art, displayCover);
+      }
+    });
+  } else {
+    grid.innerHTML = cards.map(function(card){
+      var fallbackCover = homeGeneratedCover(card.title, card.label, card.tone);
+      var displayCover = card.cover || fallbackCover;
+      var artClass = 'home-card-art' + (displayCover ? ' has-cover' : '');
+      var artStyle = displayCover ? ' style="background-image:url(&quot;' + escHtml(cssImageUrl(displayCover)) + '&quot;)"' : '';
+      var className = 'home-card' + (card.className ? ' ' + card.className : '');
+      return '<button class="' + className + '" data-home-tone="' + escHtml(card.tone) + '"' +
+        ' type="button" onclick="' + card.action + '">' +
+        '<div class="home-card-label">' + escHtml(card.label) + '</div>' +
+        '<div class="home-card-title">' + escHtml(card.title) + '</div>' +
+        '<div class="home-card-sub">' + escHtml(card.sub) + '</div>' +
+        '<div class="' + artClass + '"' + artStyle + '></div>' +
+      '</button>';
+    }).join('');
+    Array.prototype.forEach.call(grid.querySelectorAll('.home-card-art'), function(art, index){
+      var card = cards[index];
+      var initialCover = card && (card.cover || homeGeneratedCover(card.title, card.label, card.tone));
+      art.__stableBgSrc = initialCover || '';
+      art.__stableBgRequestedSrc = initialCover || '';
+    });
+  }
   renderHomeInsightDock();
 }
 
@@ -22593,7 +23070,11 @@ function renderHomeDiscover() {
   var firstLocal = localSongs[0] || null;
   var secondLocal = localSongs[1] || null;
   var thirdLocal = localSongs[2] || null;
-  document.body.classList.toggle('home-has-library', localSongs.length > 0 || lxMirrorPlaylists.length > 0);
+  // Discovery, charts and radio are useful before the user imports or joins a
+  // playlist. Keep the full Home dashboard available and seed recommendations
+  // from online daily picks when there is no personal library yet.
+  document.body.classList.toggle('home-has-library', LOCAL_ONLY_MODE || localSongs.length > 0 || lxMirrorPlaylists.length > 0);
+  if (!localSongs.length && !lxMirrorPlaylists.length) ensureHomeDiscoverySeed();
   if (weatherTitle) weatherTitle.textContent = '本地音乐库';
   if (weatherKicker) weatherKicker.textContent = 'Mineradio · Local Player';
   if (sub) sub.textContent = localSongs.length
@@ -23506,7 +23987,7 @@ function secondaryLibraryCollections() {
     var songs = playlistSongsWithinLimit(item.songs);
     var key = playlistStableKey('lx', item, index);
     var customCover = playlistCustomCoverFor('lx', item, index);
-    entries.push({ key:key, orderKey:key, sourceOrder:sourceOrder++, kind:'lx', name:item.name || '在线歌单', meta:songs.length + ' 首 · 在线导入', songs:songs, cover:customCover || item.cover || item.picUrl || item.img || songs[0] && songCoverSrc(songs[0], 220) || '', customCover:customCover, source:item, playlistIndex:index });
+    entries.push({ key:key, orderKey:key, sourceOrder:sourceOrder++, kind:'lx', name:item.name || '在线歌单', meta:songs.length + ' 首 · ' + (isLxNativePlaylist(item) ? '落雪同步' : '在线导入'), songs:songs, cover:customCover || item.cover || item.picUrl || item.img || songs[0] && songCoverSrc(songs[0], 220) || '', customCover:customCover, source:item, playlistIndex:index });
   });
   return sortHomePlaylistCards(entries);
 }
@@ -23515,6 +23996,8 @@ var secondaryLibrarySearchQuery = '';
 var secondaryLibrarySyncBusyKey = '';
 var secondaryLibraryBatchMode = false;
 var secondaryLibraryBatchSelected = [];
+var secondaryLibraryManageMode = false;
+var secondaryLibraryManageSelectedKeys = [];
 var secondaryLibrarySongPointerDrag = null;
 var secondaryLibrarySongSuppressClick = false;
 function secondaryLibrarySearchNorm(text) {
@@ -23561,7 +24044,25 @@ function secondaryLibraryVisibleSongs(entry) {
   return playlistSongsWithinLimit(entry && entry.searchSongs ? entry.searchSongs : entry && entry.songs);
 }
 function secondaryLibraryEntryCanSync(entry) {
-  return !!(entry && entry.kind === 'lx' && isSyncablePlatformPlaylist(entry.source));
+  return !!(entry && entry.kind === 'lx' && (isSyncableLxPlaylist(entry.source) || isLxFileImportedPlaylist(entry.source)));
+}
+function secondaryLibraryEntryCanManage(entry) {
+  return !!(entry && (entry.kind === 'custom' || entry.kind === 'lx'));
+}
+function syncSecondaryLibraryManageToolbar() {
+  var toggle = document.getElementById('secondary-library-manage-toggle');
+  var actions = document.getElementById('secondary-library-manage-actions');
+  var commit = document.getElementById('secondary-library-manage-commit');
+  if (toggle) {
+    toggle.textContent = secondaryLibraryManageMode ? '管理中' : '批量管理';
+    toggle.classList.toggle('primary', secondaryLibraryManageMode);
+  }
+  if (actions) actions.hidden = !secondaryLibraryManageMode;
+  if (commit) {
+    var count = secondaryLibraryManageSelectedKeys.length;
+    commit.textContent = '删除/隐藏（' + count + '）';
+    commit.disabled = count < 1;
+  }
 }
 function renderSecondaryLibrary() {
   var grid = document.getElementById('secondary-library-grid');
@@ -23569,6 +24070,10 @@ function renderSecondaryLibrary() {
   if (!grid || !detail) return;
   var query = secondaryLibrarySearchNorm(secondaryLibrarySearchQuery);
   var allEntries = secondaryLibraryCollections();
+  secondaryLibraryManageSelectedKeys = secondaryLibraryManageSelectedKeys.filter(function(key){
+    return allEntries.some(function(entry){ return entry.key === key && secondaryLibraryEntryCanManage(entry); });
+  });
+  syncSecondaryLibraryManageToolbar();
   secondaryLibraryEntries = allEntries.map(function(entry){
     if (!query) return entry;
     var playlistMatch = secondaryLibrarySearchNorm(entry.name || '').indexOf(query) >= 0;
@@ -23589,11 +24094,36 @@ function renderSecondaryLibrary() {
   if (!secondaryLibraryEntries.some(function(entry){ return entry.key === secondaryLibrarySelectedKey; })) secondaryLibrarySelectedKey = secondaryLibraryEntries[0].key;
   grid.innerHTML = secondaryLibraryEntries.map(function(entry, index){
     var style = entry.cover ? ' style="background-image:url(&quot;' + escHtml(cssImageUrl(entry.cover)) + '&quot;)"' : '';
-    return '<button class="library-card' + (entry.key === secondaryLibrarySelectedKey ? ' active' : '') + '" type="button" data-shared-playlist-key="' + escHtml(entry.orderKey || entry.key) + '" onclick="selectSecondaryLibraryCollection(' + index + ')">' +
-      '<div class="library-card-cover"' + style + '></div><div class="library-card-title">' + escHtml(entry.name) + '</div><div class="library-card-meta">' + escHtml(entry.searchMeta || entry.meta) + '</div></button>';
+    var manageable = secondaryLibraryEntryCanManage(entry);
+    var selected = secondaryLibraryManageSelectedKeys.indexOf(entry.key) >= 0;
+    var manageClass = secondaryLibraryManageMode ? (' manage-mode' + (manageable ? '' : ' manage-disabled') + (selected ? ' manage-selected' : '')) : '';
+    var manageCheck = secondaryLibraryManageMode && manageable ? '<span class="library-card-manage-check" aria-hidden="true">✓</span>' : '';
+    var action = secondaryLibraryManageMode ? 'toggleSecondaryLibraryManageEntry(' + index + ')' : 'selectSecondaryLibraryCollection(' + index + ')';
+    return '<button class="library-card' + (entry.key === secondaryLibrarySelectedKey && !secondaryLibraryManageMode ? ' active' : '') + manageClass + '" type="button" data-shared-playlist-key="' + escHtml(entry.orderKey || entry.key) + '" onclick="' + action + '"' + (secondaryLibraryManageMode && !manageable ? ' disabled' : '') + '>' +
+      manageCheck + '<div class="library-card-cover"' + style + '></div><div class="library-card-title">' + escHtml(entry.name) + '</div><div class="library-card-meta">' + escHtml(entry.searchMeta || entry.meta) + '</div></button>';
   }).join('');
-  bindSharedPlaylistOrderDrag(grid, !query);
+  bindSharedPlaylistOrderDrag(grid, !query && !secondaryLibraryManageMode);
   renderSecondaryLibraryDetail();
+}
+function toggleSecondaryLibraryManageMode(force) {
+  secondaryLibraryManageMode = typeof force === 'boolean' ? force : !secondaryLibraryManageMode;
+  secondaryLibraryManageSelectedKeys = [];
+  secondaryLibraryBatchMode = false;
+  secondaryLibraryBatchSelected = [];
+  renderSecondaryLibrary();
+}
+function toggleSecondaryLibraryManageEntry(index) {
+  var entry = secondaryLibraryEntries[Number(index) || 0];
+  if (!secondaryLibraryManageMode || !secondaryLibraryEntryCanManage(entry)) return;
+  secondaryLibraryManageSelectedKeys = secondaryLibraryManageSelectedKeys.indexOf(entry.key) >= 0
+    ? secondaryLibraryManageSelectedKeys.filter(function(key){ return key !== entry.key; })
+    : secondaryLibraryManageSelectedKeys.concat([entry.key]);
+  renderSecondaryLibrary();
+}
+function selectAllSecondaryLibraryManage() {
+  if (!secondaryLibraryManageMode) return;
+  secondaryLibraryManageSelectedKeys = secondaryLibraryEntries.filter(secondaryLibraryEntryCanManage).map(function(entry){ return entry.key; });
+  renderSecondaryLibrary();
 }
 function selectSecondaryLibraryCollection(index) {
   var entry = secondaryLibraryEntries[Number(index) || 0];
@@ -23785,12 +24315,15 @@ function renderSecondaryLibraryDetail() {
   var canCustomizeCover = secondaryLibraryEntryCanCustomizeCover(entry);
   secondaryLibraryBatchSelected = secondaryLibraryBatchSelected.filter(function(index){ return index >= 0 && index < songs.length; });
   var syncBusy = secondaryLibrarySyncBusyKey === entry.key;
+  var fileImported = isLxFileImportedPlaylist(entry.source);
+  var syncLabel = isLxNativePlaylist(entry.source) ? '同步落雪' : (fileImported ? '更新 .lxmc' : '同步歌单');
+  var syncTitle = isLxNativePlaylist(entry.source) ? '从落雪电脑端重新读取歌单并保留 Mineradio 手动添加的歌曲' : (fileImported ? '选择落雪最新导出的 .lxmc 文件更新这个歌单' : '从原平台重新读取歌单并保留手动添加的歌曲');
   var batchBar = secondaryLibraryBatchMode ? '<div class="secondary-library-batch-bar"><button class="secondary-action" type="button" onclick="selectAllSecondaryLibraryBatch()">全选</button><button class="secondary-action" type="button" onclick="clearSecondaryLibraryBatchSelection()">清除</button><button class="secondary-action primary" type="button" onclick="openSecondaryLibraryBatchCollect()">导入到其他歌单</button><span class="secondary-library-batch-count">已选 ' + secondaryLibraryBatchSelected.length + ' 首</span></div>' : '';
   root.innerHTML = '<div class="library-detail-head"><div class="library-detail-title"><strong>' + escHtml(entry.name) + '</strong><span>' + escHtml(entry.searchMeta || entry.meta) + (canReorder ? ' · 拖动左侧手柄调整顺序' : '') + '</span></div>' +
     '<div class="secondary-head-actions"><button class="secondary-action primary" type="button" onclick="playSecondaryLibraryCollection()">' + (entry.searchSongs ? '播放结果' : '播放全部') + '</button>' +
     (canCustomizeCover ? '<button class="secondary-action" type="button" onclick="chooseSecondaryPlaylistCover()" title="选择本地图片并裁剪为歌单封面">' + (entry.customCover ? '更换封面' : '自定义封面') + '</button>' : '') +
     (canCustomizeCover && entry.customCover ? '<button class="secondary-action" type="button" onclick="clearSecondaryPlaylistCover()" title="恢复歌单原封面">恢复封面</button>' : '') +
-    (secondaryLibraryEntryCanSync(entry) ? '<button class="secondary-action" type="button" onclick="syncSecondaryLibraryPlaylist()" title="从原平台重新读取歌单并保留手动添加的歌曲"' + (syncBusy ? ' disabled' : '') + '>' + (syncBusy ? '同步中…' : '同步歌单') + '</button>' : '') +
+    (secondaryLibraryEntryCanSync(entry) ? '<button class="secondary-action" type="button" onclick="syncSecondaryLibraryPlaylist()" title="' + syncTitle + '"' + (syncBusy ? ' disabled' : '') + '>' + (syncBusy ? '同步中…' : syncLabel) + '</button>' : '') +
     '<button class="secondary-action" type="button" onclick="toggleSecondaryLibraryBatchMode()">' + (secondaryLibraryBatchMode ? '取消选择' : '批量选择') + '</button>' +
     (secondaryLibraryEntryCanDelete(entry) ? '<button class="secondary-action danger" type="button" onclick="deleteSecondaryLibraryPlaylist()">删除歌单</button>' : '') + '</div></div>' +
     batchBar + '<div class="library-track-list">' + (songs.length ? songs.map(function(song, index){
@@ -23800,8 +24333,9 @@ function renderSecondaryLibraryDetail() {
       var checkbox = secondaryLibraryBatchMode ? '<input class="pl-batch-check" type="checkbox" ' + (selected ? 'checked ' : '') + 'onclick="event.stopPropagation();toggleSecondaryLibraryBatchIndex(' + index + ')" aria-label="选择 ' + escHtml(song.name || song.title || '歌曲') + '">' : '';
       var dragHandle = canReorder ? '<span class="library-track-drag-handle" data-secondary-song-drag="1" title="拖动调整顺序" aria-hidden="true">⋮⋮</span>' : '';
       var orderActions = canReorder ? '<span class="library-track-order-actions"><button class="library-track-order-btn" type="button" onclick="event.stopPropagation();moveSecondaryLibrarySong(' + index + ',-1)" aria-label="上移"' + (index === 0 ? ' disabled' : '') + '>↑</button><button class="library-track-order-btn" type="button" onclick="event.stopPropagation();moveSecondaryLibrarySong(' + index + ',1)" aria-label="下移"' + (index === songs.length - 1 ? ' disabled' : '') + '>↓</button></span>' : '';
+      var removeAction = !secondaryLibraryBatchMode && secondaryLibraryEntryCanDelete(entry) ? '<button class="library-track-remove" type="button" onclick="event.stopPropagation();removeSecondaryLibrarySong(' + index + ')" title="从歌单删除" aria-label="从歌单删除 ' + escHtml(song.name || song.title || '歌曲') + '">×</button>' : '';
       var activate = secondaryLibraryBatchMode ? 'toggleSecondaryLibraryBatchIndex(' + index + ')' : 'playSecondaryLibraryTrack(' + index + ')';
-      return '<div class="library-track-row' + (secondaryLibraryBatchMode ? ' batch-mode' : '') + (selected ? ' batch-selected' : '') + (canReorder ? ' can-reorder' : '') + '" role="button" tabindex="0" data-secondary-song-index="' + index + '" onclick="if(!secondaryLibrarySongSuppressClick){' + activate + '}" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();' + activate + '}">' + dragHandle + checkbox + '<span class="library-track-index">' + String(index + 1).padStart(2, '0') + '</span>' + image + '<span class="library-track-copy"><span class="library-track-name">' + escHtml(song.name || song.title || '未知歌曲') + '</span><span class="library-track-sub">' + escHtml(songDisplaySubtitle(song) || '未知歌手') + '</span></span><span class="library-track-source">' + escHtml(normalizeLxSourceName(song.source || song.type) || 'LOCAL') + '</span>' + orderActions + '</div>';
+      return '<div class="library-track-row' + (secondaryLibraryBatchMode ? ' batch-mode' : '') + (selected ? ' batch-selected' : '') + (canReorder ? ' can-reorder' : '') + (removeAction ? ' can-remove' : '') + '" role="button" tabindex="0" data-secondary-song-index="' + index + '" onclick="if(!secondaryLibrarySongSuppressClick){' + activate + '}" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();' + activate + '}">' + dragHandle + checkbox + '<span class="library-track-index">' + String(index + 1).padStart(2, '0') + '</span>' + image + '<span class="library-track-copy"><span class="library-track-name">' + escHtml(song.name || song.title || '未知歌曲') + '</span><span class="library-track-sub">' + escHtml(songDisplaySubtitle(song) || '未知歌手') + '</span></span><span class="library-track-source">' + escHtml(normalizeLxSourceName(song.source || song.type) || 'LOCAL') + '</span>' + orderActions + removeAction + '</div>';
     }).join('') : '<div class="secondary-empty">这个歌单还没有歌曲</div>') + '</div>';
   bindSecondaryLibrarySongOrderDrag(root.querySelector('.library-track-list'), entry);
 }
@@ -23861,10 +24395,52 @@ function playSecondaryLibraryTrack(index) {
   forcePlaybackControlsInteractive();
   playQueueAt(currentIdx, { manual:true, context:{ type:'secondary-library', playlistName:entry.name } }).catch(function(error){ console.warn('[SecondaryLibraryTrack]', error); });
 }
+function removeSecondaryLibrarySong(index) {
+  var entry = selectedSecondaryLibraryEntry();
+  var visibleSongs = secondaryLibraryVisibleSongs(entry);
+  var song = visibleSongs[Number(index)];
+  if (!secondaryLibraryEntryCanDelete(entry) || !song || !entry.source || !Array.isArray(entry.source.songs)) return;
+  var sourceSongs = entry.source.songs;
+  var sourceIndex = sourceSongs.indexOf(song);
+  if (sourceIndex < 0) {
+    var targetKey = exactSearchSongKey(song) || localPlaylistSongKey(song);
+    sourceIndex = sourceSongs.findIndex(function(item){
+      return (exactSearchSongKey(item) || localPlaylistSongKey(item)) === targetKey;
+    });
+  }
+  if (sourceIndex < 0) return;
+  var removedName = song.name || song.title || '歌曲';
+  if (entry.kind === 'custom') {
+    sourceSongs.splice(sourceIndex, 1);
+    entry.source.trackCount = sourceSongs.length;
+    entry.source.cover = sourceSongs[0] ? (songCoverSrc(sourceSongs[0], 88) || sourceSongs[0].cover || '') : '';
+    entry.source.updatedAt = Date.now();
+    saveLocalUserPlaylists();
+  } else if (entry.kind === 'lx') {
+    var playlistIndex = Number(entry.playlistIndex);
+    if (!Number.isFinite(playlistIndex) || playlistIndex < 0) playlistIndex = (lxMirrorPlaylists || []).indexOf(entry.source);
+    removeImportedPlaylistSong(playlistIndex, sourceIndex, { silent:true });
+  }
+  if (Array.isArray(entry.searchSongs)) {
+    entry.searchSongs = entry.searchSongs.filter(function(item){
+      return item !== song && (exactSearchSongKey(item) || localPlaylistSongKey(item)) !== (exactSearchSongKey(song) || localPlaylistSongKey(song));
+    });
+  }
+  secondaryLibraryBatchSelected = [];
+  secondaryLibrarySelectedKey = entry.key;
+  renderSecondaryLibrary();
+  renderHomeDiscover();
+  renderLocalLibraryPlaylistPanel({ animate:false });
+  showToast('已从歌单删除：' + removedName);
+}
 async function syncSecondaryLibraryPlaylist() {
   var entry = selectedSecondaryLibraryEntry();
   if (!secondaryLibraryEntryCanSync(entry) || secondaryLibrarySyncBusyKey) {
-    if (!secondaryLibrarySyncBusyKey) showToast('这个歌单没有可同步的平台来源');
+    if (!secondaryLibrarySyncBusyKey) showToast('这个歌单没有可同步的来源');
+    return;
+  }
+  if (isLxFileImportedPlaylist(entry.source)) {
+    openLxPlaylistImport();
     return;
   }
   var selectedKey = entry.key;
@@ -23875,15 +24451,115 @@ async function syncSecondaryLibraryPlaylist() {
   secondaryLibrarySyncBusyKey = selectedKey;
   renderSecondaryLibraryDetail();
   try {
-    await syncImportedPlatformPlaylist(playlistIndex);
+    await syncLxPlaylist(playlistIndex);
   } finally {
     secondaryLibrarySyncBusyKey = '';
     secondaryLibrarySelectedKey = selectedKey;
     renderSecondaryLibrary();
   }
 }
+async function syncAllSecondaryLxPlaylists() {
+  if (secondaryLibrarySyncBusyKey) return;
+  var button = document.getElementById('secondary-lx-sync-all');
+  secondaryLibrarySyncBusyKey = '__all_lx__';
+  if (button) { button.disabled = true; button.textContent = '同步中…'; }
+  try {
+    var ok = await loadLxMirrorPlaylists(true);
+    if (!ok) {
+      showToast('同步落雪失败，请确认电脑已安装落雪音乐且歌单数据库可读取');
+      return false;
+    }
+    secondaryLibrarySelectedKey = '';
+    renderSecondaryLibrary();
+    renderHomeDiscover();
+    renderLocalLibraryPlaylistPanel({ animate:false });
+    var nativeCount = (lxMirrorPlaylists || []).filter(isLxNativePlaylist).length;
+    showToast('已同步落雪歌单 ' + nativeCount + ' 个');
+    return true;
+  } finally {
+    secondaryLibrarySyncBusyKey = '';
+    button = document.getElementById('secondary-lx-sync-all');
+    if (button) { button.disabled = false; button.textContent = '同步落雪'; }
+  }
+}
 function secondaryLibraryEntryCanDelete(entry) {
   return !!(entry && (entry.kind === 'custom' || entry.kind === 'lx'));
+}
+function openSecondaryLibraryBatchManageDialog() {
+  var selectedKeys = secondaryLibraryManageSelectedKeys.slice();
+  var selected = secondaryLibraryCollections().filter(function(entry){
+    return selectedKeys.indexOf(entry.key) >= 0 && secondaryLibraryEntryCanManage(entry);
+  });
+  if (!selected.length) { showToast('请先选择要管理的歌单'); return; }
+  var deleteCount = selected.filter(function(entry){
+    return entry.kind === 'custom' || (entry.kind === 'lx' && entry.source && entry.source.imported && !isLxNativePlaylist(entry.source));
+  }).length;
+  var hideCount = selected.length - deleteCount;
+  var old = document.getElementById('secondary-playlist-batch-manage-mask');
+  if (old) old.remove();
+  var mask = document.createElement('div');
+  mask.id = 'secondary-playlist-batch-manage-mask';
+  mask.className = 'playlist-select-mask';
+  mask.innerHTML = '<div class="playlist-select-dialog" role="dialog" aria-modal="true" aria-labelledby="secondary-playlist-batch-manage-title" style="width:min(460px,calc(100vw - 32px))">' +
+    '<div class="playlist-select-head"><div><strong id="secondary-playlist-batch-manage-title">批量管理 ' + selected.length + ' 个歌单</strong><br><small>歌曲文件与当前播放队列不会被删除</small></div><button class="fx-mini-btn ghost" type="button" data-batch-manage-close="1">关闭</button></div>' +
+    '<div style="padding:18px 2px 8px;color:rgba(255,255,255,.78);line-height:1.8">' +
+      (deleteCount ? '删除本地或导入歌单：<strong style="color:#fff">' + deleteCount + '</strong> 个<br>' : '') +
+      (hideCount ? '隐藏落雪同步歌单：<strong style="color:#fff">' + hideCount + '</strong> 个<br>' : '') +
+      '<span style="color:rgba(255,255,255,.48)">隐藏的同步歌单不会改动落雪中的原歌单。</span></div>' +
+    '<div class="playlist-select-actions"><div></div><div><button class="fx-mini-btn ghost" type="button" data-batch-manage-close="1">取消</button><button class="fx-mini-btn" type="button" data-batch-manage-save="1" style="color:#ff9aa7;border-color:rgba(255,83,103,.32)">确认删除/隐藏</button></div></div></div>';
+  document.body.appendChild(mask);
+  function closeDialog() { if (mask.parentNode) mask.remove(); }
+  function commitBatchManage() {
+    var hidden = readHiddenPlaylistKeys();
+    var hiddenChanged = false;
+    var customIds = [];
+    var importedIds = [];
+    var mirrorKeys = [];
+    selected.forEach(function(entry){
+      if (entry.kind === 'custom') {
+        customIds.push(String(entry.source && entry.source.id || ''));
+        return;
+      }
+      var list = entry.source || {};
+      var visibilityKey = playlistVisibilityKey(list);
+      mirrorKeys.push(visibilityKey);
+      if (isLxNativePlaylist(list) || !list.imported) {
+        if (hidden.indexOf(visibilityKey) < 0) { hidden.push(visibilityKey); hiddenChanged = true; }
+      } else {
+        importedIds.push(String(list.id || ''));
+      }
+    });
+    if (customIds.length) {
+      userPlaylists = (userPlaylists || []).filter(function(pl){ return !pl || customIds.indexOf(String(pl.id || '')) < 0; });
+      userPlaylists._localLoaded = true;
+      saveLocalUserPlaylists();
+    }
+    if (importedIds.length) {
+      lxImportedPlaylists = (lxImportedPlaylists || []).filter(function(list){ return !list || importedIds.indexOf(String(list.id || '')) < 0; });
+      saveImportedLxPlaylists();
+    }
+    if (hiddenChanged) writeHiddenPlaylistKeys(hidden);
+    if (mirrorKeys.length || importedIds.length) {
+      lxMirrorPlaylists = (lxMirrorPlaylists || []).filter(function(list){
+        return mirrorKeys.indexOf(playlistVisibilityKey(list)) < 0 && importedIds.indexOf(String(list && list.id || '')) < 0;
+      });
+      lxMirrorActivePlaylist = -1;
+    }
+    secondaryLibraryManageMode = false;
+    secondaryLibraryManageSelectedKeys = [];
+    secondaryLibrarySelectedKey = '';
+    closeDialog();
+    renderSecondaryLibrary();
+    renderHomeDiscover();
+    renderLocalLibraryPlaylistPanel({ animate:false });
+    showToast('已处理 ' + selected.length + ' 个歌单' + (deleteCount ? '，删除 ' + deleteCount + ' 个' : '') + (hideCount ? '，隐藏 ' + hideCount + ' 个' : ''));
+  }
+  mask.addEventListener('click', function(event){
+    if (event.target === mask || event.target.closest('[data-batch-manage-close]')) closeDialog();
+    else if (event.target.closest('[data-batch-manage-save]')) commitBatchManage();
+  });
+  mask.addEventListener('keydown', function(event){ if (event.key === 'Escape') closeDialog(); });
+  setTimeout(function(){ var button = mask.querySelector('[data-batch-manage-close]'); if (button) button.focus(); }, 20);
 }
 function deleteSecondaryLibraryPlaylist() {
   var entry = selectedSecondaryLibraryEntry();
@@ -23914,7 +24590,7 @@ function deleteSecondaryLibraryPlaylist() {
       var list = entry.source || {};
       var listId = String(list.id || '');
       var visibilityKey = playlistVisibilityKey(list);
-      if (list.imported) {
+      if (list.imported && !isLxNativePlaylist(list)) {
         lxImportedPlaylists = (lxImportedPlaylists || []).filter(function(item){
           return String(item && item.id || '') !== listId;
         });
@@ -24763,6 +25439,11 @@ function applyLyricsState(lines, hasNativeKaraoke, timingSource) {
   renderLyrics();
   updateCustomLyricControls();
   if (typeof LyricAnimation !== 'undefined' && LyricAnimation.onLyricsChanged) LyricAnimation.onLyricsChanged();
+  if (typeof desktopOverlayPushState !== 'undefined' && desktopOverlayPushState && fx && (fx.desktopLyrics || fx.wallpaperMode)) {
+    desktopOverlayPushState.lastLyricsTimelineKey = '';
+    desktopOverlayPushState.lastLyricsKey = '';
+    setTimeout(function(){ syncDesktopOverlayState(true); }, 0);
+  }
 }
 function applyOriginalLyricsState() {
   lyricSourceMode = 'original';
@@ -25190,7 +25871,7 @@ function collectPlaylistTargets() {
   (lxMirrorPlaylists || []).forEach(function(list, index){
     if (!list || !Array.isArray(list.songs)) return;
     var first = list.songs[0];
-    var sourceText = list.dailyHot ? '每日推荐' : (list.imported ? '已导入在线歌单' : '在线歌单');
+    var sourceText = list.dailyHot ? '每日推荐' : (isLxNativePlaylist(list) ? '落雪同步歌单' : (list.imported ? '已导入在线歌单' : '在线歌单'));
     targets.push({ type:'lx', id:index, name:list.name || '在线歌单', sub:list.songs.length + ' 首 · ' + sourceText, cover:list.cover || list.picUrl || (first ? (first.picUrl || first.cover || songCoverSrc(first, 80)) : '') });
   });
   return targets;
@@ -25199,12 +25880,24 @@ function findImportedLxWritableList(mirrorList) {
   mirrorList = mirrorList || {};
   var key = playlistVisibilityKey(mirrorList);
   var imported = (lxImportedPlaylists || []).find(function(list){ return playlistVisibilityKey(list) === key || String(list.id || '') === String(mirrorList.id || ''); });
-  if (imported) return imported;
+  if (imported) {
+    if (isLxNativePlaylist(mirrorList)) {
+      imported.lxNative = true;
+      imported.lxNativeShadow = true;
+      imported.lxDbListId = String(mirrorList.lxDbListId || mirrorList.id || imported.id || '');
+    }
+    return imported;
+  }
+  var nativeLxPlaylist = isLxNativePlaylist(mirrorList);
   imported = {
     id: String(mirrorList.id || ('imported_' + Date.now() + '_' + Math.random().toString(36).slice(2))),
     name: mirrorList.name || '在线歌单',
     source: mirrorList.source || 'mr',
+    sourceListId: mirrorList.sourceListId || '',
     imported: true,
+    lxNative: nativeLxPlaylist,
+    lxNativeShadow: nativeLxPlaylist,
+    lxDbListId: nativeLxPlaylist ? String(mirrorList.lxDbListId || mirrorList.id || '') : '',
     cover: mirrorList.cover || mirrorList.picUrl || '',
     songs: (mirrorList.songs || []).map(function(song){ return normalizeDailyHotSong(song); })
   };
@@ -25390,6 +26083,81 @@ var SEARCH_HISTORY_STORE_KEY = 'mineradio-search-history';
 var $input = document.getElementById('search-input');
 var $results = document.getElementById('search-results');
 var $loading = document.getElementById('loading-overlay');
+var searchBatchMode = false;
+var searchBatchSelected = Object.create(null);
+function searchBatchToolbarHtml() {
+  return '<div class="search-batch-toolbar">' +
+    '<button id="search-batch-toggle" class="search-batch-toggle" type="button" onclick="toggleSearchBatchMode()">批量选择</button>' +
+    '<div class="search-batch-actions">' +
+      '<span id="search-batch-count" class="search-batch-count">已选 0 首</span>' +
+      '<button class="search-batch-action" type="button" onclick="selectAllSearchBatchResults()">全选</button>' +
+      '<button class="search-batch-action" type="button" onclick="clearSearchBatchSelection()">清空</button>' +
+      '<button id="search-batch-collect" class="search-batch-action primary" type="button" onclick="openSearchBatchCollect()" disabled>加入歌单</button>' +
+    '</div>' +
+  '</div>';
+}
+function resetSearchBatchSelection() {
+  searchBatchMode = false;
+  searchBatchSelected = Object.create(null);
+  if ($results) $results.classList.remove('search-batch-mode');
+}
+function selectedSearchBatchSongs() {
+  return Object.keys(searchBatchSelected).filter(function(key){ return searchBatchSelected[key]; }).map(Number).sort(function(a,b){ return a-b; }).map(function(index){ return playlist && playlist[index]; }).filter(Boolean);
+}
+function syncSearchBatchUi() {
+  if (!$results) return;
+  $results.classList.toggle('search-batch-mode', searchBatchMode);
+  var selectedCount = 0;
+  $results.querySelectorAll('[data-search-result-index]').forEach(function(row){
+    var index = Number(row.getAttribute('data-search-result-index'));
+    var selected = !!searchBatchSelected[index];
+    if (selected) selectedCount++;
+    row.classList.toggle('batch-selected', selected);
+    var check = row.querySelector('.search-batch-check');
+    if (check) {
+      check.setAttribute('aria-checked', selected ? 'true' : 'false');
+      check.title = selected ? '取消选择' : '选择歌曲';
+    }
+  });
+  var toggle = document.getElementById('search-batch-toggle');
+  var count = document.getElementById('search-batch-count');
+  var collect = document.getElementById('search-batch-collect');
+  if (toggle) toggle.textContent = searchBatchMode ? '取消批量' : '批量选择';
+  if (count) count.textContent = '已选 ' + selectedCount + ' 首';
+  if (collect) collect.disabled = selectedCount < 1;
+}
+function toggleSearchBatchMode() {
+  searchBatchMode = !searchBatchMode;
+  if (!searchBatchMode) searchBatchSelected = Object.create(null);
+  syncSearchBatchUi();
+}
+function toggleSearchBatchItem(index) {
+  index = Number(index);
+  if (!playlist || !playlist[index]) return;
+  if (!searchBatchMode) searchBatchMode = true;
+  if (searchBatchSelected[index]) delete searchBatchSelected[index];
+  else searchBatchSelected[index] = true;
+  syncSearchBatchUi();
+}
+function selectAllSearchBatchResults() {
+  searchBatchMode = true;
+  searchBatchSelected = Object.create(null);
+  (playlist || []).forEach(function(song, index){ if (song) searchBatchSelected[index] = true; });
+  syncSearchBatchUi();
+}
+function clearSearchBatchSelection() {
+  searchBatchSelected = Object.create(null);
+  syncSearchBatchUi();
+}
+function openSearchBatchCollect() {
+  var songs = selectedSearchBatchSongs();
+  if (!songs.length) { showToast('请先选择要加入歌单的歌曲'); return; }
+  ensureLocalUserPlaylistsLoaded();
+  collectTargetSongs = songs.map(cloneSong);
+  collectTargetSong = collectTargetSongs[0];
+  renderCollectModal();
+  openGsapModal(document.getElementById('collect-modal'));
+}
 function syncSearchAreaResultState() {
   var searchArea = document.getElementById('search-area');
   if (!searchArea || !$results) return;
@@ -25409,6 +26177,7 @@ function searchResultKey(q, mode) {
 function clearSearchResults() {
   searchRequestSeq++;
   searchLastResultQuery = '';
+  resetSearchBatchSelection();
   playlist = [];
   $results.innerHTML = '';
   $results.classList.remove('show');
@@ -25432,6 +26201,7 @@ function rememberSearchQuery(q) {
   writeSearchHistory(items);
 }
 function renderSearchHistory() {
+  resetSearchBatchSelection();
   if (searchMode === 'local') return false;
   var items = readSearchHistory();
   if (!items.length) {
@@ -25561,10 +26331,16 @@ async function showCurrentLxSource() {
   }
         mask.innerHTML =
           '<div class="playlist-select-dialog lx-source-manager-dialog" role="dialog" aria-modal="true">' +
-            '<div class="playlist-select-head"><div><strong>管理播放音源</strong><br><small>已导入 ' + installed.length + ' 个音源；点击名称切换，右侧可以删除</small></div><button class="fx-mini-btn ghost" data-source-close>关闭</button></div>' +
+            '<div class="playlist-select-head"><div><strong>管理播放音源</strong><br><small>已导入 ' + installed.length + ' 个音源；可勾选后批量删除</small></div><button class="fx-mini-btn ghost" data-source-close>关闭</button></div>' +
+            '<div class="lx-source-bulk-bar">' +
+              '<label class="lx-source-bulk-check"><input class="lx-source-check" type="checkbox" data-source-select-all>全选</label>' +
+              '<span class="lx-source-bulk-count" data-source-selected-count>已选 0 个</span>' +
+              '<button type="button" class="lx-source-bulk-delete" data-source-bulk-delete disabled>批量删除</button>' +
+            '</div>' +
             '<div class="lx-source-manager-list">' +
         installed.map(function(item){
           return '<div class="lx-source-row' + (item.active ? ' active' : '') + '" data-source-row="' + escHtml(String(item.id || '')) + '">' +
+            '<input class="lx-source-check" type="checkbox" data-source-check="' + escHtml(String(item.id || '')) + '" aria-label="选择 ' + escHtml(String(item.name || '未命名音源')) + '">' +
             '<div class="lx-source-row-main" data-source-id="' + escHtml(String(item.id || '')) + '" title="切换到这个音源">' +
               '<div class="lx-source-row-title">' + escHtml(String(item.name || '未命名音源')) + '</div>' +
               '<div class="lx-source-row-meta">' + escHtml(sourceMeta(item) || '点击切换到此音源') + '</div>' +
@@ -25583,6 +26359,27 @@ async function showCurrentLxSource() {
             event.stopPropagation();
           }, { passive: true });
         }
+        function updateSourceBulkSelection() {
+          var checks = Array.prototype.slice.call(mask.querySelectorAll('[data-source-check]'));
+          var selected = checks.filter(function(check){ return check.checked; });
+          var selectAll = mask.querySelector('[data-source-select-all]');
+          var count = mask.querySelector('[data-source-selected-count]');
+          var bulkDelete = mask.querySelector('[data-source-bulk-delete]');
+          if (selectAll) {
+            selectAll.checked = !!checks.length && selected.length === checks.length;
+            selectAll.indeterminate = selected.length > 0 && selected.length < checks.length;
+          }
+          if (count) count.textContent = '已选 ' + selected.length + ' 个';
+          if (bulkDelete) bulkDelete.disabled = !selected.length;
+        }
+        mask.addEventListener('change', function(event){
+          if (event.target.matches('[data-source-select-all]')) {
+            mask.querySelectorAll('[data-source-check]').forEach(function(check){ check.checked = event.target.checked; });
+            updateSourceBulkSelection();
+            return;
+          }
+          if (event.target.matches('[data-source-check]')) updateSourceBulkSelection();
+        });
         mask.addEventListener('click', async function(event){
     if (event.target === mask || event.target.closest('[data-source-close]')) {
       mask.remove();
@@ -25612,6 +26409,35 @@ async function showCurrentLxSource() {
       } catch (e) {
         deleteButton.disabled = false;
         showToast('音源删除失败：' + (e && e.message || '未知错误'));
+      }
+      return;
+    }
+    var bulkDeleteButton = event.target.closest('[data-source-bulk-delete]');
+    if (bulkDeleteButton) {
+      var selectedIds = Array.prototype.slice.call(mask.querySelectorAll('[data-source-check]:checked')).map(function(check){
+        return check.getAttribute('data-source-check');
+      }).filter(Boolean);
+      if (!selectedIds.length) return;
+      if (!confirm('确定删除选中的 ' + selectedIds.length + ' 个音源吗？删除后需要重新导入才能恢复。')) return;
+      try {
+        bulkDeleteButton.disabled = true;
+        mask.querySelectorAll('button,input').forEach(function(control){ control.disabled = true; });
+        var bulkResult = await apiJson('/api/lx-source/delete', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({ ids:selectedIds }),
+          timeoutMs:30000
+        });
+        if (!bulkResult || !bulkResult.ok) throw new Error(bulkResult && bulkResult.error || 'SOURCE_BULK_DELETE_FAILED');
+        currentLxSourceInfo = bulkResult;
+        await refreshLxSourceBadge();
+        mask.remove();
+        showToast('已批量删除 ' + (Number(bulkResult.deleted) || selectedIds.length) + ' 个音源');
+        if (bulkResult.installed && bulkResult.installed.length) setTimeout(showCurrentLxSource, 60);
+      } catch (e) {
+        mask.querySelectorAll('button,input').forEach(function(control){ control.disabled = false; });
+        updateSourceBulkSelection();
+        showToast('批量删除失败：' + (e && e.message || '未知错误'));
       }
       return;
     }
@@ -26065,7 +26891,16 @@ function mergePlatformPlaylistPreserveUserSongs(previous, fresh) {
 }
 function isSyncablePlatformPlaylist(list) {
   var sourceName = normalizeLxSourceName(list && list.source);
-  return !!(list && list.imported && /^(tx|wy|kw|kg|kgc|mg|sp|qs|am)$/.test(sourceName) && platformPlaylistSyncInput(list));
+  return !!(list && !isLxNativePlaylist(list) && list.imported && /^(tx|wy|kw|kg|kgc|mg|sp|qs|am)$/.test(sourceName) && platformPlaylistSyncInput(list));
+}
+function isLxNativePlaylist(list) {
+  return !!(list && (list.lxNative === true || list.lxNativeShadow === true || String(list.lxDbListId || '').trim()));
+}
+function isLxFileImportedPlaylist(list) {
+  return !!(list && list.imported && !isLxNativePlaylist(list) && !isSyncablePlatformPlaylist(list));
+}
+function isSyncableLxPlaylist(list) {
+  return isLxNativePlaylist(list) || isSyncablePlatformPlaylist(list) || isLxFileImportedPlaylist(list);
 }
 async function syncImportedPlatformPlaylist(lxIndex) {
   var current = (lxMirrorPlaylists || [])[Number(lxIndex)];
@@ -26125,6 +26960,39 @@ async function syncImportedPlatformPlaylist(lxIndex) {
     showToast('歌单同步失败：' + message);
     return false;
   }
+}
+async function syncLxPlaylist(lxIndex) {
+  var current = (lxMirrorPlaylists || [])[Number(lxIndex)];
+  if (!current) {
+    showToast('歌单不存在');
+    return false;
+  }
+  if (isLxFileImportedPlaylist(current)) {
+    openLxPlaylistImport();
+    return true;
+  }
+  if (!isLxNativePlaylist(current)) return syncImportedPlatformPlaylist(lxIndex);
+  var identity = String(current.lxDbListId || current.id || '');
+  var visibilityKey = playlistVisibilityKey(current);
+  var oldCount = (current.songs || []).length;
+  showToast('正在从落雪同步：' + (current.name || '落雪歌单'));
+  var synced = await loadLxMirrorPlaylists(true);
+  if (!synced) {
+    showToast('同步落雪失败，请确认落雪已安装且歌单数据库可读取');
+    return false;
+  }
+  var updated = (lxMirrorPlaylists || []).find(function(list){
+    return String(list && (list.lxDbListId || list.id) || '') === identity || playlistVisibilityKey(list) === visibilityKey;
+  });
+  if (!updated) {
+    showToast('落雪中已找不到这个歌单');
+    return false;
+  }
+  var newCount = (updated.songs || []).length;
+  var diff = newCount - oldCount;
+  var preserved = (updated.songs || []).filter(function(song){ return song && (song._mineradioUserAdded || song.userAdded); }).length;
+  showToast('已同步落雪：' + (updated.name || current.name || '歌单') + ' · ' + newCount + ' 首' + (diff > 0 ? '，新增 ' + diff + ' 首' : '') + (preserved ? '，保留手动添加 ' + preserved + ' 首' : ''));
+  return true;
 }
 async function openPlaylistSelection() {
   var old = document.getElementById('playlist-select-mask');
@@ -26226,6 +27094,7 @@ function searchLxSongs(q) {
 }
 
 function renderLxSongResults(songs, q) {
+  resetSearchBatchSelection();
   playlist = songs || [];
   searchLastResultQuery = searchResultKey(q || '__lx_library__', searchMode);
   var rows = playlist.map(function(song, index){
@@ -26235,7 +27104,8 @@ function renderLxSongResults(songs, q) {
       : '<div class="cover-placeholder"></div>';
     var sourceKey = String(song.source || '').toLowerCase();
     var sourceLabel = ({ tx:'小秋', wy:'小芸', kw:'小蜗', kg:'小狗', mg:'小菇' })[sourceKey] || 'LX';
-    return '<div class="search-result lx-source ' + escHtml(sourceKey) + '-source">' +
+    return '<div class="search-result lx-source ' + escHtml(sourceKey) + '-source" data-search-result-index="' + index + '">' +
+      '<button class="search-batch-check" type="button" role="checkbox" aria-checked="false" title="选择歌曲" onclick="event.stopPropagation();toggleSearchBatchItem(' + index + ')">✓</button>' +
       '<div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0" onclick="playLxSearchResult(' + index + ')">' +
         image +
         '<div class="search-result-info">' +
@@ -26247,11 +27117,12 @@ function renderLxSongResults(songs, q) {
       '<button class="add-btn" title="收藏到歌单" onclick="event.stopPropagation();collectSearchResult(' + index + ')">' + playlistPlusIconSvg() + '</button>' +
     '</div>';
   }).join('');
-  $results.innerHTML = rows +
+  $results.innerHTML = searchBatchToolbarHtml() + rows +
     '<div class="search-empty" style="border-top:1px solid rgba(255,255,255,.06)">' +
       '<span>由 MR 调用本机落雪音源，歌曲在 MR 内播放</span>' +
     '</div>';
   $results.classList.add('show');
+  syncSearchBatchUi();
   if (window.gsap) animateListItems($results, '.search-result', { x:0, y:6, stagger:.012, duration:.18, limit:18 });
 }
 
@@ -27048,7 +27919,38 @@ function mergeLxPlaylistSources(remote, imported, includeHidden) {
     if (!list || !Array.isArray(list.songs)) return;
     enforcePlaylistSongLimit(list);
     var key = String(list.id || '') + '|' + String(list.name || '');
-    if (positions[key] != null) merged[positions[key]] = list;
+    if (positions[key] != null) {
+      var previous = merged[positions[key]];
+      var listHasManualSongs = (list.songs || []).some(function(song){ return song && (song._mineradioUserAdded || song.userAdded); });
+      if (isLxNativePlaylist(previous) && list.imported) {
+        var remoteSongs = (previous.songs || []).map(cloneSong);
+        var seen = Object.create(null);
+        remoteSongs.forEach(function(song){
+          var songKey = importedPlaylistSongMergeKey(song);
+          if (songKey) seen[songKey] = true;
+        });
+        var preserved = [];
+        (list.songs || []).forEach(function(song){
+          if (!song || (!song._mineradioUserAdded && !song.userAdded)) return;
+          var songKey = importedPlaylistSongMergeKey(song);
+          if (songKey && seen[songKey]) return;
+          if (songKey) seen[songKey] = true;
+          preserved.push(markSongAsUserAddedToImportedPlaylist(cloneSong(song)));
+        });
+        merged[positions[key]] = Object.assign({}, list, previous, {
+          imported:true,
+          lxNative:true,
+          lxNativeShadow:true,
+          lxDbListId:String(previous.lxDbListId || previous.id || list.lxDbListId || list.id || ''),
+          songs:preserved.concat(remoteSongs),
+          trackCount:preserved.length + remoteSongs.length,
+          preservedUserAddedCount:preserved.length
+        });
+        enforcePlaylistSongLimit(merged[positions[key]]);
+      } else {
+        merged[positions[key]] = list;
+      }
+    }
     else { positions[key] = merged.length; merged.push(list); }
   });
   if (includeHidden) return applySavedLxPlaylistSongOrders(merged);
@@ -27132,7 +28034,7 @@ async function loadLxMirrorPlaylists(silent) {
     lxMirrorPlaylists = applyRemovedLxPlaylistSongs(mergeLxPlaylistSources([], lxImportedPlaylists));
     if (queueViewTab === 'playlists') renderLocalLibraryPlaylistPanel({ animate:false });
     if (!silent) showToast(lxImportedPlaylists.length ? '已显示手机导入的落雪歌单' : '读取落雪歌单失败，可导入 .lxmc');
-    return lxImportedPlaylists.length > 0;
+    return false;
   }
 }
 var LX_REMOVED_PLAYLIST_SONGS_KEY = 'mineradio-lx-removed-playlist-songs-v1';
@@ -27466,6 +28368,12 @@ async function loadImportedLxLyrics(song, token) {
   var sourceName = normalizeLxSourceName(song && (song.source || song.provider || song.type));
   try {
     var data, lines = [], nativeKaraoke = false, timingSource = 'fallback';
+    function publishLyricsSnapshot() {
+      if (token !== trackSwitchToken || !lines.length) return;
+      var snapshot = withLyricFallback(lines);
+      setOriginalLyricsState(snapshot, nativeKaraoke, timingSource);
+      applyLyricsState(snapshot, nativeKaraoke, timingSource);
+    }
     if (sourceName === 'tx') {
       data = await apiJson('/api/platform-lyric?source=tx&id=' + encodeURIComponent(song.songmid || song.id || '') +
         '&name=' + encodeURIComponent(song.name || '') +
@@ -27487,9 +28395,12 @@ async function loadImportedLxLyrics(song, token) {
       lines = mergeLyricTranslations(lines, parseLyricText(data && (data.tlyric || data.tlrc || data.trans) || ''));
       timingSource = lines.length ? (nativeKaraoke ? 'wy-yrc' : 'wy-lrc') : 'fallback';
     }
+    // Publish the platform response immediately. Word-timed LX data and
+    // translations may arrive later without holding the visible lyric switch.
+    publishLyricsSnapshot();
     // Ask the selected LX source not only when the original lyric is missing,
     // but also when the original exists and only the translation is absent.
-    if (!lines.length || !lyricLinesHaveTranslation(lines)) {
+    if (!lines.length || !nativeKaraoke || !lyricLinesHaveTranslation(lines)) {
       try {
         var lxLyricData = await apiJson('/api/lx-source/lyric', {
           method:'POST',
@@ -27497,9 +28408,17 @@ async function loadImportedLxLyrics(song, token) {
           body:JSON.stringify({ source:sourceName, musicInfo:song }),
           timeoutMs:22000
         });
-        if (!lines.length && lxLyricData && lxLyricData.lxlyric) {
-          lines = parseLxWordLyricText(lxLyricData.lxlyric);
-          nativeKaraoke = lines.some(function(line){ return line.words && line.words.length; });
+        if (lxLyricData && lxLyricData.lxlyric) {
+          var lxWordLines = parseLxWordLyricText(lxLyricData.lxlyric);
+          var hasLxWordTiming = lxWordLines.some(function(line){ return line.words && line.words.length; });
+          if (hasLxWordTiming) {
+            var preservedTranslations = lines.filter(function(line){ return line && line.translation; }).map(function(line){
+              return { t:Number(line.t) || 0, text:String(line.translation || '') };
+            });
+            lines = mergeLyricTranslations(lxWordLines, preservedTranslations);
+            nativeKaraoke = true;
+            timingSource = 'lx-word';
+          }
         }
         if (!lines.length) lines = parseLyricText(lxLyricData && lxLyricData.lyric || '');
         lines = mergeLyricTranslations(lines, parseLyricText(lxLyricData && lxLyricData.tlyric || ''));
@@ -27508,6 +28427,7 @@ async function loadImportedLxLyrics(song, token) {
         console.warn('[LXSourceLyrics]', lxLyricError);
       }
     }
+    publishLyricsSnapshot();
     if (/^(kw|kg|mg)$/.test(sourceName)) {
       try {
         data = await apiJson('/api/platform-lyric?source=' + encodeURIComponent(sourceName) +
@@ -27529,6 +28449,7 @@ async function loadImportedLxLyrics(song, token) {
         console.warn('[PlatformLyricSupplement]', platformLyricError);
       }
     }
+    publishLyricsSnapshot();
     // Some LX lyric scripts return the original line but omit translation.
     // Fall back to the server's cross-platform title/artist matcher, which
     // checks both Netease and QQ candidates before giving up.
@@ -27629,7 +28550,18 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
   safePlaybackStep('listen-session-finalize-lx-imported', function(){ finalizeListenSession(false); });
   activePlaybackContext = { type:'lx-imported', playlistIndex:playlistIndex, songIndex:songIndex, playlistName:song && song.lxPlaylistName || '' };
   trackSwitchToken++;
+  var playbackToken = trackSwitchToken;
   prepareImportedLxPlayerUi(song);
+  // Invalidate the previous track immediately and fetch lyrics in parallel
+  // with audio URL resolution. This removes the old-lyric linger on switches.
+  var pendingLyricText = String(song && (song.name || song.title) || '正在加载歌词');
+  var pendingLyricLines = [{ t:0, text:pendingLyricText, duration:9999, charCount:Math.max(1, pendingLyricText.length), fallback:true }];
+  setOriginalLyricsState(pendingLyricLines, false, 'loading');
+  applyLyricsState(pendingLyricLines, false, 'loading');
+  desktopOverlayPushState.lastLyricsTimelineKey = '';
+  desktopOverlayPushState.lastLyricsKey = '';
+  setTimeout(function(){ if (playbackToken === trackSwitchToken) pushDesktopLyricsState(true); }, 0);
+  var importedLyricsPromise = loadImportedLxLyrics(song, playbackToken);
   showToast('正在解析：' + (song.name || '落雪歌曲'));
   lxAutoDetectSuppressedUntil = Number.POSITIVE_INFINITY;
   setLxBridgeActiveState(false);
@@ -27738,7 +28670,6 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
   // the resolver with the active resolver excluded. Cap retries to avoid a
   // permanently broken track looping forever.
   var playingResolver = String(song._lastLxResolver || '');
-  var playbackToken = trackSwitchToken;
   audio.onerror = function(){
     if (playbackToken !== trackSwitchToken || runtimeRetry >= 3) return;
     var resumeSeconds = Math.max(0, Number(audio.currentTime) || 0);
@@ -27758,7 +28689,7 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
   safePlaybackStep('listen-session-begin-lx-imported', function(){
     beginListenSession(song, { type:'lx-imported', playlistIndex:playlistIndex, songIndex:songIndex, playlistName:song && song.lxPlaylistName || '' });
   });
-  await loadImportedLxLyrics(song, playbackToken);
+  await importedLyricsPromise;
   safeRenderQueuePanel('lx-imported-play', { scrollCurrent:true });
   scheduleShelfRebuild('lx-imported-play', true);
   showToast('Mineradio 播放：' + (song.name || '落雪歌曲'));
@@ -27949,8 +28880,7 @@ async function fetchLxBridgeStatus() {
       var duration = Math.max(0, Number(st.duration) || 0);
       var progress = Math.max(0, Math.min(duration || Number.MAX_SAFE_INTEGER, currentLxProgress()));
       if (!progressDragState.active) setProgressVisual(duration > 0 ? progress / duration * 100 : 0);
-      var timeDisplay = document.getElementById('time-display');
-      if (timeDisplay && !progressDragState.active) timeDisplay.textContent = formatProgramTime(progress) + ' / ' + (duration ? formatProgramTime(duration) : '0:00');
+      if (!progressDragState.active) setPlaybackTimeText(formatProgramTime(progress) + ' / ' + (duration ? formatProgramTime(duration) : '0:00'));
       var remoteVolume = Number(st.volume);
       if (isFinite(remoteVolume) && remoteVolume >= 0 && Date.now() - lxVolumeSentAt > 1200) {
         var remoteMuted = st.mute === true || st.mute === 1 || st.mute === '1' || String(st.mute).toLowerCase() === 'true';
@@ -28307,14 +29237,16 @@ async function renderLxSearchBridge(q) {
   $results.classList.add('show');
 }
 function renderSongSearchResults(songs) {
+  resetSearchBatchSelection();
   playlist = songs || [];
-  $results.innerHTML = playlist.map(function(s, i){
+  $results.innerHTML = searchBatchToolbarHtml() + playlist.map(function(s, i){
     var sourceTag = songSourceTagHtml(s);
     var thumb = songCoverSrc(s, 80);
     var imgTag = thumb
       ? '<img src="' + thumb + '" alt="" loading="lazy" onerror="this.style.opacity=0.2">'
       : '<div style="width:40px;height:40px;border-radius:6px;background:rgba(255,255,255,0.06);flex-shrink:0"></div>';
-    return '<div class="search-result local-source">' +
+    return '<div class="search-result local-source" data-search-result-index="' + i + '">' +
+      '<button class="search-batch-check" type="button" role="checkbox" aria-checked="false" title="选择歌曲" onclick="event.stopPropagation();toggleSearchBatchItem(' + i + ')">✓</button>' +
       '<div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0" onclick="playSearchResult(' + i + ')">' +
         imgTag +
         '<div class="search-result-info">' +
@@ -28327,6 +29259,7 @@ function renderSongSearchResults(songs) {
     '</div>';
   }).join('');
   $results.classList.add('show');
+  syncSearchBatchUi();
   if (window.gsap) animateListItems($results, '.search-result', { x: 0, y: 6, stagger: 0.012, duration: 0.18, limit: 18 });
 }
 
@@ -29322,13 +30255,15 @@ function parseLocalLyricText(text) {
 }
 function applyLocalOriginalLyricsState(song) {
   var text = song && String(song.localLyricText || song.localOnlineLyricText || '').trim();
-  var lines = text ? parseLocalLyricText(text) : [];
+  var yrcText = song && !song.localLyricFile ? String(song.localOnlineYrcText || '').trim() : '';
+  var lines = yrcText ? parseYrcText(yrcText) : (text ? parseLocalLyricText(text) : []);
+  var nativeKaraoke = !!(yrcText && lines.some(function(line){ return line.words && line.words.length; }));
   var translationText = song && String(song.localTranslationText || '').trim();
   if (translationText) lines = mergeLyricTranslations(lines, parseLyricText(translationText));
   var timingSource = lines.length
-    ? (lines[0].source === 'local-lrc' ? 'local-lrc' : 'local-text')
+    ? (nativeKaraoke ? 'wy-yrc' : (lines[0].source === 'local-lrc' ? 'local-lrc' : 'local-text'))
     : 'fallback';
-  setOriginalLyricsState(withLyricFallback(lines), false, timingSource);
+  setOriginalLyricsState(withLyricFallback(lines), nativeKaraoke, timingSource);
   applyPreferredLyricsForCurrent(true);
 }
 function localSongFileNameForEmbeddedAsset(song) {
@@ -29379,7 +30314,7 @@ function localOnlineLyricQuery(song) {
 function ensureLocalOnlineLyricsForSong(song, opts) {
   opts = opts || {};
   if (!song) return Promise.resolve(false);
-  if (song.localOnlineLyricLoaded) {
+  if (song.localOnlineLyricLoaded && song.localOnlineWordLyricChecked) {
     maybeApplyLocalLyricsForSong(song, opts);
     return Promise.resolve(!!(song.localOnlineLyricText || song.localTranslationText));
   }
@@ -29393,10 +30328,13 @@ function ensureLocalOnlineLyricsForSong(song, opts) {
   ).then(function(data){
     data = data || {};
     var original = String(data.lyric || data.lrc || '').trim();
+    var yrc = String(data.yrc || '').trim();
     var translated = String(data.tlyric || data.tlrc || data.trans || data.translation || '').trim();
     if (!song.localLyricText && original) song.localOnlineLyricText = original;
+    if (!song.localLyricText && yrc) song.localOnlineYrcText = yrc;
     if (translated) song.localTranslationText = translated;
     song.localOnlineLyricLoaded = true;
+    song.localOnlineWordLyricChecked = true;
     if (opts.applyCurrent && (opts.token == null || opts.token === trackSwitchToken) && isCurrentLocalQueueSong(song)) {
       applyLocalOriginalLyricsState(song);
       updateCustomLyricControls();
@@ -29407,6 +30345,7 @@ function ensureLocalOnlineLyricsForSong(song, opts) {
   }).catch(function(error){
     console.warn('[LocalOnlineLyricSupplement]', query, error);
     song.localOnlineLyricLoaded = true;
+    song.localOnlineWordLyricChecked = true;
     return false;
   }).finally(function(){
     song.localOnlineLyricPromise = null;
@@ -29472,9 +30411,10 @@ function ensureLocalLyricsForSong(song, opts) {
 }
 function loadLocalLyricsForSong(song, token) {
   var opts = { token:token, applyCurrent:true };
-  return ensureLocalLyricsForSong(song, opts).then(function(){
-    return ensureLocalOnlineLyricsForSong(song, opts);
-  });
+  return Promise.all([
+    ensureLocalLyricsForSong(song, opts),
+    ensureLocalOnlineLyricsForSong(song, opts)
+  ]).then(function(results){ return !!(results[0] || results[1]); });
 }
 async function playLocalQueueItem(song, idx, opts, token, firstVisualPlay, bmKey, markPlayPhase) {
   // 本地队列播放期间禁止后台轮询把播放来源悄悄切回落雪。
@@ -29506,7 +30446,7 @@ async function playLocalQueueItem(song, idx, opts, token, firstVisualPlay, bmKey
   if (predecodedLocalUrl) localUrl = predecodedLocalUrl;
   currentLocalSong = song;
   applyLocalOriginalLyricsState(song);
-  setTimeout(function(){ loadLocalLyricsForSong(song, token); }, 80);
+  loadLocalLyricsForSong(song, token).catch(function(error){ console.warn('[LocalLyricsFastLoad]', error); });
   document.getElementById('trial-banner').classList.remove('show');
   setTimeout(function(){
     loadLocalCoverForSong(song, token, { trackToken: token, deferHeavy: true, delay: 80, timeout: 520 });
@@ -29763,6 +30703,9 @@ async function playQueueAt(idx, opts) {
       var initialLyricLines = withLyricFallback([]);
       setOriginalLyricsState(initialLyricLines, false, 'fallback');
       applyPreferredLyricsForCurrent(true);
+      desktopOverlayPushState.lastLyricsTimelineKey = '';
+      desktopOverlayPushState.lastLyricsKey = '';
+      setTimeout(function(){ if (token === trackSwitchToken) pushDesktopLyricsState(true); }, 0);
     });
     safePlaybackStep('trial-banner-reset', function(){ document.getElementById('trial-banner').classList.remove('show'); });
     safePlaybackStep('show-loading', showLoading);
@@ -30992,13 +31935,18 @@ function setPlaylistPanelPinned(on, silent) {
 function togglePlaylistPanelPinned() {
   setPlaylistPanelPinned(!playlistPanelPinned);
 }
-function scrollPlaylistPanelToCurrent() {
+function scrollPlaylistPanelToCurrent(opts) {
+  opts = opts || {};
   var panel = document.getElementById('playlist-panel');
   var list = document.getElementById('queue-list');
   if (!panel || !list || queueViewTab !== 'queue') return;
   var now = performance.now();
-  if (panel.__lastCurrentScrollAt && now - panel.__lastCurrentScrollAt < 650) return;
+  if (!opts.force && panel.__lastCurrentScrollAt && now - panel.__lastCurrentScrollAt < 650) return;
   panel.__lastCurrentScrollAt = now;
+  if (currentIdx >= 0 && currentIdx < playQueue.length && !list.querySelector('.queue-item.now')) {
+    jumpQueueRenderToCurrent(false);
+    return;
+  }
   requestAnimationFrame(function(){
     smoothScrollToItem(panel, list.querySelector('.queue-item.now'), { duration: 0.28, align: 0.34 });
   });
@@ -31619,6 +32567,7 @@ function growMiniQueueRenderLimit(amount) {
 }
 function jumpQueueRenderToCurrent(mini) {
   if (currentIdx < 0 || currentIdx >= playQueue.length) return false;
+  syncQueueRenderLimits();
   var batch = mini ? MINI_QUEUE_BATCH_SIZE : QUEUE_PANEL_BATCH_SIZE;
   var next = Math.min(playQueue.length, currentIdx + Math.max(12, Math.floor(batch * 0.5)));
   if (mini) {
@@ -31627,6 +32576,9 @@ function jumpQueueRenderToCurrent(mini) {
   } else {
     queuePanelRenderLimit = Math.max(queuePanelRenderLimit || 0, next);
     renderQueuePanel({ animate: true, scrollCurrent: true });
+    requestAnimationFrame(function(){
+      requestAnimationFrame(function(){ scrollPlaylistPanelToCurrent({ force:true }); });
+    });
   }
   return true;
 }
@@ -31687,6 +32639,12 @@ function renderQueuePanel(opts) {
   }
   if (opts.animate && seq === queueRenderSeq) {
     animateVisiblePanelList($ql, '.queue-item', document.getElementById('playlist-panel'), '.queue-item.now', { scrollActive: opts.scrollCurrent !== false });
+  }
+  if (opts.scrollCurrent) {
+    requestAnimationFrame(function(){
+      var panel = document.getElementById('playlist-panel');
+      if (panel) smoothScrollToItem(panel, $ql.querySelector('.queue-item.now'), { duration:0.30, align:0.34 });
+    });
   }
   renderMiniQueuePanel({ scrollCurrent: miniQueueOpen });
   renderLeftPanelSearchResults({ preserveFocus: false });
@@ -32054,7 +33012,7 @@ function playlistPanelEntryHtml(entry) {
       renderLimit = Math.min(allFolderSongs.length, renderLimit);
       lxPlaylistDetailRenderLimits[detailKey] = renderLimit;
       var visibleSongs = allFolderSongs.slice(0, renderLimit);
-      var syncButton = isSyncablePlatformPlaylist(item) ? '<button class="fx-mini-btn ghost" type="button" data-lx-playlist-sync="' + lxIndex + '" title="从原平台重新读取这个歌单" style="height:28px;padding:0 10px;margin-left:6px">同步</button>' : '';
+      var syncButton = isSyncableLxPlaylist(item) ? '<button class="fx-mini-btn ghost" type="button" data-lx-playlist-sync="' + lxIndex + '" title="' + (isLxNativePlaylist(item) ? '从落雪电脑端重新读取并保留手动添加的歌曲' : (isLxFileImportedPlaylist(item) ? '选择落雪最新导出的 .lxmc 文件更新歌单' : '从原平台重新读取这个歌单')) + '" style="height:28px;padding:0 10px;margin-left:6px">' + (isLxNativePlaylist(item) ? '同步落雪' : (isLxFileImportedPlaylist(item) ? '更新 .lxmc' : '同步')) + '</button>' : '';
       lxHtml += '<div class="pl-inline-detail" style="margin:6px 0 12px">' +
         '<div class="pl-detail-actions"><button class="pl-detail-play" type="button" data-lx-song-index="0" data-lx-song-playlist="' + lxIndex + '">播放歌单第一首</button>' + syncButton + '</div>' +
         '<div class="pl-detail-list">' + visibleSongs.map(function(song, songIndex){
@@ -32354,7 +33312,7 @@ function renderLocalLibraryPlaylistPanel(opts) {
           renderLimit = Math.min(allFolderSongs.length, renderLimit);
           lxPlaylistDetailRenderLimits[detailKey] = renderLimit;
           var visibleSongs = allFolderSongs.slice(0, renderLimit);
-          var syncButton = isSyncablePlatformPlaylist(folder) ? '<button class="fx-mini-btn ghost" type="button" data-lx-playlist-sync="' + folderIndex + '" title="从原平台重新读取这个歌单" style="height:28px;padding:0 10px;margin-left:6px">同步</button>' : '';
+          var syncButton = isSyncableLxPlaylist(folder) ? '<button class="fx-mini-btn ghost" type="button" data-lx-playlist-sync="' + folderIndex + '" title="' + (isLxNativePlaylist(folder) ? '从落雪电脑端重新读取并保留手动添加的歌曲' : (isLxFileImportedPlaylist(folder) ? '选择落雪最新导出的 .lxmc 文件更新歌单' : '从原平台重新读取这个歌单')) + '" style="height:28px;padding:0 10px;margin-left:6px">' + (isLxNativePlaylist(folder) ? '同步落雪' : (isLxFileImportedPlaylist(folder) ? '更新 .lxmc' : '同步')) + '</button>' : '';
           html += '<div class="pl-inline-detail" style="margin:6px 0 12px">' +
             '<div class="pl-detail-actions"><button class="pl-detail-play" type="button" data-lx-song-index="0" data-lx-song-playlist="' + folderIndex + '">播放歌单第一首</button>' + syncButton + '</div>' +
             '<div class="pl-detail-list">' + visibleSongs.map(function(song, songIndex){
@@ -32496,7 +33454,7 @@ document.getElementById('pl-list').addEventListener('click', function(e){
   if (lxPlaylistSync) {
     e.preventDefault();
     e.stopPropagation();
-    syncImportedPlatformPlaylist(Number(lxPlaylistSync.getAttribute('data-lx-playlist-sync')) || 0);
+    syncLxPlaylist(Number(lxPlaylistSync.getAttribute('data-lx-playlist-sync')) || 0);
     return;
   }
   var lxSong = e.target && e.target.closest ? e.target.closest('[data-lx-song-index]') : null;
@@ -32582,7 +33540,8 @@ document.getElementById('pl-list').addEventListener('click', function(e){
   var pid = card.getAttribute('data-playlist-id') || '';
   openPlaylistPanelDetail(provider, pid, card.getAttribute('data-playlist-title') || '');
 });
-function removeImportedPlaylistSong(playlistIndex, songIndex) {
+function removeImportedPlaylistSong(playlistIndex, songIndex, opts) {
+  opts = opts || {};
   var mirror = lxMirrorPlaylists && lxMirrorPlaylists[playlistIndex];
   if (!mirror || songIndex < 0 || songIndex >= (mirror.songs || []).length) return;
   var target = mirror.songs[songIndex];
@@ -32606,9 +33565,11 @@ function removeImportedPlaylistSong(playlistIndex, songIndex) {
   }
   mirror.songs.splice(songIndex, 1);
   mirror.trackCount = mirror.songs.length;
-  renderLocalLibraryPlaylistPanel({ animate:false });
-  renderHomeDiscover();
-  showToast('已从在线播放歌单删除：' + (target && target.name || '歌曲'));
+  if (!opts.silent) {
+    renderLocalLibraryPlaylistPanel({ animate:false });
+    renderHomeDiscover();
+    showToast('已从在线播放歌单删除：' + (target && target.name || '歌曲'));
+  }
 }
 var playlistDetailSearchComposing = false;
 function applyPlaylistLibrarySearchValue(value) {
@@ -33092,15 +34053,113 @@ function nfToggleCover(e) {
 function nfSeek(e) {
   nfStop(e);
   var bar = e && e.currentTarget;
-  if (!bar || !audio) return;
-  var duration = getPlaybackDurationSeconds();
-  if (!duration || !isFinite(duration)) return;
+  if (!bar) return;
   var rect = bar.getBoundingClientRect();
   var x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
-  audio.currentTime = duration * (x / Math.max(1, rect.width));
+  seekNowFlowToRatio(x / Math.max(1, rect.width), true);
+}
+function seekNowFlowToRatio(ratio, commit) {
+  var duration = getPlaybackDurationSeconds();
+  if (!duration || !isFinite(duration)) return false;
+  ratio = clampRange(Number(ratio) || 0, 0, 1);
+  var target = duration * ratio;
+  progressDragState.targetSeconds = target;
+  if (lxBridgeActive && lxBridgeStatus) {
+    lxBridgeStatus.progress = target;
+    lxBridgeStatusAt = performance.now();
+    if (commit) {
+      lxSeekPendingUntil = Date.now() + 1000;
+      lxBridgeControl('seek', target).then(function(ok){
+        if (ok) return;
+        lxSeekPendingUntil = 0;
+        fetchLxBridgeStatus().catch(function(){});
+        showToast('落雪定位失败，已恢复真实播放进度');
+      });
+    }
+  } else if (audio) {
+    audio.currentTime = target;
+    if (commit && isLxDualPlaybackEnabled()) syncLxDualControl('seek', target);
+  } else {
+    return false;
+  }
+  setProgressVisual(ratio * 100);
+  setPlaybackTimeText(formatProgramTime(target) + ' / ' + formatProgramTime(duration));
   savePlaybackSession(true);
   nowFlowWakeControls(1900);
-  updatePlaybackProgressUi();
+  return true;
+}
+var nowFlowProgressBar = document.getElementById('now-flow-progress');
+var nowFlowProgressPointerActive = false;
+if (nowFlowProgressBar) {
+  var nowFlowSeekPreview = document.getElementById('now-flow-seek-preview');
+  function updateNowFlowSeekPreview(event) {
+    var duration = getPlaybackDurationSeconds();
+    var rect = nowFlowProgressBar.getBoundingClientRect();
+    var ratio = clampRange((event.clientX - rect.left) / Math.max(1, rect.width), 0, 1);
+    if (nowFlowSeekPreview) {
+      var safeLeft = clampRange(event.clientX - rect.left, 24, Math.max(24, rect.width - 24));
+      nowFlowSeekPreview.style.left = safeLeft + 'px';
+      nowFlowSeekPreview.textContent = duration > 0 ? formatProgramTime(duration * ratio) : '0:00';
+    }
+    return ratio;
+  }
+  function seekNowFlowFromPointer(event, commit) {
+    return seekNowFlowToRatio(updateNowFlowSeekPreview(event), commit);
+  }
+  nowFlowProgressBar.addEventListener('pointerenter', updateNowFlowSeekPreview);
+  nowFlowProgressBar.addEventListener('pointerdown', function(event){
+    if (event.button !== 0 || !getPlaybackDurationSeconds()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    nowFlowProgressPointerActive = true;
+    progressDragState.active = true;
+    nowFlowProgressBar.classList.add('is-dragging');
+    try { nowFlowProgressBar.setPointerCapture(event.pointerId); } catch (_captureError) {}
+    seekNowFlowFromPointer(event, false);
+  });
+  nowFlowProgressBar.addEventListener('pointermove', function(event){
+    var ratio = updateNowFlowSeekPreview(event);
+    if (!nowFlowProgressPointerActive) return;
+    event.preventDefault();
+    seekNowFlowToRatio(ratio, false);
+  });
+  function finishNowFlowProgressDrag(event) {
+    if (!nowFlowProgressPointerActive) return;
+    nowFlowProgressPointerActive = false;
+    seekNowFlowFromPointer(event, true);
+    progressDragState.active = false;
+    nowFlowProgressBar.classList.remove('is-dragging');
+    try { nowFlowProgressBar.releasePointerCapture(event.pointerId); } catch (_releaseError) {}
+    updatePlaybackProgressUi();
+  }
+  nowFlowProgressBar.addEventListener('pointerup', finishNowFlowProgressDrag);
+  nowFlowProgressBar.addEventListener('pointercancel', function(event){
+    nowFlowProgressPointerActive = false;
+    progressDragState.active = false;
+    nowFlowProgressBar.classList.remove('is-dragging');
+    try { nowFlowProgressBar.releasePointerCapture(event.pointerId); } catch (_releaseError) {}
+    updatePlaybackProgressUi();
+  });
+  nowFlowProgressBar.addEventListener('keydown', function(event){
+    var duration = getPlaybackDurationSeconds();
+    if (!duration) return;
+    var target = getPlaybackCurrentSeconds();
+    var handled = true;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') target -= event.shiftKey ? 15 : 5;
+    else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') target += event.shiftKey ? 15 : 5;
+    else if (event.key === 'Home') target = 0;
+    else if (event.key === 'End') target = duration;
+    else handled = false;
+    if (!handled) return;
+    event.preventDefault();
+    event.stopPropagation();
+    seekNowFlowToRatio(clampRange(target / duration, 0, 1), true);
+    if (nowFlowSeekPreview) {
+      nowFlowSeekPreview.style.left = (clampRange(target / duration, 0, 1) * 100) + '%';
+      nowFlowSeekPreview.textContent = formatProgramTime(clampRange(target, 0, duration));
+    }
+    updatePlaybackProgressUi();
+  });
 }
 function updateNowFlowActions() {
   nfInitButtonIcons();
@@ -33189,8 +34248,21 @@ function getPlaybackCurrentSeconds() {
   return audio && isFinite(audio.currentTime) && audio.currentTime > 0 ? audio.currentTime : 0;
 }
 var playbackProgressUiCache = { percent: -1, text: '', mediaAt: 0 };
+function setPlaybackTimeText(text) {
+  var fullTime = document.getElementById('time-display');
+  if (fullTime && fullTime.textContent !== text) fullTime.textContent = text;
+  var pieces = String(text || '0:00 / 0:00').split(' / ');
+  var current = document.getElementById('now-flow-current');
+  var duration = document.getElementById('now-flow-duration');
+  if (current && current.textContent !== pieces[0]) current.textContent = pieces[0] || '0:00';
+  if (duration && duration.textContent !== pieces[1]) duration.textContent = pieces[1] || '0:00';
+  var nowFlowProgress = document.getElementById('now-flow-progress');
+  if (nowFlowProgress) nowFlowProgress.setAttribute('aria-valuetext', text);
+}
 function setProgressVisual(percent) {
   percent = clampRange(percent || 0, 0, 100);
+  var nowFlowProgress = document.getElementById('now-flow-progress');
+  if (nowFlowProgress) nowFlowProgress.setAttribute('aria-valuenow', percent.toFixed(1));
   if (Math.abs(percent - playbackProgressUiCache.percent) < 0.025) return;
   playbackProgressUiCache.percent = percent;
   var fill = document.getElementById('progress-fill');
@@ -33209,8 +34281,7 @@ function updatePlaybackProgressUi() {
   var text = formatProgramTime(currentSec) + ' / ' + (durationSec > 0 ? formatProgramTime(durationSec) : '0:00');
   if (text !== playbackProgressUiCache.text) {
     playbackProgressUiCache.text = text;
-    var timeDisplay = document.getElementById('time-display');
-    if (timeDisplay) timeDisplay.textContent = text;
+    setPlaybackTimeText(text);
   }
   var now = performance.now();
   if (now - playbackProgressUiCache.mediaAt >= 750) {
@@ -33368,8 +34439,7 @@ function seekFromProgressPointer(e, emitParticles) {
   progressDragState.targetSeconds = ratio * durationSec;
   if (!lxBridgeActive) audio.currentTime = progressDragState.targetSeconds;
   setProgressVisual(ratio * 100);
-  var timeDisplay = document.getElementById('time-display');
-  if (timeDisplay) timeDisplay.textContent = formatProgramTime(progressDragState.targetSeconds) + ' / ' + formatProgramTime(durationSec);
+  setPlaybackTimeText(formatProgramTime(progressDragState.targetSeconds) + ' / ' + formatProgramTime(durationSec));
   if (!lxBridgeActive) syncBeatMapPlaybackCursor(audio.currentTime);
   if (emitParticles) emitProgressDragParticles(e.clientX, rect.top + rect.height / 2);
 }
@@ -36202,12 +37272,106 @@ function setVisualIconColor(color, silent) {
 function resetVisualIconColor() {
   setVisualIconColor(fxDefaults.visualIconColor || '#7fd8ff');
 }
+var wallpaperParallaxState = { targetX:0, targetY:0, currentX:0, currentY:0, raf:0, bound:false };
+function renderWallpaperParallax() {
+  var state = wallpaperParallaxState;
+  state.raf = 0;
+  var layer = document.getElementById('custom-bg');
+  if (!layer) return;
+  state.currentX += (state.targetX - state.currentX) * 0.11;
+  state.currentY += (state.targetY - state.currentY) * 0.11;
+  if (Math.abs(state.targetX - state.currentX) < 0.03) state.currentX = state.targetX;
+  if (Math.abs(state.targetY - state.currentY) < 0.03) state.currentY = state.targetY;
+  layer.style.setProperty('--wallpaper-parallax-x', state.currentX.toFixed(2) + 'px');
+  layer.style.setProperty('--wallpaper-parallax-y', state.currentY.toFixed(2) + 'px');
+  if (state.currentX !== state.targetX || state.currentY !== state.targetY) {
+    state.raf = requestAnimationFrame(renderWallpaperParallax);
+  }
+}
+function scheduleWallpaperParallax() {
+  if (!wallpaperParallaxState.raf) wallpaperParallaxState.raf = requestAnimationFrame(renderWallpaperParallax);
+}
+function resetWallpaperParallax(immediate) {
+  var state = wallpaperParallaxState;
+  state.targetX = 0;
+  state.targetY = 0;
+  if (immediate) {
+    state.currentX = 0;
+    state.currentY = 0;
+    var layer = document.getElementById('custom-bg');
+    if (layer) {
+      layer.style.setProperty('--wallpaper-parallax-x', '0px');
+      layer.style.setProperty('--wallpaper-parallax-y', '0px');
+    }
+  }
+  scheduleWallpaperParallax();
+}
+function bindWallpaperParallax() {
+  var state = wallpaperParallaxState;
+  if (state.bound) return;
+  state.bound = true;
+  window.addEventListener('pointermove', function(event){
+    if (!document.body.classList.contains('wallpaper-parallax-active') || event.pointerType === 'touch') return;
+    var width = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+    var height = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+    var normalizedX = Math.max(-1, Math.min(1, (Number(event.clientX) / width - 0.5) * 2));
+    var normalizedY = Math.max(-1, Math.min(1, (Number(event.clientY) / height - 0.5) * 2));
+    state.targetX = -normalizedX * 20;
+    state.targetY = -normalizedY * 14;
+    scheduleWallpaperParallax();
+  }, { passive:true });
+  document.documentElement.addEventListener('mouseleave', function(){ resetWallpaperParallax(false); }, { passive:true });
+  window.addEventListener('blur', function(){ resetWallpaperParallax(false); }, { passive:true });
+  document.addEventListener('visibilitychange', function(){ if (document.hidden) resetWallpaperParallax(true); });
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindWallpaperParallax, { once:true });
+else bindWallpaperParallax();
+
+function updateCustomBackgroundVideoPowerState() {
+  var video = document.getElementById('custom-bg-video');
+  if (!video) return;
+  if (customBgVideoPowerTimer) {
+    clearTimeout(customBgVideoPowerTimer);
+    customBgVideoPowerTimer = 0;
+  }
+  var media = normalizeCustomBackgroundMedia(fx && (fx.backgroundMedia || fx.backgroundImage));
+  var hasVideo = !!(media && media.type === 'video');
+  var shouldSuspend = hasVideo && isDeepBackgroundMode() && !isLiveBackgroundKeepMode();
+  if (!shouldSuspend) {
+    if (!hasVideo) return;
+    if (customBgVideoReleasedForPower || !video.getAttribute('src')) {
+      customBgVideoReleasedForPower = false;
+      applyCustomBackground();
+      return;
+    }
+    var playPromise = video.play();
+    if (playPromise && playPromise.catch) playPromise.catch(function(){});
+    return;
+  }
+  video.pause();
+  var releaseDelay = isBackgroundReleaseMode() ? 400 : 2500;
+  customBgVideoPowerTimer = setTimeout(function(){
+    customBgVideoPowerTimer = 0;
+    if (!isDeepBackgroundMode() || isLiveBackgroundKeepMode()) return;
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+    if (customBgObjectUrl) {
+      URL.revokeObjectURL(customBgObjectUrl);
+      customBgObjectUrl = '';
+    }
+    customBgVideoReleasedForPower = true;
+  }, releaseDelay);
+}
+
 function applyCustomBackground() {
   var customColor = fx.backgroundColorMode === 'custom' || !!fx.backgroundColorCustom;
+  var media = normalizeCustomBackgroundMedia(fx.backgroundMedia || fx.backgroundImage);
   var color = customColor
     ? normalizeHexColor(fx.backgroundColor || '#000000', '#000000')
-    : normalizeHexColor(songAdaptiveBackgroundColor || '#000000', '#000000');
-  var media = normalizeCustomBackgroundMedia(fx.backgroundMedia || fx.backgroundImage);
+    : (media
+      ? normalizeHexColor(fx.backgroundColor || '#000000', '#000000')
+      : normalizeHexColor(songAdaptiveBackgroundColor || '#000000', '#000000'));
   var image = media && media.type === 'image' ? media.src : '';
   var hasVideo = !!(media && media.type === 'video');
   var opacity = clampRange(fx.backgroundOpacity == null ? 1 : Number(fx.backgroundOpacity), 0, 1);
@@ -36217,13 +37381,17 @@ function applyCustomBackground() {
   var layer = document.getElementById('custom-bg');
   var video = document.getElementById('custom-bg-video');
   var mirror = !!(fx && fx.wallpaperMirror);
-  root.style.setProperty('--custom-bg-color', color);
+  if (root.style.getPropertyValue('--custom-bg-color') !== color) root.style.setProperty('--custom-bg-color', color);
   document.body.classList.toggle('custom-background-override', override);
   document.body.classList.toggle('home-custom-background', hasCustomHomeBackground());
   document.body.classList.toggle('custom-background-flat', override && !media);
   document.body.classList.toggle('song-adaptive-background', adaptiveColor);
   document.body.classList.toggle('custom-background-video', hasVideo);
   document.body.classList.toggle('wallpaper-engine-background', !!(media && media.wallpaper));
+  var reduceWallpaperMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  var wallpaperParallaxActive = !!media && !reduceWallpaperMotion;
+  document.body.classList.toggle('wallpaper-parallax-active', wallpaperParallaxActive);
+  if (!wallpaperParallaxActive) resetWallpaperParallax(true);
   if (layer) layer.classList.toggle('mirrored', mirror);
   if (video) video.classList.toggle('mirrored', mirror);
   if (document.body.classList.contains('empty-home-active') && document.body.classList.contains('home-wallpaper-preview')) {
@@ -36231,14 +37399,20 @@ function applyCustomBackground() {
   }
   updateWallpaperCoverToggleUi();
   if (layer) {
-    layer.style.setProperty('--custom-bg-image', image ? 'url("' + cssImageUrl(image) + '")' : 'none');
-    layer.style.setProperty('--custom-bg-image-opacity', image ? opacity.toFixed(3) : '0');
-    layer.style.setProperty('--custom-bg-video-opacity', hasVideo ? opacity.toFixed(3) : '0');
-    layer.style.setProperty('--custom-bg-overlay-opacity', media ? '0.18' : '0');
+    var imageValue = image ? 'url("' + cssImageUrl(image) + '")' : 'none';
+    var imageOpacity = image ? opacity.toFixed(3) : '0';
+    var videoOpacity = hasVideo ? opacity.toFixed(3) : '0';
+    var overlayOpacity = media ? '0.18' : '0';
+    if (layer.style.getPropertyValue('--custom-bg-image') !== imageValue) layer.style.setProperty('--custom-bg-image', imageValue);
+    if (layer.style.getPropertyValue('--custom-bg-image-opacity') !== imageOpacity) layer.style.setProperty('--custom-bg-image-opacity', imageOpacity);
+    if (layer.style.getPropertyValue('--custom-bg-video-opacity') !== videoOpacity) layer.style.setProperty('--custom-bg-video-opacity', videoOpacity);
+    if (layer.style.getPropertyValue('--custom-bg-overlay-opacity') !== overlayOpacity) layer.style.setProperty('--custom-bg-overlay-opacity', overlayOpacity);
   }
   var token = ++customBgApplyToken;
   if (!video) return;
   if (!hasVideo) {
+    if (customBgVideoPowerTimer) { clearTimeout(customBgVideoPowerTimer); customBgVideoPowerTimer = 0; }
+    customBgVideoReleasedForPower = false;
     video.pause();
     video.removeAttribute('src');
     video.load();
@@ -36255,6 +37429,12 @@ function applyCustomBackground() {
     video.muted = true;
     video.loop = true;
     video.playsInline = true;
+    customBgVideoReleasedForPower = false;
+    if (isDeepBackgroundMode() && !isLiveBackgroundKeepMode()) {
+      video.pause();
+      updateCustomBackgroundVideoPowerState();
+      return;
+    }
     var p = video.play();
     if (p && p.catch) p.catch(function(){});
   }
@@ -36354,7 +37534,7 @@ var WALLPAPER_RECORD_FPS_STORE_KEY = 'mineradio-wallpaper-record-fps-v2';
 var WALLPAPER_RECORD_DURATION_MS = 15000;
 var wallpaperSceneRecordBusy = false;
 var wallpaperRecordFps = (function(){
-  try { return localStorage.getItem(WALLPAPER_RECORD_FPS_STORE_KEY) === '30' ? 30 : 60; } catch (_e) { return 60; }
+  try { return localStorage.getItem(WALLPAPER_RECORD_FPS_STORE_KEY) === '60' ? 60 : 30; } catch (_e) { return 30; }
 })();
 var wallpaperSceneRecordings = (function(){
   try {
@@ -37527,6 +38707,8 @@ function updatePerformanceControls() {
   fx.performanceBackground = normalizePerformanceBackgroundMode(fx.performanceBackground, fx.liveBackgroundKeep === true);
   fx.liveBackgroundKeep = fx.performanceBackground === 'keep';
   fx.performanceQuality = normalizePerformanceQuality(fx.performanceQuality);
+  document.body.classList.toggle('performance-balanced', fx.performanceQuality === 'eco' || fx.performanceQuality === 'balanced');
+  document.body.classList.toggle('performance-eco', fx.performanceQuality === 'eco');
   document.querySelectorAll('#performance-background-seg [data-performance-background]').forEach(function(btn){
     btn.classList.toggle('active', btn.getAttribute('data-performance-background') === fx.performanceBackground);
   });
@@ -41518,7 +42700,6 @@ function setPeek(el, on, key) {
     if (key === 'pl' && !wasPeek && !playQueue.length && queueViewTab === 'queue') switchPlaylistTab('playlists');
     if (key === 'pl' && !wasPeek && playQueue.length && currentIdx >= 0) {
       if (el.dataset && el.dataset.preserveTabOnOpen === '1') delete el.dataset.preserveTabOnOpen;
-      scrollPlaylistPanelToCurrent();
     } else if (key === 'pl' && el.dataset && el.dataset.preserveTabOnOpen === '1') {
       delete el.dataset.preserveTabOnOpen;
     }
@@ -41526,7 +42707,10 @@ function setPeek(el, on, key) {
     if (key === 'pl' && !wasPeek) {
       scheduleUiWarmTask(function(){
         flushDeferredQueuePanel('playlist-panel-peek');
-        if (queueViewTab === 'queue') animateVisiblePanelList(document.getElementById('queue-list'), '.queue-item', el, '.queue-item.now', { scrollActive: false });
+        if (queueViewTab === 'queue') {
+          animateVisiblePanelList(document.getElementById('queue-list'), '.queue-item', el, '.queue-item.now', { scrollActive: false });
+          if (playQueue.length && currentIdx >= 0) scrollPlaylistPanelToCurrent({ force:true });
+        }
       }, 180);
     }
     if (key === 'fx') {
@@ -41704,6 +42888,7 @@ function isPlaylistPanelFocusActive(inTrigger, inPanel, pp, ex, ppRect) {
   return inTrigger || inPanel || (pp && pp.classList.contains('peek') && ex < ppRect.right + playlistPanelFocusPadding());
 }
 window.addEventListener('mousemove', function(e){
+  if (isDesktopFusionFixed()) return;
   var sa = document.getElementById('search-area');
   var fp = document.getElementById('fx-panel');
   var pp = document.getElementById('playlist-panel');
@@ -42713,6 +43898,7 @@ function desktopLyricsTimelinePayload() {
     String(first.text || '').slice(0, 48),
     Math.round((Number(last.t) || 0) * 100),
     String(last.text || '').slice(0, 48),
+    lines.reduce(function(total, line){ return total + (Array.isArray(line && line.words) ? line.words.length : 0); }, 0),
     normalizeDesktopLyricsRows(fx && fx.desktopLyricsRows)
   ].join('|');
   if (key === desktopOverlayPushState.lastLyricsTimelineKey && Array.isArray(desktopOverlayPushState.lastLyricsTimeline)) {
@@ -42721,10 +43907,21 @@ function desktopLyricsTimelinePayload() {
   var timeline = lines.map(function(line){
     var text = '';
     try { text = typeof lyricDisplayText === 'function' ? lyricDisplayText(line) : (line && line.text); } catch (_e) { text = line && line.text; }
+    var words = Array.isArray(line && line.words) ? line.words.map(function(word){
+      return {
+        t: Math.max(0, Number(word && word.t) || 0),
+        d: Math.max(0.04, Number(word && word.d) || 0.12),
+        c0: Math.max(0, Number(word && word.c0) || 0),
+        c1: Math.max(0, Number(word && word.c1) || 0),
+        text: String(word && word.text || '')
+      };
+    }) : [];
     return {
       t: Math.max(0, Number(line && line.t) || 0),
       duration: Math.max(0, Number(line && line.duration) || 0),
-      text: String(text || '')
+      text: String(text || ''),
+      charCount: Math.max(1, Number(line && line.charCount) || String(line && line.text || '').length || 1),
+      words: words
     };
   }).filter(function(item){ return item.text; });
   desktopOverlayPushState.lastLyricsTimelineKey = key;
@@ -42892,7 +44089,23 @@ function applyWallpaperModeState(force) {
   normalizeDevelopmentLockedFxState();
   var payload = wallpaperPayload();
   if (typeof api.setWallpaperMode === 'function') {
-    api.setWallpaperMode(!!payload.enabled, payload).catch(function(e){ console.warn('wallpaper state failed:', e); });
+    api.setWallpaperMode(!!payload.enabled, payload).then(function(result){
+      if (!payload.enabled || (result && result.ok)) return;
+      console.warn('wallpaper state failed:', result);
+      fx.wallpaperMode = false;
+      updateFxInputs();
+      saveLyricLayout();
+      var detail = String(result && result.detail || '').replace(/\s+/g, ' ').trim();
+      showToast('桌面融合启动失败' + (detail ? '：' + detail.slice(0, 120) : '，请查看 desktop-fusion.log'));
+    }).catch(function(e){
+      console.warn('wallpaper state failed:', e);
+      if (payload.enabled) {
+        fx.wallpaperMode = false;
+        updateFxInputs();
+        saveLyricLayout();
+        showToast('桌面融合启动失败，请重启软件后再试');
+      }
+    });
   }
   pushWallpaperState(!!force);
 }
@@ -42903,6 +44116,7 @@ function syncDesktopOverlayState() {
 var desktopOverlayFastPumpTimer = 0;
 function desktopOverlayFastPumpDelay() {
   if (!(fx && (fx.desktopLyrics || fx.wallpaperMode))) return 360;
+  if (isDeepBackgroundMode()) return 1200;
   if (fx.desktopLyrics) {
     // 频闪修复：桌面歌词窗口独立渲染，主窗口只需要低频校准状态。
     // 继续 16ms 推送反而会在透明置顶窗口上造成 DWM 频闪。
@@ -42979,6 +44193,49 @@ if (window.desktopWindow && typeof window.desktopWindow.onWallpaperCommand === '
 var desktopFullscreenActive = false;
 var documentFullscreenActive = false;
 var desktopWindowState = {};
+
+function isDesktopFusionFixed() {
+  return !!(
+    document.body.classList.contains('desktop-shell')
+    && document.body.classList.contains('desktop-embedded')
+    && !document.body.classList.contains('desktop-interactive')
+  );
+}
+
+function settleDesktopFusionFixedUi() {
+  if (!isDesktopFusionFixed()) return;
+
+  if (typeof peekTimers !== 'undefined' && peekTimers) {
+    Object.keys(peekTimers).forEach(function(key){
+      if (peekTimers[key]) clearTimeout(peekTimers[key]);
+      peekTimers[key] = null;
+    });
+  }
+  if (typeof clearPrimaryNavHideTimer === 'function') clearPrimaryNavHideTimer();
+  if (typeof clearFxPanelAutoCloseTimer === 'function') clearFxPanelAutoCloseTimer();
+  if (typeof resetSecondaryPlaylistEdgeGuard === 'function') resetSecondaryPlaylistEdgeGuard();
+
+  var searchArea = document.getElementById('search-area');
+  if (searchArea) searchArea.classList.remove('peek');
+  var fxPanel = document.getElementById('fx-panel');
+  if (fxPanel) fxPanel.classList.remove('peek', 'show', 'closing');
+  var fxFab = document.getElementById('fx-fab');
+  if (fxFab) fxFab.classList.remove('active');
+  var playlistPanel = document.getElementById('playlist-panel');
+  if (playlistPanel && !playlistPanelPinned) playlistPanel.classList.remove('peek', 'show', 'closing');
+
+  document.body.classList.remove('controls-handle-awake', 'fx-fab-peek', 'fullscreen-diy-peek');
+  if (primaryNavAutoHide && window.innerWidth > 620) document.body.classList.add('primary-nav-collapsed');
+
+  controlsHovering = false;
+  if (controlsAutoHide) setControlsHidden(true);
+  var nowFlow = document.getElementById('now-flow');
+  if (nowFlow) {
+    nowFlow.classList.remove('nf-controls-awake', 'nf-volume-open', 'nf-option-open');
+    if (nowFlowAutoHideEnabled() && nowFlow.classList.contains('visible')) nowFlow.classList.add('nf-auto-hidden');
+  }
+  if (typeof setFocusZone === 'function') setFocusZone(null, true);
+}
 
 function toggleFullscreen() {
   var api = window.desktopWindow;
@@ -43090,6 +44347,9 @@ function toggleDesktopShellSetting(key) {
     desktopFullscreenActive = isFullScreen;
     document.body.classList.toggle('desktop-maximized', isMaximized);
     document.body.classList.toggle('desktop-fullscreen', isFullScreen);
+    document.body.classList.toggle('desktop-embedded', !!desktopWindowState.isDesktopEmbedded);
+    document.body.classList.toggle('desktop-interactive', !!desktopWindowState.isDesktopInteractive);
+    if (isDesktopFusionFixed()) settleDesktopFusionFixedUi();
     desktopRuntimeState.fullscreen = isFullScreen;
     if (isFullScreen) layoutFullscreenDiyZone();
     if (isFullScreen !== wasFullScreen) {
@@ -43283,18 +44543,71 @@ var renderPerfState = {
   lastSampleAt: performance.now()
 };
 window.__mineradioPerf = renderPerfState;
+var RENDER_FPS_HUD_STORE_KEY = 'mineradio-render-fps-hud-v1';
+var renderFpsHudVisible = true;
+try { renderFpsHudVisible = localStorage.getItem(RENDER_FPS_HUD_STORE_KEY) !== '0'; } catch (_fpsHudReadError) {}
+function updateRenderFpsHud() {
+  var hud = document.getElementById('render-fps-hud');
+  if (!hud) return;
+  hud.classList.toggle('hidden', !renderFpsHudVisible);
+  if (!renderFpsHudVisible) return;
+  var actual = Math.max(0, Math.round(Number(renderPerfState.fps) || 0));
+  var target = String(renderPerfState.mode || 'vsync').replace(/fps$/i, '').toUpperCase();
+  var hz = Math.max(30, Math.round(Number(desktopRuntimeState && desktopRuntimeState.displayFrequency) || 60));
+  var dpr = typeof renderer !== 'undefined' && renderer ? renderer.getPixelRatio() : (window.devicePixelRatio || 1);
+  hud.innerHTML = '<b>' + actual + ' FPS</b><br><span>目标 ' + target + ' · 屏幕 ' + hz + 'Hz · DPR ' + Number(dpr).toFixed(2) + '<br>F8 隐藏</span>';
+}
+function toggleRenderFpsHud(force) {
+  renderFpsHudVisible = typeof force === 'boolean' ? force : !renderFpsHudVisible;
+  try { localStorage.setItem(RENDER_FPS_HUD_STORE_KEY, renderFpsHudVisible ? '1' : '0'); } catch (_fpsHudWriteError) {}
+  updateRenderFpsHud();
+}
+document.addEventListener('keydown', function(event){
+  if (event.code !== 'F8' && event.key !== 'F8') return;
+  event.preventDefault();
+  toggleRenderFpsHud();
+}, true);
+setTimeout(updateRenderFpsHud, 0);
 var splashWarmRenderLast = 0;
 function isMainSceneCoveredBySplash() {
   return document.body.classList.contains('splash-active') && !document.body.classList.contains('splash-revealing');
+}
+function foregroundDisplayRefreshRate(cap) {
+  var hz = Math.round(Number(desktopRuntimeState && desktopRuntimeState.displayFrequency) || 60);
+  hz = Math.max(60, Math.min(240, hz));
+  return cap ? Math.min(hz, cap) : hz;
 }
 function getAdaptiveRenderFps() {
   if (isDeepBackgroundMode()) return 1;
   if (RENDER_VISIBLE_VSYNC) return 0;
   var tier = (typeof getRenderLoadTier === 'function') ? getRenderLoadTier() : 0;
+  var desktopFusionActive = !!((fx && fx.wallpaperMode) || (desktopRuntimeState && desktopRuntimeState.desktopEmbedded));
+  var desktopFusionInteractive = !!(desktopRuntimeState && desktopRuntimeState.desktopInteractive);
+  if (desktopFusionActive && !desktopFusionInteractive) {
+    var desktopPlaybackActive = !!(
+      (typeof playing !== 'undefined' && playing) ||
+      (typeof audio !== 'undefined' && audio && !audio.paused && !audio.ended) ||
+      (typeof lxBridgeActive !== 'undefined' && lxBridgeActive)
+    );
+    return desktopPlaybackActive ? foregroundDisplayRefreshRate(tier >= 1 ? 60 : 90) : 15;
+  }
+  // Home is dominated by cards and wallpaper; the 3D layer is decorative and
+  // mostly covered. Capping it here leaves substantially more GPU time for
+  // smooth card scrolling, especially in compact desktop windows.
+  var homeSurfaceActive = document.body.classList.contains('empty-home-active');
+  if (homeSurfaceActive) {
+    var homePlaybackActive = !!(
+      (typeof playing !== 'undefined' && playing) ||
+      (typeof audio !== 'undefined' && audio && !audio.paused && !audio.ended) ||
+      (typeof lxBridgeActive !== 'undefined' && lxBridgeActive)
+    );
+    if (typeof isRenderInteractionActive === 'function' && isRenderInteractionActive()) return foregroundDisplayRefreshRate(tier >= 1 ? 90 : 120);
+    return homePlaybackActive ? foregroundDisplayRefreshRate(tier >= 1 ? 72 : 90) : (tier >= 1 ? RENDER_IDLE_LARGE_FPS : RENDER_IDLE_FPS);
+  }
   if (typeof isRenderInteractionActive === 'function' && isRenderInteractionActive()) {
-    if (tier >= 2) return RENDER_INTERACTION_HUGE_FPS;
-    if (tier >= 1) return RENDER_INTERACTION_LARGE_FPS;
-    return RENDER_INTERACTION_FPS;
+    if (tier >= 2) return foregroundDisplayRefreshRate(RENDER_INTERACTION_HUGE_FPS);
+    if (tier >= 1) return foregroundDisplayRefreshRate(RENDER_INTERACTION_LARGE_FPS);
+    return foregroundDisplayRefreshRate(RENDER_INTERACTION_FPS);
   }
   // Playback and user interaction retain the full animation rate. A visible
   // but genuinely idle player can render slower to reduce GPU/CPU use.
@@ -43304,9 +44617,9 @@ function getAdaptiveRenderFps() {
     (typeof lxBridgeActive !== 'undefined' && lxBridgeActive)
   );
   if (!playbackActive) return tier >= 1 ? RENDER_IDLE_LARGE_FPS : RENDER_IDLE_FPS;
-  if (tier >= 2) return RENDER_HUGE_FPS;
-  if (tier >= 1) return RENDER_LARGE_FPS;
-  return RENDER_ACTIVE_FPS;
+  if (tier >= 2) return foregroundDisplayRefreshRate(RENDER_HUGE_FPS);
+  if (tier >= 1) return foregroundDisplayRefreshRate(RENDER_LARGE_FPS);
+  return foregroundDisplayRefreshRate(RENDER_ACTIVE_FPS);
 }
 function shouldSkipAdaptiveRenderFrame(now) {
   var fps = getAdaptiveRenderFps();
@@ -43330,16 +44643,50 @@ function sampleRenderPerf(now, dt) {
     renderPerfState.fps = Math.round(renderPerfState.frames * 1000 / Math.max(1, now - renderPerfState.lastSampleAt));
     renderPerfState.frames = 0;
     renderPerfState.lastSampleAt = now;
+    updateRenderFpsHud();
   }
   renderPerfState.terrainActive = typeof isTerrainPresetActive === 'function' ? isTerrainPresetActive() : false;
   renderPerfState.terrainModulesReady = !!(typeof terrainModulesReady !== 'undefined' && terrainModulesReady);
   renderPerfState.terrainLayerLoaded = !!(typeof terrainLayer !== 'undefined' && terrainLayer);
   maybeTrimRuntimeCaches(now);
 }
+var mainRenderFrameHandle = 0;
+var mainRenderSleepTimer = 0;
+function scheduleMainRenderFrame() {
+  if (mainRenderFrameHandle || mainRenderSleepTimer) return;
+  if (isDeepBackgroundMode()) {
+    mainRenderSleepTimer = setTimeout(function(){
+      mainRenderSleepTimer = 0;
+      mainRenderFrameHandle = requestAnimationFrame(animate);
+    }, 1000);
+    return;
+  }
+  var fps = getAdaptiveRenderFps();
+  if (fps && renderPerfState.lastRenderAt > 0) {
+    var remaining = (1000 / fps) - (performance.now() - renderPerfState.lastRenderAt);
+    if (remaining > 3) {
+      mainRenderSleepTimer = setTimeout(function(){
+        mainRenderSleepTimer = 0;
+        mainRenderFrameHandle = requestAnimationFrame(animate);
+      }, Math.max(1, remaining - 1));
+      return;
+    }
+  }
+  mainRenderFrameHandle = requestAnimationFrame(animate);
+}
+function wakeMainRenderLoop() {
+  if (mainRenderSleepTimer) clearTimeout(mainRenderSleepTimer);
+  if (mainRenderFrameHandle) cancelAnimationFrame(mainRenderFrameHandle);
+  mainRenderSleepTimer = 0;
+  mainRenderFrameHandle = 0;
+  scheduleMainRenderFrame();
+}
 function animate() {
-  requestAnimationFrame(animate);
+  mainRenderFrameHandle = 0;
   var now = performance.now();
-  if (shouldSkipAdaptiveRenderFrame(now)) return;
+  var skipFrame = shouldSkipAdaptiveRenderFrame(now);
+  scheduleMainRenderFrame();
+  if (skipFrame) return;
   var dt = Math.min((now - prevTime) / 1000, 0.05);
   prevTime = now;
   sampleRenderPerf(now, dt);

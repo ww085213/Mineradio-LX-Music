@@ -635,6 +635,8 @@ function readLxPlaylists() {
           name: decodeLxText(list.name),
           source: list.source || '',
           sourceListId: list.sourceListId || '',
+          lxNative: true,
+          lxDbListId: list.id,
           songs: songsByList.get(list.id) || [],
         }))
         .filter(list => list.songs.length),
@@ -2671,7 +2673,9 @@ const server = http.createServer(async (req, res) => {
     }
     try {
       const body = await readRequestBody(req);
-      sendJSON(res, await lxSourceHost.deleteSource(body.id));
+      sendJSON(res, Array.isArray(body.ids)
+        ? await lxSourceHost.deleteSources(body.ids)
+        : await lxSourceHost.deleteSource(body.id));
     } catch (err) {
       sendJSON(res, { ok: false, error: err.message || 'LX_SOURCE_DELETE_FAILED' }, 400);
     }

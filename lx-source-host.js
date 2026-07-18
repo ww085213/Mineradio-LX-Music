@@ -660,6 +660,49 @@ async function deleteSource(id) {
   }
 }
 
+async function deleteSources(ids) {
+  const uniqueIds = [...new Set((Array.isArray(ids) ? ids : []).map(id => String(id || '').trim()).filter(Boolean))];
+  if (!uniqueIds.length) throw new Error('LX_SOURCE_DELETE_IDS_REQUIRED');
+  const deleteSet = new Set(uniqueIds);
+  const previousStore = readSourceStore();
+  const existingIds = new Set(previousStore.records.map(item => item.id));
+  const missing = uniqueIds.filter(id => !existingIds.has(id));
+  if (missing.length) throw new Error('LX_SOURCE_NOT_FOUND');
+
+  const nextRecords = previousStore.records.filter(item => !deleteSet.has(item.id));
+  const activeWasDeleted = deleteSet.has(previousStore.activeId);
+  const nextStore = {
+    activeId: activeWasDeleted ? (nextRecords[0] && nextRecords[0].id || '') : previousStore.activeId,
+    records: nextRecords,
+  };
+  const previousActive = previousStore.records.find(item => item.id === previousStore.activeId);
+  writeSourceStore(nextStore);
+  uniqueIds.forEach(id => fallbackRuntimeCache.delete(id));
+
+  if (!nextRecords.length) {
+    try { fs.unlinkSync(MR_SOURCE_FILE); } catch (_err) {}
+    runtime = null;
+    return { ok: true, deleted: uniqueIds.length, name: '未配置', version: '', sources: {}, installed: [] };
+  }
+
+  const activeRecord = nextRecords.find(item => item.id === nextStore.activeId) || nextRecords[0];
+  nextStore.activeId = activeRecord.id;
+  writeSourceStore(nextStore);
+  fs.writeFileSync(MR_SOURCE_FILE, JSON.stringify(activeRecord), 'utf8');
+  try {
+    const host = await getRuntime(activeWasDeleted);
+    return { ok: true, deleted: uniqueIds.length, name: host.name, version: host.version, sources: host.sources, installed: listSources() };
+  } catch (err) {
+    writeSourceStore(previousStore);
+    try {
+      if (previousActive) fs.writeFileSync(MR_SOURCE_FILE, JSON.stringify(previousActive), 'utf8');
+      else fs.unlinkSync(MR_SOURCE_FILE);
+    } catch (_err) {}
+    runtime = null;
+    throw err;
+  }
+}
+
 function downloadSourceScript(sourceUrl) {
   return new Promise((resolve, reject) => {
     lxRequest(sourceUrl, {
@@ -1109,6 +1152,7 @@ module.exports = {
   listSources,
   selectSource,
   deleteSource,
+  deleteSources,
   resolveMusicUrl,
   resolveLyrics,
   status,

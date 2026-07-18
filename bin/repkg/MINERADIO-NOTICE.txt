@@ -1,0 +1,10 @@
+RePKG v0.4.0-alpha is bundled for Wallpaper Engine scene.pkg inspection.
+
+Upstream: https://github.com/notscuffed/repkg
+Release: https://github.com/notscuffed/repkg/releases/tag/v0.4.0-alpha
+License: MIT (see LICENSE in this directory)
+Downloaded archive SHA-256:
+ABE653915793C86E6D65DC6B4FDA0563BB396EC2945D91CFD127FE8DDA6B684A
+
+RePKG is used only to inspect/extract the proprietary package container. Scene
+rendering remains the responsibility of the user's installed Wallpaper Engine.

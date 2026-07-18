@@ -1,7 +1,7 @@
 {
   "name": "mineradio",
   "productName": "Mineradio",
-  "version": "1.5.5",
+  "version": "1.5.6",
   "description": "Mineradio 桌面音乐播放器，支持本地播放、歌单导入同步、跨平台搜索、歌词与可视化效果。",
   "author": "Mineradio",
   "license": "GPL-3.0-only",
@@ -9,12 +9,14 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "build:win": "electron-builder --win nsis",
-    "build:win:dir": "electron-builder --win dir",
+    "prepare:windows-tools": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File build/prepare-windows-tools.ps1",
+    "verify:release": "node build/verify-release.js",
+    "build:win": "npm run prepare:windows-tools && npm run verify:release && electron-builder --win nsis",
+    "build:win:dir": "npm run prepare:windows-tools && npm run verify:release && electron-builder --win dir",
     "build:mac": "electron-builder --mac dmg zip --universal --publish never"
   },
   "build": {
-    "buildVersion": "1.5.5.1",
+    "buildVersion": "1.5.6.0",
     "appId": "com.mineradio.desktop",
     "productName": "Mineradio",
     "directories": {
@@ -28,8 +30,12 @@
     "files": [
       "desktop/**/*",
       "public/**/*",
+      "!public/**/*.map",
+      "bin/**/*",
       "build/**/*",
       "!build/after-pack.js",
+      "!build/verify-release.js",
+      "!build/prepare-windows-tools.ps1",
       "!build/installer.nsh",
       "!build/installerHeader.bmp",
       "!build/installerSidebar.bmp",
@@ -46,6 +52,7 @@
       "lx-search.js",
       "lx-source-host.js",
       "platform-playlist-import.js",
+      "LICENSE",
       "package.json",
       "!public/index.*.html",
       "public/index.html"
@@ -82,10 +89,10 @@
           ]
         }
       ],
-      "artifactName": "Mineradio-1.5.5.1-mac-${arch}.${ext}"
+      "artifactName": "Mineradio-1.5.6-mac-${arch}.${ext}"
     },
     "dmg": {
-      "artifactName": "Mineradio-1.5.5.1-mac-${arch}.${ext}"
+      "artifactName": "Mineradio-1.5.6-mac-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -97,7 +104,7 @@
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "include": "build/installer.nsh",
-      "artifactName": "Mineradio.Setup.1.5.5.1.${ext}"
+      "artifactName": "Mineradio.Setup.1.5.6.${ext}"
     },
     "publish": [
       {
@@ -108,7 +115,7 @@
     ]
   },
   "mineradio": {
-    "releaseVersion": "1.5.5.1",
+    "releaseVersion": "1.5.6",
     "update": {
       "provider": "github",
       "owner": "ww085213",
@@ -127,7 +134,7 @@
     "mpg123-decoder": "^1.0.3"
   },
   "devDependencies": {
-    "electron": "^42.4.1",
+    "electron": "^42.6.1",
     "electron-builder": "^26.15.3",
     "rcedit": "^5.0.2"
   }
