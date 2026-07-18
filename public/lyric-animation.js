@@ -82,6 +82,21 @@
     return /[A-Za-zÀ-ÖØ-öø-ÿА-Яа-яЁё]/.test(raw);
   }
 
+  function foreignLyricRatio(lines) {
+    var nonEmpty = (Array.isArray(lines) ? lines : []).filter(function(line) {
+      return line && String(line.text || '').trim();
+    });
+    if (!nonEmpty.length) return 0;
+    var foreignCount = nonEmpty.filter(function(line) {
+      return isForeignLineText(line.text);
+    }).length;
+    return foreignCount / nonEmpty.length;
+  }
+
+  function isForeignDominantLyrics() {
+    return foreignLyricRatio(getLyricsLines()) >= 0.3;
+  }
+
   function cloneLyricLineForAnimation(line, fxRef) {
     var copy = Object.assign({}, line || {});
     if (line && Array.isArray(line.words)) {
@@ -91,10 +106,25 @@
       delete copy.translation;
       delete copy.translationSource;
     }
-    // 外语歌词带逐词时间轴时，部分动画会把每个词拆开飘散。
-    // 这里把外语行降级成整行动画，中文/日文/韩文仍保留原来的逐字/逐词效果。
-    if (isForeignLineText(copy.text) && Array.isArray(copy.words)) {
-      delete copy.words;
+    // 外语歌词固定成一个带时间轴的整行。不能只删除 words：动画库会再次
+    // 自动拆词并生成时间轴，导致英文单词在舞台上散开乱飞。
+    if (isForeignLineText(copy.text)) {
+      var originalWords = Array.isArray(copy.words) ? copy.words : [];
+      var start = isFinite(Number(copy.t)) ? Number(copy.t) : 0;
+      if (originalWords.length && isFinite(Number(originalWords[0].t))) start = Number(originalWords[0].t);
+      var duration = Number(copy.duration);
+      if (!(duration > 0) && originalWords.length) {
+        var lastWord = originalWords[originalWords.length - 1] || {};
+        duration = (Number(lastWord.t) || start) + (Number(lastWord.d) || 0) - start;
+      }
+      duration = Math.max(0.12, isFinite(duration) ? duration : 2.4);
+      copy.words = [{
+        text: String(copy.text || ''),
+        t: start,
+        d: duration,
+        c0: 0,
+        c1: String(copy.text || '').length
+      }];
     }
     return copy;
   }
@@ -209,7 +239,7 @@
 
   function lyricAnimationTuningFromFx(fxRef) {
     var raw = fxRef.lyricAnimationTuning && typeof fxRef.lyricAnimationTuning === 'object' ? fxRef.lyricAnimationTuning : {};
-    return {
+    var tuning = {
       classic: Object.assign({}, DEFAULT_TUNING.classic, raw.classic || {}),
       cadenza: Object.assign({}, DEFAULT_TUNING.cadenza, raw.cadenza || {}),
       partita: Object.assign({}, DEFAULT_TUNING.partita, raw.partita || {}),
@@ -218,6 +248,20 @@
       tilt: Object.assign({}, DEFAULT_TUNING.tilt, raw.tilt || {}),
       monet: Object.assign({}, DEFAULT_TUNING.monet, raw.monet || {})
     };
+    if (isForeignDominantLyrics()) {
+      tuning.classic.enableWordRotation = false;
+      tuning.classic.wordSpacing = Math.min(Number(tuning.classic.wordSpacing) || 0.7, 0.35);
+      tuning.cadenza.fontScale = Math.min(Number(tuning.cadenza.fontScale) || 1, 0.9);
+      tuning.cadenza.widthRatio = Math.max(Number(tuning.cadenza.widthRatio) || 0.72, 0.88);
+      tuning.cadenza.motionAmount = Math.min(Number(tuning.cadenza.motionAmount) || 1, 0.4);
+      tuning.partita.useSemanticLayout = false;
+      tuning.partita.staggerMin = 0;
+      tuning.partita.staggerMax = 0;
+      tuning.fume.heroScale = Math.min(Number(tuning.fume.heroScale) || 1, 0.86);
+      tuning.tilt.splitProbability = 0;
+      tuning.tilt.tiltStyleProbability = 0;
+    }
+    return tuning;
   }
 
   function lyricAnimationMetaFromContext(fxRef) {
@@ -231,7 +275,11 @@
       songTitle: song.name || song.title || meta.title || null,
       songArtist: song.artist || meta.artist || null,
       songAlbum: song.album || '',
-      lyricsFontScale: clampRangeLocal(Number(fxRef.lyricScale) || 1, 0.35, 1.65),
+      lyricsFontScale: clampRangeLocal(
+        Math.min(Number(fxRef.lyricScale) || 1, isForeignDominantLyrics() ? 0.9 : 1.65),
+        0.35,
+        1.65
+      ),
       lyricsLetterSpacing: clampRangeLocal(Number(fxRef.lyricLetterSpacing) || 0, -0.04, 0.18),
       lyricsLineHeight: clampRangeLocal(Number(fxRef.lyricLineHeight) || 1, 0.86, 1.35),
       lyricsFontWeight: clampRangeLocal(Number(fxRef.lyricWeight) || 700, 500, 900),
@@ -243,7 +291,18 @@
 
   function currentPlaybackTime() {
     var audioRef = global.audio;
-    return audioRef && isFinite(audioRef.currentTime) ? Number(audioRef.currentTime) : 0;
+    var useLxProgress = !!global.lxBridgeActive && typeof global.currentLxProgress === 'function';
+    var base = useLxProgress ? Number(global.currentLxProgress()) : Number(audioRef && audioRef.currentTime);
+    if (!isFinite(base)) base = 0;
+    var fxRef = getFx();
+    var offset = fxRef ? clampRangeLocal(Number(fxRef.lyricTimeOffset) || 0, -3, 3) : 0;
+    return Math.max(0, base + offset);
+  }
+
+  function isPlaybackPaused() {
+    if (!global.playing) return true;
+    if (global.lxBridgeActive) return false;
+    return !global.audio || !!global.audio.paused;
   }
 
   function isHomePageVisible() {
@@ -290,7 +349,7 @@
     api.setTuning(host, lyricAnimationTuningFromFx(fxRef));
     api.setMeta(host, lyricAnimationMetaFromContext(fxRef));
     api.setLines(host, lines);
-    api.setPaused(host, !global.playing || !global.audio || !!global.audio.paused);
+    api.setPaused(host, isPlaybackPaused());
     api.setVisible(host, true);
     api.setTime(host, currentPlaybackTime());
   }
@@ -358,7 +417,7 @@
     if (!host || !api) return;
     var t = currentPlaybackTime();
     api.setTime(host, t);
-    api.setPaused(host, !global.playing || !global.audio || !!global.audio.paused);
+    api.setPaused(host, isPlaybackPaused());
     var bassVal = typeof global.bass !== 'undefined' ? global.bass : 0;
     var midVal = typeof global.mid !== 'undefined' ? global.mid : 0;
     var trebleVal = typeof global.treble !== 'undefined' ? global.treble : 0;
@@ -525,6 +584,12 @@
     patchTuning: patchLyricAnimationTuning,
     desktopPayload: desktopLyricAnimationPayload,
     normalizeFx: normalizeLyricAnimationFx,
-    serializeFx: serializeLyricAnimationFx
+    serializeFx: serializeLyricAnimationFx,
+    debug: {
+      cloneLine: cloneLyricLineForAnimation,
+      foreignRatio: foreignLyricRatio,
+      currentTime: currentPlaybackTime,
+      tuning: lyricAnimationTuningFromFx
+    }
   };
 })(window);

@@ -100,6 +100,64 @@ const APP_TRAY_GUID = '7e6162ca-f43f-4d0a-b5bb-8b8fcd17a865';
 const APP_ICON_ICO = path.join(__dirname, '..', 'build', 'icon.ico');
 const APP_TRAY_ICON_PNG = path.join(__dirname, '..', 'public', 'tray-icon.png');
 const STABLE_USER_DATA_NAME = 'Mineradio';
+let cachedAppWindowIcon = null;
+
+function getAppWindowIcon() {
+  if (cachedAppWindowIcon && !cachedAppWindowIcon.isEmpty()) return cachedAppWindowIcon;
+  for (const iconPath of [APP_TRAY_ICON_PNG, APP_ICON_ICO]) {
+    if (!fs.existsSync(iconPath)) continue;
+    try {
+      const image = nativeImage.createFromPath(iconPath);
+      if (!image.isEmpty()) {
+        cachedAppWindowIcon = image;
+        return image;
+      }
+    } catch (_error) {}
+  }
+  return APP_ICON_ICO;
+}
+
+function repairWindowsShellShortcutIcons() {
+  if (process.platform !== 'win32') return;
+  const target = process.execPath;
+  const roots = [
+    path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+    app.getPath('desktop'),
+    path.join(app.getPath('appData'), 'Microsoft', 'Internet Explorer', 'Quick Launch', 'User Pinned', 'TaskBar'),
+  ];
+  const links = [];
+  function collect(dir, depth) {
+    if (!dir || !fs.existsSync(dir) || depth > 2) return;
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_error) { return; }
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) collect(fullPath, depth + 1);
+      else if (entry.isFile() && /\.lnk$/i.test(entry.name) && /mineradio/i.test(entry.name) && !/uninstall/i.test(entry.name)) links.push(fullPath);
+    }
+  }
+  roots.forEach(root => collect(root, 0));
+  for (const shortcutPath of links) {
+    try {
+      const current = shell.readShortcutLink(shortcutPath) || {};
+      const currentTarget = String(current.target || '');
+      if (currentTarget && !/mineradio\.exe$/i.test(currentTarget)) continue;
+      shell.writeShortcutLink(shortcutPath, 'replace', {
+        target,
+        cwd: path.dirname(target),
+        args: String(current.args || ''),
+        description: String(current.description || 'Mineradio desktop music player'),
+        icon: fs.existsSync(APP_ICON_ICO) ? APP_ICON_ICO : target,
+        iconIndex: 0,
+        appUserModelId: APP_USER_MODEL_ID,
+      });
+    } catch (error) {
+      console.warn('[ShortcutIconRepair]', shortcutPath, error.message);
+    }
+  }
+  const ie4uinit = process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32', 'ie4uinit.exe') : '';
+  if (ie4uinit && fs.existsSync(ie4uinit)) execFile(ie4uinit, ['-show'], { windowsHide: true }, () => {});
+}
 
 function copyMissingUserData(sourceDir, targetDir) {
   if (!sourceDir || !targetDir || sourceDir === targetDir || !fs.existsSync(sourceDir)) return;
@@ -166,9 +224,42 @@ app.setPath('userData', stableUserDataPath);
 if (!explicitUserDataPath) migrateUserDataToStablePath(stableUserDataPath);
 app.setName(APP_NAME);
 if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID);
+
+function writeStartupDiagnostic(stage, error) {
+  const logPath = path.join(app.getPath('userData'), 'startup-crash.log');
+  try {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    const details = error && error.stack ? error.stack : String(error && error.message ? error.message : error || 'UNKNOWN_ERROR');
+    const entry = [
+      `[${new Date().toISOString()}] ${stage}`,
+      `app=${app.getVersion()} electron=${process.versions.electron || ''} node=${process.versions.node || ''}`,
+      `exec=${process.execPath}`,
+      details,
+      '',
+    ].join('\n');
+    fs.appendFileSync(logPath, entry, 'utf8');
+  } catch (_logError) {}
+  return logPath;
+}
+
+app.on('render-process-gone', (_event, _webContents, details) => {
+  writeStartupDiagnostic('render-process-gone', JSON.stringify(details || {}));
+});
+
 const LOCAL_FILE_TOKEN = crypto.randomBytes(16).toString('hex');
 const DESKTOP_SHELL_SETTINGS_FILE = 'desktop-shell-settings.json';
 const DESKTOP_UI_STATE_FILE = 'desktop-ui-state.json';
+const WINDOWS_POWERSHELL_EXE = process.platform === 'win32' && process.env.SystemRoot
+  ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+  : 'powershell.exe';
+
+function writeDesktopFusionDiagnostic(stage, error, stderr) {
+  try {
+    const details = String(stderr || (error && error.message) || error || 'UNKNOWN_ERROR').trim().slice(-2000);
+    const line = `${new Date().toISOString()} [${stage}] ${details}\n`;
+    fs.appendFileSync(path.join(app.getPath('userData'), 'desktop-fusion.log'), line, 'utf8');
+  } catch (_error) {}
+}
 const DESKTOP_UI_STATE_KEYS = new Set([
   'apex-player-volume',
   'mineradio-lyric-layout-v1',
@@ -665,7 +756,15 @@ async function readAuthorizedLocalFileDataUrl(filePath) {
 
 function sendWindowState(win) {
   if (!win || win.isDestroyed()) return;
-  win.webContents.send('desktop-window-state', getWindowState(win));
+  const state = getWindowState(win);
+  try {
+    if (typeof win.webContents.setFrameRate === 'function') {
+      win.webContents.setFrameRate(state.isMinimized || state.isVisible === false
+        ? 15
+        : Math.max(60, Math.min(240, Number(state.displayFrequency) || 120)));
+    }
+  } catch (_frameRateError) {}
+  win.webContents.send('desktop-window-state', state);
 }
 
 function sendGlobalHotkeyAction(action) {
@@ -830,6 +929,7 @@ function getDisplayState(win) {
   return {
     displayId,
     primaryDisplayId: primaryId,
+    displayFrequency: Math.max(30, Number(display && display.displayFrequency) || 60),
     isPrimaryDisplay: !!(display && primary && display.id === primary.id),
     hasDisplayOnLeft,
     hasDisplayOnRight,
@@ -855,6 +955,7 @@ function getWindowState(win) {
     bounds: null,
     normalBounds: null,
     isPrimaryDisplay: true,
+    displayFrequency: 60,
     hasDisplayOnLeft: false,
     hasDisplayOnRight: false,
     displayBounds: null,
@@ -1979,6 +2080,11 @@ function createDesktopLyricsWindow(payload = {}) {
     && Math.abs(clampNumber(desktopLyricsState.opacity, 0.28, 1, 0.92) - clampNumber(previousOpacity, 0.28, 1, 0.92)) > 0.001;
   if (xChanged || yChanged) desktopLyricsUserBounds = null;
   if (desktopLyricsWindow && !desktopLyricsWindow.isDestroyed()) {
+    try {
+      if (typeof desktopLyricsWindow.webContents.setFrameRate === 'function') {
+        desktopLyricsWindow.webContents.setFrameRate(Math.max(24, Math.min(240, Number(desktopLyricsState.frameRate) || 120)));
+      }
+    } catch (_frameRateError) {}
     if (xChanged || yChanged) {
       positionDesktopLyricsWindow(desktopLyricsState, { force: xChanged || yChanged });
       keepDesktopLyricsWindowOpaqueAndTopMost({ force: true });
@@ -2018,7 +2124,7 @@ function createDesktopLyricsWindow(payload = {}) {
   });
   try {
     if (desktopLyricsWindow.webContents && typeof desktopLyricsWindow.webContents.setFrameRate === 'function') {
-      desktopLyricsWindow.webContents.setFrameRate(60);
+      desktopLyricsWindow.webContents.setFrameRate(Math.max(24, Math.min(240, Number(desktopLyricsState.frameRate) || 120)));
     }
   } catch (_e) {}
   try {
@@ -2162,6 +2268,7 @@ public static class MineradioDesktopHost {
   [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr FindWindow(string c, string n);
   [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr FindWindowEx(IntPtr p, IntPtr a, string c, string n);
   [DllImport("user32.dll", SetLastError=true)] public static extern bool EnumWindows(EnumWindowsProc cb, IntPtr p);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] public static extern int GetClassName(IntPtr h, System.Text.StringBuilder text, int max);
   [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SetParent(IntPtr child, IntPtr parent);
   [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr GetParent(IntPtr child);
   [DllImport("user32.dll", SetLastError=true)] public static extern bool GetClientRect(IntPtr h, out RECT rect);
@@ -2174,22 +2281,36 @@ public static class MineradioDesktopHost {
 }
 $progman=[MineradioDesktopHost]::FindWindow("Progman",$null)
 $result=[IntPtr]::Zero
-[MineradioDesktopHost]::SendMessageTimeout($progman,0x052C,[IntPtr]::Zero,[IntPtr]::Zero,0,1000,[ref]$result)|Out-Null
+if ($progman -ne [IntPtr]::Zero) {
+  [MineradioDesktopHost]::SendMessageTimeout($progman,0x052C,[IntPtr]::new(0xD),[IntPtr]::new(1),0,1000,[ref]$result)|Out-Null
+  [MineradioDesktopHost]::SendMessageTimeout($progman,0x052C,[IntPtr]::new(0xD),[IntPtr]::Zero,0,1000,[ref]$result)|Out-Null
+  [MineradioDesktopHost]::SendMessageTimeout($progman,0x052C,[IntPtr]::Zero,[IntPtr]::Zero,0,1000,[ref]$result)|Out-Null
+}
 $script:iconHost=[IntPtr]::Zero
 $script:workerw=[IntPtr]::Zero
+$script:cleanWorker=[IntPtr]::Zero
 $enum=[MineradioDesktopHost+EnumWindowsProc]{param([IntPtr]$top,[IntPtr]$p)
-  if([MineradioDesktopHost]::FindWindowEx($top,[IntPtr]::Zero,"SHELLDLL_DefView",$null)-ne [IntPtr]::Zero){
+  $defView=[MineradioDesktopHost]::FindWindowEx($top,[IntPtr]::Zero,"SHELLDLL_DefView",$null)
+  if($defView -ne [IntPtr]::Zero){
     $script:iconHost=$top
     $script:workerw=[MineradioDesktopHost]::FindWindowEx([IntPtr]::Zero,$top,"WorkerW",$null)
+  }
+  $className=New-Object System.Text.StringBuilder 64
+  [MineradioDesktopHost]::GetClassName($top,$className,$className.Capacity)|Out-Null
+  if($className.ToString() -eq "WorkerW" -and $defView -eq [IntPtr]::Zero){
+    $script:cleanWorker=$top
   }
   return $true
 }
 [MineradioDesktopHost]::EnumWindows($enum,[IntPtr]::Zero)|Out-Null
-if ($script:iconHost -eq [IntPtr]::Zero) { $script:iconHost=$progman }
-if ($script:workerw -eq [IntPtr]::Zero) { $script:workerw=$progman }
+if ($script:iconHost -eq [IntPtr]::Zero -and $progman -ne [IntPtr]::Zero) { $script:iconHost=$progman }
+if ($script:workerw -eq [IntPtr]::Zero -and $script:cleanWorker -ne [IntPtr]::Zero) { $script:workerw=$script:cleanWorker }
+if ($script:workerw -eq [IntPtr]::Zero -and $progman -ne [IntPtr]::Zero) { $script:workerw=$progman }
+if ($script:workerw -eq [IntPtr]::Zero -and $script:iconHost -ne [IntPtr]::Zero) { $script:workerw=$script:iconHost }
+if ($script:workerw -eq [IntPtr]::Zero) { throw "DESKTOP_HOST_NOT_FOUND" }
 $target=[IntPtr]::new([Int64]${hwnd})
 $style=[MineradioDesktopHost]::GetWindowLongPtr($target,-16).ToInt64()
-$style=($style -band (-bnot 0x80000000L)) -bor 0x40000000L
+$style=($style -band (-bnot 0x80C40000L)) -bor 0x40000000L
 [MineradioDesktopHost]::SetWindowLongPtr($target,-16,[IntPtr]::new($style))|Out-Null
 $exStyle=[MineradioDesktopHost]::GetWindowLongPtr($target,-20).ToInt64()
 $exStyle=($exStyle -band (-bnot 0x00000080L)) -bor 0x00040000L
@@ -2198,8 +2319,8 @@ $exStyle=($exStyle -band (-bnot 0x00000080L)) -bor 0x00040000L
 if ([MineradioDesktopHost]::GetParent($target) -ne $script:workerw) { throw "DESKTOP_PARENT_FAILED" }
 $rect=New-Object MineradioDesktopHost+RECT
 if (-not [MineradioDesktopHost]::GetClientRect($script:workerw,[ref]$rect)) { throw "DESKTOP_BOUNDS_FAILED" }
-$width=[Math]::Max(1,$rect.Right-$rect.Left)
-$height=[Math]::Max(1,$rect.Bottom-$rect.Top)
+$width=[Math]::Max(1,$rect.Right-$rect.Left)+16
+$height=[Math]::Max(1,$rect.Bottom-$rect.Top)+16
 [MineradioDesktopHost]::SetWindowPos($target,[IntPtr]::Zero,0,0,$width,$height,0x0070)|Out-Null
 ` : `
 $ErrorActionPreference = "Stop"
@@ -2227,12 +2348,14 @@ $corner=2
 [MineradioDesktopDetach]::SetWindowPos($target,[IntPtr]::Zero,${restore.x},${restore.y},${restore.width},${restore.height},0x0060)|Out-Null
 `;
   return new Promise((resolve) => {
-    execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+    execFile(WINDOWS_POWERSHELL_EXE, ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
       windowsHide: true,
       timeout: 6000,
-    }, (error) => {
+    }, (error, _stdout, stderr) => {
       if (error || !mainWindow || mainWindow.isDestroyed()) {
-        resolve({ ok: false, error: error ? error.message : 'MAIN_WINDOW_UNAVAILABLE' });
+        if (error) writeDesktopFusionDiagnostic(next ? 'embed' : 'detach', error, stderr);
+        const detail = String(stderr || (error && error.message) || '').trim().split(/\r?\n/).filter(Boolean).slice(-3).join(' | ').slice(0, 600);
+        resolve({ ok: false, error: error ? 'DESKTOP_EMBED_FAILED' : 'MAIN_WINDOW_UNAVAILABLE', detail });
         return;
       }
       mainWindowDesktopEmbedded = next;
@@ -2247,7 +2370,10 @@ $corner=2
         try { win.setResizable(false); } catch (_e) {}
         try { win.setMovable(false); } catch (_e) {}
         try { win.setFocusable(false); } catch (_e) {}
-        try { win.setIgnoreMouseEvents(true, { forward: true }); } catch (_e) {}
+        // Fixed desktop fusion must be completely inert. Forwarding mouse moves
+        // here lets Chromium keep running hover/edge-reveal handlers even though
+        // clicks already pass through to Explorer.
+        try { win.setIgnoreMouseEvents(true); } catch (_e) {}
         win.showInactive();
       } else {
         windowFullscreenActive = false;
@@ -2300,6 +2426,7 @@ public static class MineradioDesktopLayer {
   [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr FindWindow(string c, string n);
   [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr FindWindowEx(IntPtr p, IntPtr a, string c, string n);
   [DllImport("user32.dll", SetLastError=true)] public static extern bool EnumWindows(EnumWindowsProc cb, IntPtr p);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] public static extern int GetClassName(IntPtr h, System.Text.StringBuilder text, int max);
   [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SetParent(IntPtr child, IntPtr parent);
   [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr GetParent(IntPtr child);
   [DllImport("user32.dll", SetLastError=true)] public static extern bool GetClientRect(IntPtr h, out RECT rect);
@@ -2312,53 +2439,72 @@ public static class MineradioDesktopLayer {
 }
 $progman=[MineradioDesktopLayer]::FindWindow("Progman",$null)
 $result=[IntPtr]::Zero
-[MineradioDesktopLayer]::SendMessageTimeout($progman,0x052C,[IntPtr]::Zero,[IntPtr]::Zero,0,1000,[ref]$result)|Out-Null
+if ($progman -ne [IntPtr]::Zero) {
+  [MineradioDesktopLayer]::SendMessageTimeout($progman,0x052C,[IntPtr]::new(0xD),[IntPtr]::new(1),0,1000,[ref]$result)|Out-Null
+  [MineradioDesktopLayer]::SendMessageTimeout($progman,0x052C,[IntPtr]::new(0xD),[IntPtr]::Zero,0,1000,[ref]$result)|Out-Null
+  [MineradioDesktopLayer]::SendMessageTimeout($progman,0x052C,[IntPtr]::Zero,[IntPtr]::Zero,0,1000,[ref]$result)|Out-Null
+}
 $script:iconHost=[IntPtr]::Zero
 $script:workerw=[IntPtr]::Zero
+$script:cleanWorker=[IntPtr]::Zero
 $enum=[MineradioDesktopLayer+EnumWindowsProc]{param([IntPtr]$top,[IntPtr]$p)
-  if([MineradioDesktopLayer]::FindWindowEx($top,[IntPtr]::Zero,"SHELLDLL_DefView",$null)-ne [IntPtr]::Zero){
+  $defView=[MineradioDesktopLayer]::FindWindowEx($top,[IntPtr]::Zero,"SHELLDLL_DefView",$null)
+  if($defView -ne [IntPtr]::Zero){
     $script:iconHost=$top
     $script:workerw=[MineradioDesktopLayer]::FindWindowEx([IntPtr]::Zero,$top,"WorkerW",$null)
+  }
+  $className=New-Object System.Text.StringBuilder 64
+  [MineradioDesktopLayer]::GetClassName($top,$className,$className.Capacity)|Out-Null
+  if($className.ToString() -eq "WorkerW" -and $defView -eq [IntPtr]::Zero){
+    $script:cleanWorker=$top
   }
   return $true
 }
 [MineradioDesktopLayer]::EnumWindows($enum,[IntPtr]::Zero)|Out-Null
-if ($script:iconHost -eq [IntPtr]::Zero) { $script:iconHost=$progman }
-if ($script:workerw -eq [IntPtr]::Zero) { $script:workerw=$progman }
+if ($script:iconHost -eq [IntPtr]::Zero -and $progman -ne [IntPtr]::Zero) { $script:iconHost=$progman }
+if ($script:workerw -eq [IntPtr]::Zero -and $script:cleanWorker -ne [IntPtr]::Zero) { $script:workerw=$script:cleanWorker }
+if ($script:workerw -eq [IntPtr]::Zero -and $progman -ne [IntPtr]::Zero) { $script:workerw=$progman }
+if ($script:workerw -eq [IntPtr]::Zero -and $script:iconHost -ne [IntPtr]::Zero) { $script:workerw=$script:iconHost }
+if ($script:workerw -eq [IntPtr]::Zero) { throw "DESKTOP_HOST_NOT_FOUND" }
 $target=[IntPtr]::new([Int64]${hwnd})
 if (${next ? '$true' : '$false'}) {
   # Explorer's icon host always wins hit-testing over its child windows on
   # some Windows 11 builds. Detach while editing so every click reaches MR.
   [MineradioDesktopLayer]::SetParent($target,[IntPtr]::Zero)|Out-Null
   $style=[MineradioDesktopLayer]::GetWindowLongPtr($target,-16).ToInt64()
-  $style=($style -band (-bnot 0x40000000L)) -bor 0x80000000L
+  $style=($style -band (-bnot 0x40C40000L)) -bor 0x80000000L
   [MineradioDesktopLayer]::SetWindowLongPtr($target,-16,[IntPtr]::new($style))|Out-Null
   if ([MineradioDesktopLayer]::GetParent($target) -ne [IntPtr]::Zero) { throw "DESKTOP_INTERACTIVE_DETACH_FAILED" }
   [MineradioDesktopLayer]::SetWindowPos($target,[IntPtr]::Zero,${interactiveBounds.x},${interactiveBounds.y},${interactiveBounds.width},${interactiveBounds.height},0x0060)|Out-Null
 } else {
   $style=[MineradioDesktopLayer]::GetWindowLongPtr($target,-16).ToInt64()
-  $style=($style -band (-bnot 0x80000000L)) -bor 0x40000000L
+  $style=($style -band (-bnot 0x80C40000L)) -bor 0x40000000L
   [MineradioDesktopLayer]::SetWindowLongPtr($target,-16,[IntPtr]::new($style))|Out-Null
   [MineradioDesktopLayer]::SetParent($target,$script:workerw)|Out-Null
   if ([MineradioDesktopLayer]::GetParent($target) -ne $script:workerw) { throw "DESKTOP_LAYER_FAILED" }
   $rect=New-Object MineradioDesktopLayer+RECT
   if (-not [MineradioDesktopLayer]::GetClientRect($script:workerw,[ref]$rect)) { throw "DESKTOP_BOUNDS_FAILED" }
-  $width=[Math]::Max(1,$rect.Right-$rect.Left)
-  $height=[Math]::Max(1,$rect.Bottom-$rect.Top)
+  $width=[Math]::Max(1,$rect.Right-$rect.Left)+16
+  $height=[Math]::Max(1,$rect.Bottom-$rect.Top)+16
   [MineradioDesktopLayer]::SetWindowPos($target,[IntPtr]::Zero,0,0,$width,$height,0x0070)|Out-Null
 }
 `;
   return new Promise((resolve) => {
-    execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+    execFile(WINDOWS_POWERSHELL_EXE, ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
       windowsHide: true,
       timeout: 6000,
-    }, (error) => {
+    }, (error, _stdout, stderr) => {
       if (error || !mainWindow || mainWindow.isDestroyed()) {
-        resolve({ ok: false, error: error ? error.message : 'MAIN_WINDOW_UNAVAILABLE' });
+        if (error) writeDesktopFusionDiagnostic(next ? 'interactive' : 'reattach', error, stderr);
+        const detail = String(stderr || (error && error.message) || '').trim().split(/\r?\n/).filter(Boolean).slice(-3).join(' | ').slice(0, 600);
+        resolve({ ok: false, error: error ? 'DESKTOP_LAYER_FAILED' : 'MAIN_WINDOW_UNAVAILABLE', detail });
         return;
       }
       mainWindowDesktopInteractive = next;
-      try { win.setIgnoreMouseEvents(!next, { forward: true }); } catch (_e) {}
+      try {
+        if (next) win.setIgnoreMouseEvents(false);
+        else win.setIgnoreMouseEvents(true);
+      } catch (_e) {}
       try { win.setFocusable(next); } catch (_e) {}
       if (next) {
         try { win.setResizable(false); } catch (_e) {}
@@ -2369,6 +2515,7 @@ if (${next ? '$true' : '$false'}) {
       } else {
         win.showInactive();
       }
+      sendWindowState(win);
       refreshTrayMenu();
       resolve({ ok: true, interactive: next });
     });
@@ -3118,7 +3265,7 @@ async function createWindow() {
     hasShadow: false,
     autoHideMenuBar: true,
     title: APP_NAME,
-    icon: APP_ICON_ICO,
+    icon: getAppWindowIcon(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -3128,11 +3275,14 @@ async function createWindow() {
     },
   });
 
+  try { mainWindow.setIcon(getAppWindowIcon()); } catch (_iconError) {}
+
   applyMainWindowBorderlessCorners(mainWindow);
 
   try {
     if (mainWindow.webContents && typeof mainWindow.webContents.setFrameRate === 'function') {
-      mainWindow.webContents.setFrameRate(60);
+      const display = screen.getDisplayMatching(mainWindow.getBounds());
+      mainWindow.webContents.setFrameRate(Math.max(60, Math.min(240, Number(display && display.displayFrequency) || 120)));
     }
   } catch (_e) {}
 
@@ -3295,7 +3445,10 @@ if (!gotSingleInstanceLock) {
 } else {
   app.on('second-instance', () => {
     if (!focusMainWindow()) {
-      app.whenReady().then(() => createWindow()).catch((e) => console.error('Second instance window restore failed:', e));
+      app.whenReady().then(() => createWindow()).catch((error) => {
+        writeStartupDiagnostic('second-instance-window-restore', error);
+        console.error('Second instance window restore failed:', error);
+      });
     }
   });
 
@@ -3340,13 +3493,29 @@ if (!gotSingleInstanceLock) {
     registerBootstrapDesktopInteractionHotkey();
     createTray();
     await createWindow();
+    repairWindowsShellShortcutIcons();
     createTray();
     ensureDesktopShortcut();
     refreshTrayMenu();
+  }).catch((error) => {
+    const logPath = writeStartupDiagnostic('app-when-ready', error);
+    console.error('Mineradio startup failed:', error);
+    try {
+      dialog.showErrorBox(
+        'Mineradio 启动失败',
+        `程序没有静默退出，错误信息已保存到：\n${logPath}\n\n请把这个文件发给开发者。`,
+      );
+    } catch (_dialogError) {}
+    app.quit();
   });
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow().catch((error) => {
+        writeStartupDiagnostic('activate-create-window', error);
+        console.error('Window activation failed:', error);
+      });
+    }
     else focusMainWindow();
   });
 

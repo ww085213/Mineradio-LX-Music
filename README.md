@@ -1,24 +1,23 @@
 # Mineradio - LX Music / MR
 
-## 最新版本：1.5.5.1
+## 最新版本：1.5.6
 
-[下载 Windows 安装包](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.5.1/Mineradio.Setup.1.5.5.1.exe) / [查看 v1.5.5.1 Release](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.5.5.1)
+[下载 Windows 安装包](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.6/Mineradio.Setup.1.5.6.exe) / [查看 v1.5.6 Release](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.5.6)
 
 Windows 安装向导支持选择安装目录和是否创建桌面快捷方式。已有版本可直接覆盖安装，安装程序不会触碰 `%APPDATA%\Mineradio` 中的歌单、设置和用户数据。升级前建议退出正在运行的 Mineradio。
 
-1.5.5.1 主要更新：
+1.5.6 主要更新：
 
-- 新增全新音乐首页，集中展示继续播放、音乐库、每日推荐、最近播放、今日聆听统计和接下来播放。
-- 新增独立音乐库页面，统一管理本地音乐、在线导入歌单和自建歌单，支持搜索、同步、自定义封面、批量管理和歌曲排序。
-- 新增 16 种音乐电台与场景漫游模式，按为你推荐、场景、风格和能量分类，每次最多生成 60 首连续播放队列。
-- 新增综合榜及小秋、小芸、小蜗、小狗、小菇 5 个独立平台榜，支持播放、下一首和收藏到歌单。
-- 修复安装包、主程序、卸载程序及快捷方式图标，统一使用 Mineradio 黑色 MR 图标。
-- 桌面快捷方式改为安装时可选，删除后不会自动重新生成；覆盖安装保留歌单和全部用户数据。
-- 按安全要求不内置、不自动安装任何第三方音源；在线功能由用户自行导入合法来源。
+- 重做新装与覆盖安装兼容，修复上一版安装目录误判和程序运行时安装不稳定的问题。
+- 桌面融合固定后彻底忽略鼠标移动，不再弹出隐藏控件。
+- Now Flow 进度条新增当前/总时长、点击拖动、键盘调整和落雪联动定位。
+- 正式安装包完整包含 FFmpeg、RePKG 与许可文件，新装电脑也能使用 Wallpaper Engine 壁纸转换。
+- 增加启动失败日志与明确提示，避免无信息闪退。
+- 动态匹配刷新率，播放和交互保持高帧率，空闲、固定桌面和后台状态主动降载。
 
-[查看 Mineradio 1.5.5.1 完整更新说明](RELEASE_NOTES_1.5.5.1.md)
+[查看 Mineradio 1.5.6 完整更新说明](RELEASE_NOTES_1.5.6.md)
 
-SHA-256：`BFB12E36F7F3E73EBA1655BB5E61ED13AA9FAA2726157F9FDDE6DBA34FBE0492`
+SHA-256：`2D085E34AD7559EED5C562C6B0C92A7FF6EBF21D2C8F5CD94A68BB4E9BF003FA`
 
 > 当前 Windows 安装包未使用 Authenticode 代码签名证书，Windows SmartScreen 可能提示“未知发布者”。请仅从本仓库 Release 下载，并核对上方 SHA-256。
 
@@ -78,10 +77,12 @@ npm start
 npm run build:win
 ```
 
+`build:win` 会先运行 `prepare:windows-tools`，从上游官方 GitHub Release 下载固定版本的 FFmpeg 8.1.1 和 RePKG v0.4.0-alpha，并在校验下载包与可执行文件 SHA-256 后才参与打包。两个大型第三方二进制不直接提交到 Git 仓库，因此干净克隆也可以复现完整 Windows 构建。
+
 构建产物输出到 `dist/`：
 
-- `Mineradio.Setup.1.5.5.1.exe`
-- `Mineradio.Setup.1.5.5.1.exe.blockmap`
+- `Mineradio.Setup.1.5.6.exe`
+- `Mineradio.Setup.1.5.6.exe.blockmap`
 - `latest.yml`
 
 macOS DMG 需要在 macOS 环境构建：

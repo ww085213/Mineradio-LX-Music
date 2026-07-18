@@ -37,7 +37,10 @@
 !include WinMessages.nsh
 
 !define MINERADIO_INSTALL_MARKER ".mineradio-install-root"
-!define MINERADIO_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\52487c9b-5c83-5d92-b8c9-2c54b52b7121"
+!define MINERADIO_INSTALL_KEY "Software\9733721a-009e-52bc-b705-49059cd80258"
+!define MINERADIO_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\9733721a-009e-52bc-b705-49059cd80258"
+!define MINERADIO_STALE_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\52487c9b-5c83-5d92-b8c9-2c54b52b7121"
+!define MINERADIO_LEGACY_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Mineradio"
 
 !ifndef BUILD_UNINSTALLER
   Var MineradioWelcomePage
@@ -52,6 +55,7 @@
 !macro customInit
   !ifndef BUILD_UNINSTALLER
     Call MineradioUsePreferredInstallDir
+    Call MineradioDisableUnsafePreviousUninstallers
   !endif
 !macroend
 
@@ -62,8 +66,20 @@
   Delete "$INSTDIR\Mineradio二创版.exe"
   Delete "$INSTDIR\Mineradio二創版.exe"
   Call MineradioWriteInstallMarker
-  WriteRegStr HKCU "${MINERADIO_UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
-  WriteRegStr HKLM "${MINERADIO_UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
+  ; electron-builder has already written the standard install/uninstall keys
+  ; for the selected shell context. Add InstallLocation to that same hive.
+  WriteRegStr SHELL_CONTEXT "${MINERADIO_UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
+  ; A former per-user build may coexist with an elevated all-users upgrade.
+  ; Leaving it behind makes future installers prefer the obsolete HKCU path.
+  ${If} $installMode == "all"
+    DeleteRegKey HKCU "${MINERADIO_UNINSTALL_KEY}"
+    DeleteRegKey HKCU "${MINERADIO_INSTALL_KEY}"
+  ${EndIf}
+  ; 1.5.5.1 之前的自制安装包使用了另一个卸载项。新安装成功后
+  ; 清理当前用户下的旧条目，避免“应用和功能”中出现两个 Mineradio。
+  DeleteRegKey HKCU "${MINERADIO_LEGACY_UNINSTALL_KEY}"
+  DeleteRegKey HKCU "${MINERADIO_STALE_UNINSTALL_KEY}"
+  DeleteRegKey HKLM "${MINERADIO_STALE_UNINSTALL_KEY}"
 !macroend
 
 !macro customUnInit
@@ -225,24 +241,110 @@ Function MineradioUsePreferredInstallDir
     Call MineradioNormalizeInstallDir
     Pop $INSTDIR
   ${Else}
-    ; Upgrades must reuse the registered install root. Older packages did not
-    ; write InstallLocation, so fall back to the parent of DisplayIcon.
-    ReadRegStr $R1 HKCU "${MINERADIO_UNINSTALL_KEY}" "InstallLocation"
+    ; Upgrades must reuse the registered install root. The former custom
+    ; installer used the legacy Mineradio key, while electron-builder uses the
+    ; stable GUID key. Only DisplayIcon is an executable path; InstallLocation
+    ; is already a directory and must never be passed through GetParent.
+    StrCpy $R2 "location"
+    ReadRegStr $R1 HKCU "${MINERADIO_INSTALL_KEY}" "InstallLocation"
+    ${If} $R1 == ""
+      ReadRegStr $R1 HKLM "${MINERADIO_INSTALL_KEY}" "InstallLocation"
+    ${EndIf}
+    ${If} $R1 == ""
+      ReadRegStr $R1 HKCU "${MINERADIO_UNINSTALL_KEY}" "InstallLocation"
+    ${EndIf}
     ${If} $R1 == ""
       ReadRegStr $R1 HKLM "${MINERADIO_UNINSTALL_KEY}" "InstallLocation"
     ${EndIf}
     ${If} $R1 == ""
+      ReadRegStr $R1 HKCU "${MINERADIO_STALE_UNINSTALL_KEY}" "InstallLocation"
+    ${EndIf}
+    ${If} $R1 == ""
+      ReadRegStr $R1 HKLM "${MINERADIO_STALE_UNINSTALL_KEY}" "InstallLocation"
+    ${EndIf}
+    ${If} $R1 == ""
+      ReadRegStr $R1 HKCU "${MINERADIO_LEGACY_UNINSTALL_KEY}" "InstallLocation"
+    ${EndIf}
+    ${If} $R1 == ""
+      ReadRegStr $R1 HKLM "${MINERADIO_LEGACY_UNINSTALL_KEY}" "InstallLocation"
+    ${EndIf}
+    ${If} $R1 == ""
+      StrCpy $R2 "icon"
       ReadRegStr $R1 HKCU "${MINERADIO_UNINSTALL_KEY}" "DisplayIcon"
     ${EndIf}
     ${If} $R1 == ""
       ReadRegStr $R1 HKLM "${MINERADIO_UNINSTALL_KEY}" "DisplayIcon"
     ${EndIf}
+    ${If} $R1 == ""
+      ReadRegStr $R1 HKCU "${MINERADIO_STALE_UNINSTALL_KEY}" "DisplayIcon"
+    ${EndIf}
+    ${If} $R1 == ""
+      ReadRegStr $R1 HKLM "${MINERADIO_STALE_UNINSTALL_KEY}" "DisplayIcon"
+    ${EndIf}
+    ${If} $R1 == ""
+      ReadRegStr $R1 HKCU "${MINERADIO_LEGACY_UNINSTALL_KEY}" "DisplayIcon"
+    ${EndIf}
+    ${If} $R1 == ""
+      ReadRegStr $R1 HKLM "${MINERADIO_LEGACY_UNINSTALL_KEY}" "DisplayIcon"
+    ${EndIf}
     ${If} $R1 != ""
-      ${GetParent} "$R1" $R1
-      StrCpy $INSTDIR "$R1"
+      ${If} $R2 == "icon"
+        ${GetParent} "$R1" $R1
+      ${EndIf}
+      Push "$R1"
+      Call MineradioNormalizeInstallDir
+      Pop $INSTDIR
     ${Else}
       StrCpy $INSTDIR "C:\Mineradio"
     ${EndIf}
+  ${EndIf}
+FunctionEnd
+
+; Old community installers can point at arbitrary historical folders and do
+; not contain our install-root marker. Running those uninstallers during an
+; upgrade either blocks forever on a modal safety warning or risks deleting
+; unrelated files. Clear only their launch commands before electron-builder's
+; uninstallOldVersion step; the new installer then performs an in-place,
+; controlled overwrite and writes a fresh standard uninstall record.
+Function MineradioDisableUnsafePreviousUninstallers
+  ReadRegStr $R0 HKCU "${MINERADIO_UNINSTALL_KEY}" "UninstallString"
+  ReadRegStr $R1 HKCU "${MINERADIO_INSTALL_KEY}" "InstallLocation"
+  ${If} $R1 == ""
+    ReadRegStr $R1 HKCU "${MINERADIO_UNINSTALL_KEY}" "InstallLocation"
+  ${EndIf}
+  ${If} $R1 == ""
+    ReadRegStr $R1 HKCU "${MINERADIO_UNINSTALL_KEY}" "DisplayIcon"
+    ${If} $R1 != ""
+      ${GetParent} "$R1" $R1
+    ${EndIf}
+  ${EndIf}
+  ${If} $R0 != ""
+  ${AndIf} $R1 != ""
+    IfFileExists "$R1\${MINERADIO_INSTALL_MARKER}" mineradio_hkcu_safe 0
+    DetailPrint "Skipping unsafe unmarked Mineradio uninstaller: $R1"
+    DeleteRegValue HKCU "${MINERADIO_UNINSTALL_KEY}" "UninstallString"
+    DeleteRegValue HKCU "${MINERADIO_UNINSTALL_KEY}" "QuietUninstallString"
+  mineradio_hkcu_safe:
+  ${EndIf}
+
+  ReadRegStr $R0 HKLM "${MINERADIO_UNINSTALL_KEY}" "UninstallString"
+  ReadRegStr $R1 HKLM "${MINERADIO_INSTALL_KEY}" "InstallLocation"
+  ${If} $R1 == ""
+    ReadRegStr $R1 HKLM "${MINERADIO_UNINSTALL_KEY}" "InstallLocation"
+  ${EndIf}
+  ${If} $R1 == ""
+    ReadRegStr $R1 HKLM "${MINERADIO_UNINSTALL_KEY}" "DisplayIcon"
+    ${If} $R1 != ""
+      ${GetParent} "$R1" $R1
+    ${EndIf}
+  ${EndIf}
+  ${If} $R0 != ""
+  ${AndIf} $R1 != ""
+    IfFileExists "$R1\${MINERADIO_INSTALL_MARKER}" mineradio_hklm_safe 0
+    DetailPrint "Skipping unsafe unmarked Mineradio uninstaller: $R1"
+    DeleteRegValue HKLM "${MINERADIO_UNINSTALL_KEY}" "UninstallString"
+    DeleteRegValue HKLM "${MINERADIO_UNINSTALL_KEY}" "QuietUninstallString"
+  mineradio_hklm_safe:
   ${EndIf}
 FunctionEnd
 
