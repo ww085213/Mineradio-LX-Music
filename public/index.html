@@ -5339,7 +5339,7 @@ body.now-flow-only #now-flow,body.now-flow-only #now-flow:hover,body.now-flow-on
 
 
 <!-- 底部流动播放信息：全程使用这个简洁播放条 -->
-<div id="now-flow" title="点击空白处播放/暂停" onclick="togglePlay()">
+<div id="now-flow" title="播放或暂停请使用中间按钮">
   <div id="now-flow-cover" class="now-flow-cover cover-empty" aria-hidden="true" onclick="nfToggleCover(event)" title="点击开关大封面"></div>
   <div class="now-flow-main">
     <div class="now-flow-top">
@@ -34107,6 +34107,12 @@ if (nowFlowProgressBar) {
     return seekNowFlowToRatio(updateNowFlowSeekPreview(event), commit);
   }
   nowFlowProgressBar.addEventListener('pointerenter', updateNowFlowSeekPreview);
+  nowFlowProgressBar.addEventListener('click', function(event){
+    // A completed pointer drag still emits a synthetic click in Chromium.
+    // Keep seeking completely isolated from playback state changes.
+    event.preventDefault();
+    event.stopPropagation();
+  });
   nowFlowProgressBar.addEventListener('pointerdown', function(event){
     if (event.button !== 0 || !getPlaybackDurationSeconds()) return;
     event.preventDefault();
