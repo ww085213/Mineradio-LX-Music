@@ -11,12 +11,12 @@
     "start": "electron .",
     "prepare:windows-tools": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File build/prepare-windows-tools.ps1",
     "verify:release": "node build/verify-release.js",
-    "build:win": "npm run prepare:windows-tools && npm run verify:release && electron-builder --win nsis",
+    "build:win": "npm run prepare:windows-tools && npm run verify:release && electron-builder --win nsis && node build/finalize-windows-release.js",
     "build:win:dir": "npm run prepare:windows-tools && npm run verify:release && electron-builder --win dir",
     "build:mac": "electron-builder --mac dmg zip --universal --publish never"
   },
   "build": {
-    "buildVersion": "1.5.6.0",
+    "buildVersion": "1.5.6.1",
     "appId": "com.mineradio.desktop",
     "productName": "Mineradio",
     "directories": {
@@ -35,6 +35,7 @@
       "build/**/*",
       "!build/after-pack.js",
       "!build/verify-release.js",
+      "!build/finalize-windows-release.js",
       "!build/prepare-windows-tools.ps1",
       "!build/installer.nsh",
       "!build/installerHeader.bmp",
@@ -89,10 +90,10 @@
           ]
         }
       ],
-      "artifactName": "Mineradio-1.5.6-mac-${arch}.${ext}"
+      "artifactName": "Mineradio-1.5.6.1-mac-${arch}.${ext}"
     },
     "dmg": {
-      "artifactName": "Mineradio-1.5.6-mac-${arch}.${ext}"
+      "artifactName": "Mineradio-1.5.6.1-mac-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -104,7 +105,7 @@
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "include": "build/installer.nsh",
-      "artifactName": "Mineradio.Setup.1.5.6.${ext}"
+      "artifactName": "Mineradio.Setup.1.5.6.1.${ext}"
     },
     "publish": [
       {
@@ -115,7 +116,7 @@
     ]
   },
   "mineradio": {
-    "releaseVersion": "1.5.6",
+    "releaseVersion": "1.5.6.1",
     "update": {
       "provider": "github",
       "owner": "ww085213",

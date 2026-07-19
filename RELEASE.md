@@ -1,8 +1,8 @@
-# Mineradio 1.5.6 发布流程
+# Mineradio 1.5.6.1 发布流程
 
 ## 发布前检查
 
-- `package.json` 中的应用版本、安装包文件名和 Release 标签统一使用 `1.5.6`，Windows 文件版本使用 `1.5.6.0`。
+- npm 包版本保持有效 SemVer `1.5.6`；应用显示版本、安装包文件名和 Release 标签使用 `1.5.6.1`，Windows 文件版本使用 `1.5.6.1`。
 - `npm run verify:release` 检查前端全部内联脚本、主进程、服务端、安装迁移标记、壁纸转换工具和核心功能标记。
 - 全新首页、音乐库、音乐电台和各平台排行榜入口及主要操作可用。
 - 全新用户安装内容与当前正式程序一致，不预装或自动生成第三方音源。
@@ -24,14 +24,14 @@ npm run build:win
 
 构建产物：
 
-- `dist/Mineradio.Setup.1.5.6.exe`
-- `dist/Mineradio.Setup.1.5.6.exe.blockmap`
+- `dist/Mineradio.Setup.1.5.6.1.exe`
+- `dist/Mineradio.Setup.1.5.6.1.exe.blockmap`
 - `dist/latest.yml`
-- `dist/Mineradio.Setup.1.5.6.SHA256.txt`
+- `dist/Mineradio.Setup.1.5.6.1.SHA256.txt`
 
 ## GitHub Release
 
-- 标签：`v1.5.6`
-- 标题：`Mineradio 1.5.6`
+- 标签：`v1.5.6.1`
+- 标题：`Mineradio 1.5.6.1`
 - 正式 Release 同时上传 Windows 安装包、SHA256 文件、blockmap 与 `latest.yml`，确保手动下载、完整性校验和后续自动更新链路使用同一套产物。
 - 发布后将安装包同步到百度网盘分享目录。

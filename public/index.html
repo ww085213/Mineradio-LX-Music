@@ -5555,7 +5555,7 @@ body.now-flow-only #now-flow,body.now-flow-only #now-flow:hover,body.now-flow-on
         <div>
           <div class="update-kicker">MINERADIO 二创版</div>
           <div id="update-modal-title" class="update-title">New release</div>
-          <div id="update-modal-version" class="update-version">Mineradio v1.5.6</div>
+          <div id="update-modal-version" class="update-version">Mineradio v1.5.6.1</div>
         </div>
       </div>
       <div class="update-hero">
@@ -6023,8 +6023,8 @@ var updatePreviewState = {
   installerPath: '',
   installerOpened: false,
   cached: false,
-  currentVersion: '1.5.6',
-  version: '1.5.6',
+  currentVersion: '1.5.6.1',
+  version: '1.5.6.1',
   configured: false,
   preview: true,
   updateAvailable: false,
@@ -7736,7 +7736,7 @@ var RENDER_DPR_CAP = 1.00;
 var RENDER_PIXEL_BUDGET = 2800000;
 var RENDER_MIN_DPR = 0.56;
 // Keep interaction fluid while avoiding needless 90/120/144 Hz GPU work.
-var RENDER_VISIBLE_VSYNC = false; // 锁定目标帧率，避免高刷屏持续满负载渲染。
+var RENDER_VISIBLE_VSYNC = true; // 可见窗口全程跟随显示器刷新率；暂停和空闲状态也不降帧。
 var RENDER_ACTIVE_FPS = 165;
 var RENDER_LARGE_FPS = 120;
 var RENDER_HUGE_FPS = 90;
@@ -43606,11 +43606,19 @@ function markSplashReadyToEnter() {
   s.setAttribute('role', 'button');
   s.setAttribute('tabindex', '0');
   s.setAttribute('aria-label', '点击进入 Mineradio');
+  // Never leave a first-time install waiting indefinitely on the intro.
+  // The animation still plays, but the app enters automatically when ready.
+  dismissSplash();
 }
 
 document.addEventListener('DOMContentLoaded', function(){
   var s = document.getElementById('splash');
-  if (!s) return;
+  if (!s) {
+    splashAnimating = false;
+    splashReadyToEnter = false;
+    document.body.classList.remove('splash-active', 'splash-revealing');
+    return;
+  }
   markAppPerf('dom-content-loaded');
   if (skipStartupSplash) {
     s.classList.add('hide');
@@ -43631,7 +43639,9 @@ document.addEventListener('DOMContentLoaded', function(){
   prewarmHomeWallpaperPreview();
   function requestSplashEnter() {
     playMineradioIntroSound();
-    if (splashReadyToEnter) dismissSplash();
+    // A click/keyboard action is an explicit request to enter. Do not discard
+    // early input while the five-second intro timer is still running.
+    dismissSplash();
   }
   s.addEventListener('click', requestSplashEnter);
   document.addEventListener('keydown', function(e){
