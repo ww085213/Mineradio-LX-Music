@@ -1,7 +1,7 @@
 FFmpeg distribution notice
 ==========================
 
-Mineradio 1.5.6 bundles ffmpeg.exe from the FFmpeg 8.1.1 full Windows build
+Mineradio 1.5.6.1 bundles ffmpeg.exe from the FFmpeg 8.1.1 full Windows build
 published by Gyan Doshi (GyanD/codexffmpeg).
 
 Binary archive:

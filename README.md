@@ -1,12 +1,12 @@
 # Mineradio - LX Music / MR
 
-## 最新版本：1.5.6
+## 最新版本：1.5.6.1
 
-[下载 Windows 安装包](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.6/Mineradio.Setup.1.5.6.exe) / [查看 v1.5.6 Release](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.5.6)
+[下载 Windows 安装包](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.6.1/Mineradio.Setup.1.5.6.1.exe) / [查看 v1.5.6.1 Release](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.5.6.1)
 
 Windows 安装向导支持选择安装目录和是否创建桌面快捷方式。已有版本可直接覆盖安装，安装程序不会触碰 `%APPDATA%\Mineradio` 中的歌单、设置和用户数据。升级前建议退出正在运行的 Mineradio。
 
-1.5.6 主要更新：
+1.5.6.1 主要更新：
 
 - 修复拖动或点击 Now Flow 进度条时被外层点击事件识别为暂停的问题。
 - Now Flow 空白区域不再切换播放状态，播放和暂停只由专门的播放/暂停按钮触发。
@@ -17,7 +17,7 @@ Windows 安装向导支持选择安装目录和是否创建桌面快捷方式。
 - 增加启动失败日志与明确提示，避免无信息闪退。
 - 动态匹配刷新率，播放和交互保持高帧率，空闲、固定桌面和后台状态主动降载。
 
-[查看 Mineradio 1.5.6 完整更新说明](RELEASE_NOTES_1.5.6.md)
+[查看 Mineradio 1.5.6.1 完整更新说明](RELEASE_NOTES_1.5.6.1.md)
 
 SHA-256：`FE896798B10142A1139FC150BF7BA30CC5B8FC684268F6E37238E3860FCF5667`
 
@@ -83,8 +83,8 @@ npm run build:win
 
 构建产物输出到 `dist/`：
 
-- `Mineradio.Setup.1.5.6.exe`
-- `Mineradio.Setup.1.5.6.exe.blockmap`
+- `Mineradio.Setup.1.5.6.1.exe`
+- `Mineradio.Setup.1.5.6.1.exe.blockmap`
 - `latest.yml`
 
 macOS DMG 需要在 macOS 环境构建：

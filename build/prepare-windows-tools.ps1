@@ -8,7 +8,7 @@ Set-StrictMode -Version Latest
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $binRoot = Join-Path $repoRoot 'bin'
 $repkgRoot = Join-Path $binRoot 'repkg'
-$cacheRoot = Join-Path ([IO.Path]::GetTempPath()) 'MineradioBuildTools\1.5.6'
+$cacheRoot = Join-Path ([IO.Path]::GetTempPath()) 'MineradioBuildTools\1.5.6.1'
 
 $ffmpegArchiveUrl = 'https://github.com/GyanD/codexffmpeg/releases/download/8.1.1/ffmpeg-8.1.1-full_build.zip'
 $ffmpegArchiveSha256 = '49B28C5F16ADDD40239A66949973458769B7056FB7752C30AC0D53389D09A552'

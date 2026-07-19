@@ -54,6 +54,7 @@ let windowFullscreenActive = false;
 let mainWindowPreFullscreenBounds = null;
 let mainWindowStateTimer = null;
 let mainWindowBoundsSaveTimer = null;
+let mainWindowSplashWatchdogTimer = null;
 let tray = null;
 let trayRightClickGuardUntil = 0;
 let trayPlaybackState = { title: '', artist: '', playing: false, volume: 80 };
@@ -118,8 +119,11 @@ function getAppWindowIcon() {
 }
 
 function repairWindowsShellShortcutIcons() {
-  if (process.platform !== 'win32') return;
+  // A source/dev launch uses Electron's generic executable. It must never
+  // replace shortcuts owned by an installed Mineradio build.
+  if (process.platform !== 'win32' || !app.isPackaged) return;
   const target = process.execPath;
+  if (!/^Mineradio\.exe$/i.test(path.basename(target))) return;
   const roots = [
     path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
     app.getPath('desktop'),
@@ -3299,8 +3303,33 @@ async function createWindow() {
     if (/^(https?:|mailto:)/i.test(target)) shell.openExternal(target);
   });
 
-  mainWindow.webContents.once('did-finish-load', () => {
+  mainWindow.webContents.on('did-finish-load', () => {
     sendWindowState(mainWindow);
+    if (mainWindowSplashWatchdogTimer) clearTimeout(mainWindowSplashWatchdogTimer);
+    const watchedWindow = mainWindow;
+    mainWindowSplashWatchdogTimer = setTimeout(() => {
+      mainWindowSplashWatchdogTimer = null;
+      if (!watchedWindow || watchedWindow.isDestroyed() || watchedWindow.webContents.isDestroyed()) return;
+      watchedWindow.webContents.executeJavaScript(`(() => {
+        const body = document.body;
+        if (!body || !body.classList.contains('splash-active')) return false;
+        const splash = document.getElementById('splash');
+        if (splash) {
+          splash.classList.add('hide');
+          splash.style.display = 'none';
+        }
+        body.classList.remove('splash-active', 'splash-revealing');
+        if (typeof splashAnimating !== 'undefined') splashAnimating = false;
+        if (typeof splashReadyToEnter !== 'undefined') splashReadyToEnter = false;
+        if (typeof updateEmptyHomeVisibility === 'function') updateEmptyHomeVisibility({ forceLoad: true });
+        if (typeof wakeMainRenderLoop === 'function') wakeMainRenderLoop();
+        return true;
+      })()`, true).then((recovered) => {
+        if (recovered) console.warn('[Startup] splash watchdog forced the home screen to reveal');
+      }).catch((error) => {
+        console.warn('[Startup] splash watchdog could not reach the renderer:', error.message);
+      });
+    }, 8000);
   });
 
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
@@ -3405,6 +3434,10 @@ async function createWindow() {
     });
   });
   mainWindow.on('closed', () => {
+    if (mainWindowSplashWatchdogTimer) {
+      clearTimeout(mainWindowSplashWatchdogTimer);
+      mainWindowSplashWatchdogTimer = null;
+    }
     if (mainWindowStateTimer) {
       clearTimeout(mainWindowStateTimer);
       mainWindowStateTimer = null;

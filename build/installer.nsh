@@ -68,6 +68,7 @@
   Call MineradioWriteInstallMarker
   ; electron-builder has already written the standard install/uninstall keys
   ; for the selected shell context. Add InstallLocation to that same hive.
+  WriteRegStr SHELL_CONTEXT "${MINERADIO_INSTALL_KEY}" "InstallLocation" "$INSTDIR"
   WriteRegStr SHELL_CONTEXT "${MINERADIO_UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
   ; A former per-user build may coexist with an elevated all-users upgrade.
   ; Leaving it behind makes future installers prefer the obsolete HKCU path.
@@ -232,15 +233,30 @@ Function MineradioTintCommonControls
 FunctionEnd
 
 Function MineradioUsePreferredInstallDir
-  ${GetParameters} $R0
-  ClearErrors
-  ${GetOptions} $R0 "/D=" $R1
-  ${IfNot} ${Errors}
-  ${AndIf} $R1 != ""
-    Push "$R1"
+  ; electron-builder has already applied its special /D parser before this
+  ; function runs. If $INSTDIR differs from the registered or normal default
+  ; path, it is an explicit user choice and must never be replaced by legacy
+  ; migration data.
+  ReadRegStr $R8 HKCU "${MINERADIO_INSTALL_KEY}" "InstallLocation"
+  ${If} $R8 == ""
+    ReadRegStr $R8 HKLM "${MINERADIO_INSTALL_KEY}" "InstallLocation"
+  ${EndIf}
+  ${If} $R8 != ""
+  ${AndIf} $INSTDIR != $R8
+    Push "$INSTDIR"
     Call MineradioNormalizeInstallDir
     Pop $INSTDIR
-  ${Else}
+    Return
+  ${ElseIf} $R8 == ""
+    StrCpy $R9 "$LocalAppData\Programs\${APP_FILENAME}"
+    ${If} $INSTDIR != $R9
+      Push "$INSTDIR"
+      Call MineradioNormalizeInstallDir
+      Pop $INSTDIR
+      Return
+    ${EndIf}
+  ${EndIf}
+
     ; Upgrades must reuse the registered install root. The former custom
     ; installer used the legacy Mineradio key, while electron-builder uses the
     ; stable GUID key. Only DisplayIcon is an executable path; InstallLocation
@@ -297,7 +313,6 @@ Function MineradioUsePreferredInstallDir
     ${Else}
       StrCpy $INSTDIR "C:\Mineradio"
     ${EndIf}
-  ${EndIf}
 FunctionEnd
 
 ; Old community installers can point at arbitrary historical folders and do
@@ -469,8 +484,6 @@ Function MineradioDirectoryBrowse
 FunctionEnd
 
 Function MineradioDirectoryShow
-  Call MineradioUsePreferredInstallDir
-
   nsDialogs::Create 1018
   Pop $MineradioDirectoryPage
   ${If} $MineradioDirectoryPage == error
