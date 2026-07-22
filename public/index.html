@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Mineradio</title>
 <meta name="referrer" content="no-referrer">
-<link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&family=Inter:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&family=UnifrakturCook:wght@700&display=swap" rel="stylesheet">
+<!-- Keep desktop startup fully offline-capable. Font stacks below fall back to installed system fonts. -->
 <script src="vendor/three.r128.min.js"></script>
 <script src="vendor/music-tempo.min.js"></script>
 <script src="vendor/gsap.min.js"></script>
@@ -1673,6 +1673,8 @@ body.soundscape-active #playlist-panel,body.soundscape-active #fx-panel{z-index:
 .pl-card{display:flex;align-items:center;gap:10px;padding:9px;border-radius:11px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.04);transition:all .2s;cursor:pointer;margin-bottom:7px;will-change:transform,opacity}
 .pl-card:hover{background:rgba(255,255,255,.06)}
 .pl-card img{width:44px;height:44px;border-radius:8px;object-fit:cover;background:rgba(255,255,255,.06);flex-shrink:0}
+.pl-card-delete-playlist{flex:0 0 28px;width:28px;height:28px;border:1px solid rgba(255,110,125,.18);border-radius:8px;background:rgba(255,78,96,.055);color:rgba(255,170,180,.72);font:750 11px/1 var(--font-sans);cursor:pointer;opacity:.72;transition:opacity .18s,border-color .18s,background .18s,color .18s}
+.pl-card:hover .pl-card-delete-playlist,.pl-card-delete-playlist:focus-visible{opacity:1;border-color:rgba(255,110,125,.42);background:rgba(255,78,96,.14);color:#fff;outline:none}
 .pl-load-more,.queue-load-more{width:100%;height:30px;margin:8px 0 2px;display:flex;align-items:center;justify-content:center}
 .mini-queue-load-more{height:28px;margin:4px 0 0;font-size:10.5px}
 .queue-current-hint{border-color:rgba(var(--fc-accent-rgb),.26)!important;background:rgba(var(--fc-accent-rgb),.075)!important;color:rgba(255,255,255,.86)!important}
@@ -1687,6 +1689,7 @@ body.soundscape-active #playlist-panel,body.soundscape-active #fx-panel{z-index:
 .pl-detail-title{font-size:13px;font-weight:780;color:rgba(255,255,255,.94);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pl-detail-sub{font-size:10.5px;color:rgba(255,255,255,.42);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pl-detail-actions{display:flex;align-items:center;gap:8px;margin:8px 0 10px}
+.pl-detail-delete-playlist{color:#ff9aa7!important;border-color:rgba(255,83,103,.24)!important}
 .pl-detail-search-label{margin:2px 2px 5px;color:rgba(255,255,255,.72);font-size:10.5px;font-weight:700;letter-spacing:.3px}
 .pl-detail-search{display:flex;align-items:center;height:38px;margin:0 0 10px;padding:0 12px;border:1px solid rgba(var(--fc-accent-rgb),.32);border-radius:11px;background:rgba(var(--fc-accent-rgb),.08);box-shadow:inset 0 1px rgba(255,255,255,.04)}
 .pl-detail-search::before{content:'⌕';margin-right:8px;color:rgba(var(--fc-accent-rgb),.9);font-size:18px;line-height:1}
@@ -4002,7 +4005,7 @@ body.secondary-view-active #playlist-panel{
   box-shadow:0 9px 22px rgba(0,0,0,.34),inset 0 0 0 1px rgba(255,255,255,.12);
 }
 #secondary-library-page .library-card-title{font-size:12.5px;letter-spacing:-.01em}
-#secondary-library-page .library-card-meta{font-size:9.8px;color:rgba(235,239,245,.43)}
+#secondary-library-page .library-card-meta{margin-top:1px;font-size:10.5px;line-height:14px;font-weight:600;color:rgba(235,239,245,.66)}
 #secondary-library-page .library-detail{
   border-radius:23px;border-color:rgba(255,255,255,.09);
   background:linear-gradient(150deg,rgba(5,6,9,.34),rgba(0,0,0,.20));
@@ -5948,6 +5951,10 @@ var localAssetUiRefreshTimer = null;
 var localAssetCacheMemory = {};
 var localAssetCacheWriteTimers = {};
 var localLibraryIndexWriteTimer = null;
+var localFolderRemovalTombstones = Object.create(null);
+var localFolderPathMutationSerial = 0;
+var localFolderPathMutationVersions = Object.create(null);
+var localFolderBulkMutationVersion = 0;
 var LOCAL_ASSET_LIGHT_SCAN_BYTES = 4 * 1024 * 1024;
 var LOCAL_ASSET_IDLE_DELAY_MS = 520;
 var LOCAL_ASSET_PLAYING_DELAY_MS = 1800;
@@ -20872,6 +20879,11 @@ async function apiJson(url, opts) {
   }
 }
 function escHtml(s){ var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function escAttr(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(ch){
+    return ch === '&' ? '&amp;' : ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : ch === '"' ? '&quot;' : '&#39;';
+  });
+}
 function normalizePlaybackQuality(value) {
   value = String(value || '').toLowerCase();
   if (value === 'jymaster' || value === 'master' || value === 'svip') return 'jymaster';
@@ -22609,6 +22621,12 @@ function deleteHomePlaylist(kind, index) {
   index = Number(index);
   if (kind === 'all') {
     if (!window.confirm('确定从 Mineradio 移除全部本地音乐吗？\n不会删除硬盘中的音乐文件。')) return;
+    var folderPathsToRemove = savedLocalLibraryFolderPaths().concat((localFolderPlaylists || []).map(function(folder){ return folder && folder.folderPath || ''; })).filter(Boolean);
+    if (folderPathsToRemove.length) {
+      var removeAllFoldersResult = removeLocalFolderPlaylistRecords(folderPathsToRemove, { refresh:false });
+      if (!removeAllFoldersResult.ok) { showToast('本地歌单保存失败，未执行移除'); return; }
+    }
+    localFolderBulkMutationVersion++;
     if (audio) {
       try { audio.pause(); } catch (_error) {}
       try { audio.removeAttribute('src'); audio.load(); } catch (_error) {}
@@ -22649,24 +22667,15 @@ function deleteHomePlaylist(kind, index) {
   } else if (kind === 'folder') {
     var folder = localFolderPlaylists[index];
     if (!folder) return;
-    if (!window.confirm('确定移除文件夹歌单“' + (folder.name || '本地歌单') + '”吗？\\n不会删除硬盘中的音乐文件。')) return;
-    var folderPath = String(folder.folderPath || '');
-    localFolderPlaylists.splice(index, 1);
-    localLibrarySongs = (localLibrarySongs || []).filter(function(song){
-      return String(song && song.localFolderPath || '') !== folderPath;
-    });
-    saveLocalLibraryFolderPaths(savedLocalLibraryFolderPaths().filter(function(path){ return String(path) !== folderPath; }));
-    showToast('已移除歌单，硬盘文件未删除');
+    requestRemoveLocalFolderPlaylist(folder.folderPath);
+    return;
   } else if (kind === 'custom') {
     ensureLocalUserPlaylistsLoaded();
     var customLists = (userPlaylists || []).filter(function(pl){ return pl && pl.localUserPlaylist; });
     var custom = customLists[index];
     if (!custom) return;
-    if (!window.confirm('确定删除自建歌单“' + (custom.name || '我的歌单') + '”吗？')) return;
-    userPlaylists = (userPlaylists || []).filter(function(pl){ return pl !== custom; });
-    userPlaylists._localLoaded = true;
-    saveLocalUserPlaylists();
-    showToast('已删除歌单：' + (custom.name || '我的歌单'));
+    requestDeleteLocalUserPlaylist(custom.id);
+    return;
   }
   renderHomeDiscover();
   renderLocalLibraryPlaylistPanel({ animate:false });
@@ -23981,7 +23990,7 @@ function secondaryLibraryCollections() {
   (localFolderPlaylists || []).forEach(function(item, index){
     var songs = playlistSongsWithinLimit(item.songs);
     var key = playlistStableKey('folder', item, index);
-    entries.push({ key:key, orderKey:key, sourceOrder:sourceOrder++, kind:'folder', name:item.name || '文件夹歌单', meta:songs.length + ' 首 · 本地文件夹', songs:songs, cover:item.cover || songs[0] && songCoverSrc(songs[0], 220) || '', source:item });
+    entries.push({ key:key, orderKey:key, sourceOrder:sourceOrder++, kind:'folder', name:item.name || '文件夹歌单', meta:songs.length + ' 首 · 本地文件夹', songs:songs, cover:item.cover || songs[0] && songCoverSrc(songs[0], 220) || '', source:item, folderIndex:index });
   });
   (lxMirrorPlaylists || []).forEach(function(item, index){
     var songs = playlistSongsWithinLimit(item.songs);
@@ -24047,7 +24056,7 @@ function secondaryLibraryEntryCanSync(entry) {
   return !!(entry && entry.kind === 'lx' && (isSyncableLxPlaylist(entry.source) || isLxFileImportedPlaylist(entry.source)));
 }
 function secondaryLibraryEntryCanManage(entry) {
-  return !!(entry && (entry.kind === 'custom' || entry.kind === 'lx'));
+  return !!(entry && (entry.kind === 'custom' || entry.kind === 'folder' || entry.kind === 'lx'));
 }
 function syncSecondaryLibraryManageToolbar() {
   var toggle = document.getElementById('secondary-library-manage-toggle');
@@ -24318,6 +24327,7 @@ function renderSecondaryLibraryDetail() {
   var fileImported = isLxFileImportedPlaylist(entry.source);
   var syncLabel = isLxNativePlaylist(entry.source) ? '同步落雪' : (fileImported ? '更新 .lxmc' : '同步歌单');
   var syncTitle = isLxNativePlaylist(entry.source) ? '从落雪电脑端重新读取歌单并保留 Mineradio 手动添加的歌曲' : (fileImported ? '选择落雪最新导出的 .lxmc 文件更新这个歌单' : '从原平台重新读取歌单并保留手动添加的歌曲');
+  var deleteLabel = entry.kind === 'folder' ? '移除歌单' : (entry.kind === 'lx' && isLxNativePlaylist(entry.source) ? '隐藏歌单' : '删除歌单');
   var batchBar = secondaryLibraryBatchMode ? '<div class="secondary-library-batch-bar"><button class="secondary-action" type="button" onclick="selectAllSecondaryLibraryBatch()">全选</button><button class="secondary-action" type="button" onclick="clearSecondaryLibraryBatchSelection()">清除</button><button class="secondary-action primary" type="button" onclick="openSecondaryLibraryBatchCollect()">导入到其他歌单</button><span class="secondary-library-batch-count">已选 ' + secondaryLibraryBatchSelected.length + ' 首</span></div>' : '';
   root.innerHTML = '<div class="library-detail-head"><div class="library-detail-title"><strong>' + escHtml(entry.name) + '</strong><span>' + escHtml(entry.searchMeta || entry.meta) + (canReorder ? ' · 拖动左侧手柄调整顺序' : '') + '</span></div>' +
     '<div class="secondary-head-actions"><button class="secondary-action primary" type="button" onclick="playSecondaryLibraryCollection()">' + (entry.searchSongs ? '播放结果' : '播放全部') + '</button>' +
@@ -24325,7 +24335,7 @@ function renderSecondaryLibraryDetail() {
     (canCustomizeCover && entry.customCover ? '<button class="secondary-action" type="button" onclick="clearSecondaryPlaylistCover()" title="恢复歌单原封面">恢复封面</button>' : '') +
     (secondaryLibraryEntryCanSync(entry) ? '<button class="secondary-action" type="button" onclick="syncSecondaryLibraryPlaylist()" title="' + syncTitle + '"' + (syncBusy ? ' disabled' : '') + '>' + (syncBusy ? '同步中…' : syncLabel) + '</button>' : '') +
     '<button class="secondary-action" type="button" onclick="toggleSecondaryLibraryBatchMode()">' + (secondaryLibraryBatchMode ? '取消选择' : '批量选择') + '</button>' +
-    (secondaryLibraryEntryCanDelete(entry) ? '<button class="secondary-action danger" type="button" onclick="deleteSecondaryLibraryPlaylist()">删除歌单</button>' : '') + '</div></div>' +
+    (secondaryLibraryEntryCanDeletePlaylist(entry) ? '<button class="secondary-action danger" type="button" onclick="deleteSecondaryLibraryPlaylist()">' + deleteLabel + '</button>' : '') + '</div></div>' +
     batchBar + '<div class="library-track-list">' + (songs.length ? songs.map(function(song, index){
       var cover = songCoverSrc(song, 96);
       var image = cover ? '<img class="library-track-cover" src="' + escHtml(cover) + '" alt="" loading="lazy" width="42" height="42">' : '<span class="library-track-cover"></span>';
@@ -24485,6 +24495,9 @@ async function syncAllSecondaryLxPlaylists() {
 function secondaryLibraryEntryCanDelete(entry) {
   return !!(entry && (entry.kind === 'custom' || entry.kind === 'lx'));
 }
+function secondaryLibraryEntryCanDeletePlaylist(entry) {
+  return !!(entry && (entry.kind === 'custom' || entry.kind === 'folder' || entry.kind === 'lx'));
+}
 function openSecondaryLibraryBatchManageDialog() {
   var selectedKeys = secondaryLibraryManageSelectedKeys.slice();
   var selected = secondaryLibraryCollections().filter(function(entry){
@@ -24492,7 +24505,7 @@ function openSecondaryLibraryBatchManageDialog() {
   });
   if (!selected.length) { showToast('请先选择要管理的歌单'); return; }
   var deleteCount = selected.filter(function(entry){
-    return entry.kind === 'custom' || (entry.kind === 'lx' && entry.source && entry.source.imported && !isLxNativePlaylist(entry.source));
+    return entry.kind === 'custom' || entry.kind === 'folder' || (entry.kind === 'lx' && entry.source && entry.source.imported && !isLxNativePlaylist(entry.source));
   }).length;
   var hideCount = selected.length - deleteCount;
   var old = document.getElementById('secondary-playlist-batch-manage-mask');
@@ -24513,11 +24526,16 @@ function openSecondaryLibraryBatchManageDialog() {
     var hidden = readHiddenPlaylistKeys();
     var hiddenChanged = false;
     var customIds = [];
+    var folderPaths = [];
     var importedIds = [];
     var mirrorKeys = [];
     selected.forEach(function(entry){
       if (entry.kind === 'custom') {
         customIds.push(String(entry.source && entry.source.id || ''));
+        return;
+      }
+      if (entry.kind === 'folder') {
+        folderPaths.push(String(entry.source && entry.source.folderPath || ''));
         return;
       }
       var list = entry.source || {};
@@ -24530,9 +24548,12 @@ function openSecondaryLibraryBatchManageDialog() {
       }
     });
     if (customIds.length) {
-      userPlaylists = (userPlaylists || []).filter(function(pl){ return !pl || customIds.indexOf(String(pl.id || '')) < 0; });
-      userPlaylists._localLoaded = true;
-      saveLocalUserPlaylists();
+      var customResult = removeLocalUserPlaylistRecords(customIds, { refresh:false });
+      if (!customResult.ok) { showToast('本地歌单保存失败，批量操作已停止'); return; }
+    }
+    if (folderPaths.length) {
+      var folderResult = removeLocalFolderPlaylistRecords(folderPaths, { refresh:false });
+      if (!folderResult.ok) { showToast('文件夹歌单保存失败，批量操作已停止'); return; }
     }
     if (importedIds.length) {
       lxImportedPlaylists = (lxImportedPlaylists || []).filter(function(list){ return !list || importedIds.indexOf(String(list.id || '')) < 0; });
@@ -24545,13 +24566,13 @@ function openSecondaryLibraryBatchManageDialog() {
       });
       lxMirrorActivePlaylist = -1;
     }
+    var removedOrderKeys = selected.map(function(entry){ return entry.orderKey || entry.key; });
+    saveHomePlaylistOrder(readHomePlaylistOrder().filter(function(key){ return removedOrderKeys.indexOf(key) < 0; }));
     secondaryLibraryManageMode = false;
     secondaryLibraryManageSelectedKeys = [];
     secondaryLibrarySelectedKey = '';
     closeDialog();
-    renderSecondaryLibrary();
-    renderHomeDiscover();
-    renderLocalLibraryPlaylistPanel({ animate:false });
+    refreshSharedPlaylistOrderViews();
     showToast('已处理 ' + selected.length + ' 个歌单' + (deleteCount ? '，删除 ' + deleteCount + ' 个' : '') + (hideCount ? '，隐藏 ' + hideCount + ' 个' : ''));
   }
   mask.addEventListener('click', function(event){
@@ -24563,19 +24584,23 @@ function openSecondaryLibraryBatchManageDialog() {
 }
 function deleteSecondaryLibraryPlaylist() {
   var entry = selectedSecondaryLibraryEntry();
-  if (!secondaryLibraryEntryCanDelete(entry)) {
+  if (!secondaryLibraryEntryCanDeletePlaylist(entry)) {
     showToast('这个系统歌单不能删除');
     return;
   }
   var old = document.getElementById('secondary-playlist-delete-mask');
   if (old) old.remove();
+  var removeFolder = entry.kind === 'folder';
+  var hideNativeLx = entry.kind === 'lx' && isLxNativePlaylist(entry.source);
+  var dialogTitle = removeFolder ? '移除本地文件夹歌单' : (hideNativeLx ? '隐藏落雪同步歌单' : '删除歌单');
+  var dialogVerb = removeFolder ? '移除' : (hideNativeLx ? '隐藏' : '删除');
   var mask = document.createElement('div');
   mask.id = 'secondary-playlist-delete-mask';
   mask.className = 'playlist-select-mask';
   mask.innerHTML = '<div class="playlist-select-dialog" role="dialog" aria-modal="true" aria-labelledby="secondary-playlist-delete-title" style="width:min(430px,calc(100vw - 32px))">' +
-    '<div class="playlist-select-head"><div><strong id="secondary-playlist-delete-title">删除歌单</strong><br><small>歌曲文件和正在播放的队列不会被删除</small></div><button class="fx-mini-btn ghost" type="button" data-delete-close="1">关闭</button></div>' +
-    '<div style="padding:18px 2px 8px;color:rgba(255,255,255,.78);line-height:1.7">确定删除歌单“<strong style="color:#fff">' + escHtml(entry.name || '未命名歌单') + '</strong>”吗？</div>' +
-    '<div class="playlist-select-actions"><div></div><div><button class="fx-mini-btn ghost" type="button" data-delete-close="1">取消</button><button class="fx-mini-btn" type="button" data-delete-save="1" style="color:#ff9aa7;border-color:rgba(255,83,103,.32)">确认删除</button></div></div>' +
+    '<div class="playlist-select-head"><div><strong id="secondary-playlist-delete-title">' + dialogTitle + '</strong><br><small>只移除 Mineradio 中的记录，不会删除硬盘音乐文件或清空当前播放队列</small></div><button class="fx-mini-btn ghost" type="button" data-delete-close="1">关闭</button></div>' +
+    '<div style="padding:18px 2px 8px;color:rgba(255,255,255,.78);line-height:1.7">确定' + dialogVerb + '歌单“<strong style="color:#fff">' + escHtml(entry.name || '未命名歌单') + '</strong>”吗？</div>' +
+    '<div class="playlist-select-actions"><div></div><div><button class="fx-mini-btn ghost" type="button" data-delete-close="1">取消</button><button class="fx-mini-btn" type="button" data-delete-save="1" style="color:#ff9aa7;border-color:rgba(255,83,103,.32)">确认' + dialogVerb + '</button></div></div>' +
     '</div>';
   document.body.appendChild(mask);
   function closeDeleteDialog() { if (mask.parentNode) mask.remove(); }
@@ -24583,9 +24608,11 @@ function deleteSecondaryLibraryPlaylist() {
     var deletedName = entry.name || '未命名歌单';
     if (entry.kind === 'custom') {
       var sourceId = String(entry.source && entry.source.id || entry.key.replace(/^custom:/, ''));
-      userPlaylists = (userPlaylists || []).filter(function(pl){ return !pl || String(pl.id || '') !== sourceId; });
-      userPlaylists._localLoaded = true;
-      saveLocalUserPlaylists();
+      var customResult = removeLocalUserPlaylistRecord(sourceId, { refresh:false });
+      if (!customResult.ok) { showToast('歌单保存失败，未执行删除'); return; }
+    } else if (entry.kind === 'folder') {
+      var folderResult = removeLocalFolderPlaylistRecord(entry.source && entry.source.folderPath, { refresh:false });
+      if (!folderResult.ok) { showToast('文件夹歌单保存失败，未执行移除'); return; }
     } else if (entry.kind === 'lx') {
       var list = entry.source || {};
       var listId = String(list.id || '');
@@ -24605,12 +24632,11 @@ function deleteSecondaryLibraryPlaylist() {
       });
       lxMirrorActivePlaylist = -1;
     }
+    saveHomePlaylistOrder(readHomePlaylistOrder().filter(function(key){ return key !== (entry.orderKey || entry.key); }));
     secondaryLibrarySelectedKey = '';
     closeDeleteDialog();
-    renderSecondaryLibrary();
-    renderHomeDiscover();
-    renderLocalLibraryPlaylistPanel({ animate:false });
-    showToast('已删除歌单：' + deletedName);
+    refreshSharedPlaylistOrderViews();
+    showToast((removeFolder ? '已移除歌单：' : (hideNativeLx ? '已隐藏歌单：' : '已删除歌单：')) + deletedName);
   }
   mask.addEventListener('click', function(event){
     if (event.target === mask || event.target.closest('[data-delete-close]')) closeDeleteDialog();
@@ -25809,8 +25835,71 @@ function saveLocalUserPlaylists() {
         updatedAt: pl.updatedAt || Date.now()
       };
     });
-    setPersistentLocalStorageItem(LOCAL_USER_PLAYLISTS_STORE_KEY, JSON.stringify(data));
-  } catch (e) {}
+    var serialized = JSON.stringify(data);
+    setPersistentLocalStorageItem(LOCAL_USER_PLAYLISTS_STORE_KEY, serialized);
+    return localStorage.getItem(LOCAL_USER_PLAYLISTS_STORE_KEY) === serialized;
+  } catch (e) {
+    return false;
+  }
+}
+function removeLocalUserPlaylistRecords(ids, options) {
+  options = options || {};
+  ensureLocalUserPlaylistsLoaded();
+  var wanted = Object.create(null);
+  (Array.isArray(ids) ? ids : [ids]).forEach(function(id){
+    id = String(id || '');
+    if (id) wanted[id] = true;
+  });
+  var targets = (userPlaylists || []).filter(function(pl){
+    return !!(pl && pl.localUserPlaylist && wanted[String(pl.id || '')]);
+  });
+  if (!targets.length) return { ok:false, error:'PLAYLIST_NOT_FOUND', count:0, names:[] };
+  var previous = userPlaylists;
+  var targetIds = Object.create(null);
+  targets.forEach(function(pl){ targetIds[String(pl.id || '')] = true; });
+  var next = (userPlaylists || []).filter(function(pl){
+    return !pl || !pl.localUserPlaylist || !targetIds[String(pl.id || '')];
+  });
+  next._localLoaded = true;
+  userPlaylists = next;
+  if (!saveLocalUserPlaylists()) {
+    userPlaylists = previous;
+    userPlaylists._localLoaded = true;
+    return { ok:false, error:'PLAYLIST_SAVE_FAILED', count:0, names:[] };
+  }
+  var orderKeys = targets.map(function(pl){ return playlistStableKey('custom', pl, pl.id); });
+  var panelKeys = targets.map(function(pl){ return playlistPanelKey('local-user', pl.id); });
+  saveHomePlaylistOrder(readHomePlaylistOrder().filter(function(key){ return orderKeys.indexOf(key) < 0; }));
+  var covers = readPlaylistCustomCoverMap();
+  var coversChanged = false;
+  orderKeys.forEach(function(key){
+    if (Object.prototype.hasOwnProperty.call(covers, key)) { delete covers[key]; coversChanged = true; }
+  });
+  if (coversChanged) savePlaylistCustomCoverMap();
+  if (orderKeys.indexOf(secondaryLibrarySelectedKey) >= 0) secondaryLibrarySelectedKey = '';
+  secondaryLibraryManageSelectedKeys = (secondaryLibraryManageSelectedKeys || []).filter(function(key){ return orderKeys.indexOf(key) < 0; });
+  if (orderKeys.indexOf(leftPanelJoinedExpandedKey) >= 0) leftPanelJoinedExpandedKey = '';
+  orderKeys.forEach(function(key){ if (leftPanelJoinedSelectedKeys) delete leftPanelJoinedSelectedKeys[key]; });
+  if (playlistPanelDetailState && (panelKeys.indexOf(playlistPanelDetailState.key) >= 0 || playlistPanelDetailState.playlist && targetIds[String(playlistPanelDetailState.playlist.id || '')])) {
+    playlistPanelDetailState = { key:'', loading:false, playlist:null, tracks:[], token:Date.now(), renderLimit:PLAYLIST_DETAIL_INITIAL_RENDER, query:'', batchMode:false, selected:[] };
+  }
+  if (options.refresh !== false) refreshSharedPlaylistOrderViews();
+  return { ok:true, count:targets.length, names:targets.map(function(pl){ return pl.name || '本地歌单'; }) };
+}
+function removeLocalUserPlaylistRecord(id, options) {
+  return removeLocalUserPlaylistRecords([id], options);
+}
+function requestDeleteLocalUserPlaylist(id) {
+  ensureLocalUserPlaylistsLoaded();
+  var target = (userPlaylists || []).find(function(pl){
+    return !!(pl && pl.localUserPlaylist && String(pl.id || '') === String(id || ''));
+  });
+  if (!target) { showToast('歌单不存在或已经删除'); return false; }
+  if (!window.confirm('确定删除本地歌单“' + (target.name || '本地歌单') + '”吗？\n只会删除 Mineradio 中的歌单记录，不会删除硬盘音乐文件，也不会清空当前播放队列。')) return false;
+  var result = removeLocalUserPlaylistRecord(target.id);
+  if (!result.ok) { showToast('歌单保存失败，未执行删除'); return false; }
+  showToast('已删除歌单：' + (target.name || '本地歌单'));
+  return true;
 }
 function ensureLocalUserPlaylistsLoaded() {
   if (userPlaylists && userPlaylists._localLoaded) return;
@@ -29818,7 +29907,7 @@ function findPlaybackSessionIndex(songs, session) {
  */
 function restorePlaybackSessionForLocalLibrary(songs, folderPath) {
   var session = readPlaybackSession();
-  if (!session || !folderPath || session.folderPath !== folderPath) return false;
+  if (!session || !folderPath || localFolderPathIdentity(session.folderPath) !== localFolderPathIdentity(folderPath)) return false;
   var idx = findPlaybackSessionIndex(songs, session);
   if (idx < 0) return false;
   currentIdx = idx;
@@ -32159,9 +32248,11 @@ function deleteSelectedLeftPanelJoinedPlaylists(event) {
       if (collection.kind === 'custom') customIds[String(collection.source && collection.source.id || '')] = true;
       else if (collection.kind === 'lx' && collection.source) lxKeys[playlistVisibilityKey(collection.source)] = collection.source;
     });
-    userPlaylists = (userPlaylists || []).filter(function(pl){ return !pl || !customIds[String(pl.id || '')]; });
-    userPlaylists._localLoaded = true;
-    saveLocalUserPlaylists();
+    var customIdList = Object.keys(customIds);
+    if (customIdList.length) {
+      var customResult = removeLocalUserPlaylistRecords(customIdList, { refresh:false });
+      if (!customResult.ok) { showToast('本地歌单保存失败，批量删除已停止'); return; }
+    }
     var hidden = readHiddenPlaylistKeys();
     Object.keys(lxKeys).forEach(function(key){
       var list = lxKeys[key];
@@ -32767,7 +32858,7 @@ function playlistPanelDetailHtml(pl, provider) {
     '<div class="pl-detail-sticky">' +
       '<div class="pl-detail-head">' + img + '<div style="flex:1;min-width:0"><div class="pl-detail-title">' + escHtml(pl.name || '歌单详情') + '</div><div class="pl-detail-sub">' + escHtml((pl.trackCount || tracks.length || 0) + ' 首 · ' + (pl.creator || '本地音乐库')) + '</div></div><div class="pl-detail-count">' + (loading ? '载入中' : (renderLimit + '/' + filteredEntries.length)) + '</div></div>' +
       '<div class="pl-detail-search-label">搜索当前歌单</div><label class="pl-detail-search"><input type="search" data-pl-detail-search="1" value="' + escHtml(query) + '" placeholder="输入歌名、歌手或专辑"></label>' +
-      '<div class="pl-detail-actions"><button class="pl-detail-play" type="button" data-pl-detail-play="' + escHtml(key) + '"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>播放歌单</button><button class="fx-mini-btn ghost" type="button" data-pl-batch-toggle="1">' + (playlistPanelDetailState.batchMode ? '取消选择' : '批量选择') + '</button>' + (playlistPanelDetailState.batchMode ? '<button class="fx-mini-btn ghost" type="button" data-pl-batch-all="1">全选当前结果</button><button class="fx-mini-btn primary" type="button" data-pl-batch-import="1">导入到其他歌单</button><span class="pl-detail-batch-count">已选 ' + (playlistPanelDetailState.selected || []).length + ' 首</span>' : '') + '<button class="fx-mini-btn ghost pl-detail-top-btn" type="button" data-pl-detail-top="1">回到顶部</button></div>' +
+      '<div class="pl-detail-actions"><button class="pl-detail-play" type="button" data-pl-detail-play="' + escAttr(key) + '"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>播放歌单</button><button class="fx-mini-btn ghost" type="button" data-pl-batch-toggle="1">' + (playlistPanelDetailState.batchMode ? '取消选择' : '批量选择') + '</button>' + (playlistPanelDetailState.batchMode ? '<button class="fx-mini-btn ghost" type="button" data-pl-batch-all="1">全选当前结果</button><button class="fx-mini-btn primary" type="button" data-pl-batch-import="1">导入到其他歌单</button><span class="pl-detail-batch-count">已选 ' + (playlistPanelDetailState.selected || []).length + ' 首</span>' : '') + (provider === 'local-user' ? '<button class="fx-mini-btn ghost pl-detail-delete-playlist" type="button" data-local-user-playlist-delete="' + escAttr(String(pl.id || '')) + '">删除歌单</button>' : '') + '<button class="fx-mini-btn ghost pl-detail-top-btn" type="button" data-pl-detail-top="1">回到顶部</button></div>' +
     '</div>' +
     '<div class="pl-detail-list">' + rows + '</div>' +
   '</div>';
@@ -32982,6 +33073,7 @@ function playlistPanelEntryHtml(entry) {
     var html = '<div class="pl-card' + (playlistPanelDetailState.key === key ? ' expanded' : '') + '" data-local-user-playlist-id="' + escHtml(String(item.id)) + '"' + panelOrderAttr + '>' +
       image +
       '<div style="flex:1;min-width:0"><div class="pl-name">' + escHtml(item.name || '本地歌单') + '</div><div class="pl-sub">' + (item.songs || []).length + ' 首 · 本地保存</div></div>' +
+      '<button type="button" class="pl-card-delete-playlist" data-local-user-playlist-delete="' + escAttr(String(item.id)) + '" title="删除歌单" aria-label="删除歌单 ' + escAttr(item.name || '本地歌单') + '">删</button>' +
     '</div>';
     if (playlistPanelDetailState.key === key) html += playlistPanelDetailHtml(item, 'local-user');
     return html;
@@ -32994,6 +33086,7 @@ function playlistPanelEntryHtml(entry) {
     return '<div class="pl-card" data-local-folder-index="' + folderIndex + '"' + panelOrderAttr + '>' +
       folderImage +
       '<div style="flex:1;min-width:0"><div class="pl-name">' + escHtml(item.name || '本地歌单') + '</div><div class="pl-sub">' + (item.songs || []).length + ' 首 · ' + escHtml(item.folderPath || '') + '</div></div>' +
+      '<button type="button" class="pl-card-delete-playlist" data-local-folder-playlist-delete="' + escAttr(String(item.folderPath || '')) + '" title="从 Mineradio 移除，不删除硬盘文件" aria-label="移除文件夹歌单 ' + escAttr(item.name || '本地歌单') + '">删</button>' +
     '</div>';
   }
   if (entry.kind === 'lx') {
@@ -33270,6 +33363,7 @@ function renderLocalLibraryPlaylistPanel(opts) {
         var html = '<div class="pl-card' + (playlistPanelDetailState.key === key ? ' expanded' : '') + '" data-local-user-playlist-id="' + escHtml(String(pl.id)) + '">' +
           image +
           '<div style="flex:1;min-width:0"><div class="pl-name">' + escHtml(pl.name || '本地歌单') + '</div><div class="pl-sub">' + (pl.songs || []).length + ' 首 · 本地保存</div></div>' +
+          '<button type="button" class="pl-card-delete-playlist" data-local-user-playlist-delete="' + escAttr(String(pl.id)) + '" title="删除歌单" aria-label="删除歌单 ' + escAttr(pl.name || '本地歌单') + '">删</button>' +
         '</div>';
         if (playlistPanelDetailState.key === key) html += playlistPanelDetailHtml(pl, 'local-user');
         return html;
@@ -33286,6 +33380,7 @@ function renderLocalLibraryPlaylistPanel(opts) {
         return '<div class="pl-card" data-local-folder-index="' + folderIndex + '">' +
           image +
           '<div style="flex:1;min-width:0"><div class="pl-name">' + escHtml(folder.name || '本地歌单') + '</div><div class="pl-sub">' + (folder.songs || []).length + ' 首 · ' + escHtml(folder.folderPath || '') + '</div></div>' +
+          '<button type="button" class="pl-card-delete-playlist" data-local-folder-playlist-delete="' + escAttr(String(folder.folderPath || '')) + '" title="从 Mineradio 移除，不删除硬盘文件" aria-label="移除文件夹歌单 ' + escAttr(folder.name || '本地歌单') + '">删</button>' +
         '</div>';
       }).join('') +
       '');
@@ -33366,6 +33461,20 @@ document.getElementById('pl-list').addEventListener('click', function(e){
   if (batchAll) { e.preventDefault(); e.stopPropagation(); playlistPanelDetailState.selected = playlistPanelFilteredTrackEntries().map(function(entry){return entry.index;}); renderPlaylistPanelDetailState(); return; }
   var batchImport = e.target && e.target.closest ? e.target.closest('[data-pl-batch-import]') : null;
   if (batchImport) { e.preventDefault(); e.stopPropagation(); var chosen=(playlistPanelDetailState.selected||[]).map(function(i){return playlistPanelDetailState.tracks[i];}).filter(Boolean); if(!chosen.length){showToast('请先选择要导入的歌曲');return;} collectTargetSongs=chosen.map(cloneSong); collectTargetSong=collectTargetSongs[0]; renderCollectModal(); openGsapModal(document.getElementById('collect-modal')); return; }
+  var userPlaylistDelete = e.target && e.target.closest ? e.target.closest('[data-local-user-playlist-delete]') : null;
+  if (userPlaylistDelete) {
+    e.preventDefault();
+    e.stopPropagation();
+    requestDeleteLocalUserPlaylist(userPlaylistDelete.getAttribute('data-local-user-playlist-delete'));
+    return;
+  }
+  var folderPlaylistDelete = e.target && e.target.closest ? e.target.closest('[data-local-folder-playlist-delete]') : null;
+  if (folderPlaylistDelete) {
+    e.preventDefault();
+    e.stopPropagation();
+    requestRemoveLocalFolderPlaylist(folderPlaylistDelete.getAttribute('data-local-folder-playlist-delete'));
+    return;
+  }
   if (playlistPanelSuppressClick || playlistSongSuppressClick) { e.preventDefault(); e.stopPropagation(); return; }
   var importedRemove = e.target && e.target.closest ? e.target.closest('[data-lx-imported-remove]') : null;
   if (importedRemove) {
@@ -35570,13 +35679,40 @@ async function preloadLocalSongAssets(song, opts) {
 function savedLocalLibraryFolderPath() {
   try { return localStorage.getItem(LOCAL_LIBRARY_FOLDER_STORE_KEY) || ''; } catch (e) { return ''; }
 }
+function localFolderPathIdentity(folderPath) {
+  return String(folderPath || '').trim().replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase();
+}
+function markLocalFolderPathMutation(folderPath) {
+  var key = localFolderPathIdentity(folderPath);
+  if (!key) return 0;
+  localFolderPathMutationSerial++;
+  localFolderPathMutationVersions[key] = localFolderPathMutationSerial;
+  return localFolderPathMutationSerial;
+}
+function localFolderPathMutationVersion(folderPath) {
+  return localFolderPathMutationVersions[localFolderPathIdentity(folderPath)] || 0;
+}
+function isLocalFolderRemovalTombstoned(folderPath) {
+  var key = localFolderPathIdentity(folderPath);
+  return !!(key && localFolderRemovalTombstones[key]);
+}
+function isLocalFolderPathCurrentlySaved(folderPath) {
+  var key = localFolderPathIdentity(folderPath);
+  return !!(key && savedLocalLibraryFolderPaths().some(function(item){ return localFolderPathIdentity(item) === key; }));
+}
 function savedLocalLibraryFolderPaths() {
   try {
     var paths = JSON.parse(localStorage.getItem(LOCAL_LIBRARY_FOLDERS_STORE_KEY) || '[]');
     if (!Array.isArray(paths)) paths = [];
     var legacy = savedLocalLibraryFolderPath();
-    if (legacy && paths.indexOf(legacy) < 0) paths.unshift(legacy);
-    return paths.map(function(value){ return String(value || '').trim(); }).filter(Boolean);
+    if (legacy && !paths.some(function(item){ return localFolderPathIdentity(item) === localFolderPathIdentity(legacy); })) paths.unshift(legacy);
+    var seen = Object.create(null);
+    return paths.map(function(value){ return String(value || '').trim(); }).filter(function(value){
+      var key = localFolderPathIdentity(value);
+      if (!key || seen[key]) return false;
+      seen[key] = true;
+      return true;
+    });
   } catch (e) {
     var legacyPath = savedLocalLibraryFolderPath();
     return legacyPath ? [legacyPath] : [];
@@ -35584,17 +35720,99 @@ function savedLocalLibraryFolderPaths() {
 }
 function saveLocalLibraryFolderPaths(paths) {
   var clean = [];
+  var seen = Object.create(null);
   (paths || []).forEach(function(value){
     value = String(value || '').trim();
-    if (value && clean.indexOf(value) < 0) clean.push(value);
+    var key = localFolderPathIdentity(value);
+    if (value && key && !seen[key]) { seen[key] = true; clean.push(value); }
   });
   setPersistentLocalStorageItem(LOCAL_LIBRARY_FOLDERS_STORE_KEY, JSON.stringify(clean));
   if (clean.length) saveLocalLibraryFolderPath(clean[clean.length - 1]);
+  else removePersistentLocalStorageItem(LOCAL_LIBRARY_FOLDER_STORE_KEY);
+  try {
+    var persisted = JSON.parse(localStorage.getItem(LOCAL_LIBRARY_FOLDERS_STORE_KEY) || '[]');
+    return Array.isArray(persisted) && JSON.stringify(persisted) === JSON.stringify(clean) && (clean.length > 0 || !localStorage.getItem(LOCAL_LIBRARY_FOLDER_STORE_KEY));
+  } catch (_error) {
+    return false;
+  }
+}
+function removeLocalFolderPlaylistRecords(folderPaths, options) {
+  options = options || {};
+  var wanted = Object.create(null);
+  var requestedPaths = [];
+  (Array.isArray(folderPaths) ? folderPaths : [folderPaths]).forEach(function(folderPath){
+    folderPath = String(folderPath || '').trim();
+    var key = localFolderPathIdentity(folderPath);
+    if (folderPath && key && !wanted[key]) { wanted[key] = true; requestedPaths.push(folderPath); }
+  });
+  var targets = (localFolderPlaylists || []).filter(function(folder){
+    return !!(folder && wanted[localFolderPathIdentity(folder.folderPath)]);
+  });
+  var previousSavedPaths = savedLocalLibraryFolderPaths();
+  var storedTargets = previousSavedPaths.filter(function(folderPath){ return !!wanted[localFolderPathIdentity(folderPath)]; });
+  if (!targets.length && !storedTargets.length) return { ok:false, error:'FOLDER_PLAYLIST_NOT_FOUND', count:0, names:[] };
+  var previousFolders = localFolderPlaylists;
+  var previousSongs = localLibrarySongs;
+  var previousTombstones = Object.create(null);
+  Object.keys(wanted).forEach(function(key){
+    previousTombstones[key] = !!localFolderRemovalTombstones[key];
+    localFolderRemovalTombstones[key] = true;
+    markLocalFolderPathMutation(key);
+  });
+  localFolderPlaylists = (localFolderPlaylists || []).filter(function(folder){
+    return !folder || !wanted[localFolderPathIdentity(folder.folderPath)];
+  });
+  localLibrarySongs = [];
+  localFolderPlaylists.forEach(function(folder){
+    (folder.songs || []).forEach(function(song){
+      song.localFolderPath = folder.folderPath;
+      song.localFolderName = folder.name;
+      localLibrarySongs.push(song);
+    });
+  });
+  var nextSavedPaths = previousSavedPaths.filter(function(folderPath){ return !wanted[localFolderPathIdentity(folderPath)]; });
+  if (!saveLocalLibraryFolderPaths(nextSavedPaths)) {
+    localFolderPlaylists = previousFolders;
+    localLibrarySongs = previousSongs;
+    Object.keys(wanted).forEach(function(key){
+      if (previousTombstones[key]) localFolderRemovalTombstones[key] = true;
+      else delete localFolderRemovalTombstones[key];
+    });
+    return { ok:false, error:'FOLDER_PLAYLIST_SAVE_FAILED', count:0, names:[] };
+  }
+  [LOCAL_LIBRARY_SNAPSHOT_STORE_KEY, LOCAL_LIBRARY_INDEX_STORE_KEY].forEach(function(key){
+    try {
+      var data = JSON.parse(localStorage.getItem(key) || 'null');
+      if (data && wanted[localFolderPathIdentity(data.folderPath)]) localStorage.removeItem(key);
+    } catch (_error) {}
+  });
+  var orderKeys = targets.map(function(folder){ return playlistStableKey('folder', folder, folder.folderPath); });
+  saveHomePlaylistOrder(readHomePlaylistOrder().filter(function(key){ return orderKeys.indexOf(key) < 0; }));
+  if (orderKeys.indexOf(secondaryLibrarySelectedKey) >= 0) secondaryLibrarySelectedKey = '';
+  secondaryLibraryManageSelectedKeys = (secondaryLibraryManageSelectedKeys || []).filter(function(key){ return orderKeys.indexOf(key) < 0; });
+  if (options.refresh !== false) refreshSharedPlaylistOrderViews();
+  return { ok:true, count:Math.max(targets.length, storedTargets.length), names:targets.map(function(folder){ return folder.name || '本地文件夹'; }) };
+}
+function removeLocalFolderPlaylistRecord(folderPath, options) {
+  return removeLocalFolderPlaylistRecords([folderPath], options);
+}
+function requestRemoveLocalFolderPlaylist(folderPath) {
+  var requestedKey = localFolderPathIdentity(folderPath);
+  var target = (localFolderPlaylists || []).find(function(folder){ return localFolderPathIdentity(folder && folder.folderPath) === requestedKey; });
+  if (!target) { showToast('文件夹歌单不存在或已经移除'); return false; }
+  if (!window.confirm('确定从 Mineradio 移除文件夹歌单“' + (target.name || '本地文件夹') + '”吗？\n不会删除硬盘音乐文件，也不会清空当前播放队列。')) return false;
+  var result = removeLocalFolderPlaylistRecord(target.folderPath);
+  if (!result.ok) { showToast('文件夹歌单保存失败，未执行移除'); return false; }
+  showToast('已移除歌单，硬盘文件未删除');
+  return true;
 }
 function rememberLocalLibraryFolderPath(folderPath) {
   if (!folderPath) return;
+  var key = localFolderPathIdentity(folderPath);
+  if (key) delete localFolderRemovalTombstones[key];
+  markLocalFolderPathMutation(folderPath);
   var paths = savedLocalLibraryFolderPaths();
-  if (paths.indexOf(folderPath) < 0) paths.push(folderPath);
+  if (!paths.some(function(item){ return localFolderPathIdentity(item) === key; })) paths.push(folderPath);
   saveLocalLibraryFolderPaths(paths);
 }
 function localFolderPlaylistName(folderPath) {
@@ -35603,8 +35821,10 @@ function localFolderPlaylistName(folderPath) {
 }
 function upsertLocalFolderPlaylist(folderPath, songs) {
   if (!folderPath) return;
-  var index = localFolderPlaylists.findIndex(function(item){ return item && item.folderPath === folderPath; });
-  var entry = { folderPath: folderPath, name: localFolderPlaylistName(folderPath), songs: songs || [] };
+  var folderKey = localFolderPathIdentity(folderPath);
+  var index = localFolderPlaylists.findIndex(function(item){ return item && localFolderPathIdentity(item.folderPath) === folderKey; });
+  var stableFolderPath = index >= 0 && localFolderPlaylists[index].folderPath ? localFolderPlaylists[index].folderPath : folderPath;
+  var entry = { folderPath: stableFolderPath, name: localFolderPlaylistName(stableFolderPath), songs: songs || [] };
   if (index >= 0) localFolderPlaylists[index] = entry;
   else localFolderPlaylists.push(entry);
   localLibrarySongs = [];
@@ -35687,7 +35907,7 @@ function readLocalLibrarySnapshot(folderPath) {
     var raw = localStorage.getItem(LOCAL_LIBRARY_SNAPSHOT_STORE_KEY);
     if (!raw) return null;
     var data = JSON.parse(raw);
-    if (!data || data.schema !== 1 || data.folderPath !== folderPath || !Array.isArray(data.files) || !data.files.length) return null;
+    if (!data || data.schema !== 1 || localFolderPathIdentity(data.folderPath) !== localFolderPathIdentity(folderPath) || !Array.isArray(data.files) || !data.files.length) return null;
     return data;
   } catch (e) {
     return null;
@@ -35741,7 +35961,7 @@ function readLocalLibraryIndex(folderPath) {
     var raw = localStorage.getItem(LOCAL_LIBRARY_INDEX_STORE_KEY);
     if (!raw) return null;
     var data = JSON.parse(raw);
-    if (!data || data.schema !== 1 || data.folderPath !== folderPath || !data.records || typeof data.records !== 'object') return null;
+    if (!data || data.schema !== 1 || localFolderPathIdentity(data.folderPath) !== localFolderPathIdentity(folderPath) || !data.records || typeof data.records !== 'object') return null;
     return data;
   } catch (e) {
     return null;
@@ -35942,9 +36162,12 @@ function saveLocalLibraryIndex(folderPath, songs) {
 }
 function scheduleLocalLibraryIndexSave(folderPath, songs, delay) {
   if (localLibraryIndexWriteTimer) clearTimeout(localLibraryIndexWriteTimer);
+  var scheduledFolderPath = folderPath || savedLocalLibraryFolderPath();
+  var scheduledMutationVersion = localFolderPathMutationVersion(scheduledFolderPath);
   localLibraryIndexWriteTimer = setTimeout(function(){
     localLibraryIndexWriteTimer = null;
-    saveLocalLibraryIndex(folderPath || savedLocalLibraryFolderPath(), songs || localLibrarySongs || []);
+    if (isLocalFolderRemovalTombstoned(scheduledFolderPath) || localFolderPathMutationVersion(scheduledFolderPath) !== scheduledMutationVersion) return;
+    saveLocalLibraryIndex(scheduledFolderPath, songs || localLibrarySongs || []);
   }, delay == null ? 420 : delay);
 }
 async function openLocalFileImport() {
@@ -36023,33 +36246,62 @@ async function openLocalFolderImport() {
     input.click();
   }
 }
+function localFolderScanRequestIsCurrent(folderPath, mutationVersion, resolvedFolderPath) {
+  if (!folderPath) return false;
+  if (isLocalFolderRemovalTombstoned(folderPath) || (resolvedFolderPath && isLocalFolderRemovalTombstoned(resolvedFolderPath))) return false;
+  if (!isLocalFolderPathCurrentlySaved(folderPath) && !(resolvedFolderPath && isLocalFolderPathCurrentlySaved(resolvedFolderPath))) return false;
+  return mutationVersion == null || localFolderPathMutationVersion(folderPath) === mutationVersion;
+}
 async function restoreSavedLocalMusicFolder() {
   var folderPaths = savedLocalLibraryFolderPaths();
   var api = desktopLocalMusicApi();
   if (!folderPaths.length || !api || typeof api.scanLocalMusicFolder !== 'function') return false;
   var restoredCount = 0;
-  var validPaths = [];
+  var initialKeys = Object.create(null);
+  var initialMutationVersions = Object.create(null);
+  var validKeys = Object.create(null);
+  folderPaths.forEach(function(folderPath){
+    var key = localFolderPathIdentity(folderPath);
+    if (!key) return;
+    initialKeys[key] = true;
+    initialMutationVersions[key] = localFolderPathMutationVersion(folderPath);
+  });
   for (var i = 0; i < folderPaths.length; i++) {
     var folderPath = folderPaths[i];
+    var folderKey = localFolderPathIdentity(folderPath);
+    var restoreMutationVersion = initialMutationVersions[folderKey];
+    if (!localFolderScanRequestIsCurrent(folderPath, restoreMutationVersion)) continue;
     try {
       var result = await api.scanLocalMusicFolder(folderPath);
       if (!result || !result.ok) throw new Error(result && result.error || 'LOCAL_LIBRARY_SCAN_FAILED');
+      var resolvedFolderPath = result.folderPath || folderPath;
+      if (!localFolderScanRequestIsCurrent(folderPath, restoreMutationVersion, resolvedFolderPath)) continue;
       await handleLocalFolderFiles(result.files || [], {
         folderOnly: true,
-        folderPath: result.folderPath || folderPath,
+        folderPath: resolvedFolderPath,
         persist: false,
         autoPlay: false,
         restored: true,
         multiRestore: true,
+        restoreFolderPath: folderPath,
+        restoreMutationVersion: restoreMutationVersion,
         truncated: !!result.truncated
       });
-      validPaths.push(result.folderPath || folderPath);
+      if (!localFolderScanRequestIsCurrent(folderPath, restoreMutationVersion, resolvedFolderPath)) continue;
+      validKeys[folderKey] = true;
       restoredCount++;
     } catch (e) {
       console.warn('[LocalLibraryRestore]', folderPath, e);
     }
   }
-  saveLocalLibraryFolderPaths(validPaths);
+  var finalPaths = savedLocalLibraryFolderPaths().filter(function(folderPath){
+    var key = localFolderPathIdentity(folderPath);
+    if (!key || isLocalFolderRemovalTombstoned(folderPath)) return false;
+    if (!initialKeys[key]) return true;
+    if (localFolderPathMutationVersion(folderPath) !== initialMutationVersions[key]) return true;
+    return !!validKeys[key];
+  });
+  saveLocalLibraryFolderPaths(finalPaths);
   // Silently discard stale folder records. Local music is now an optional
   // search source, so a missing old folder should not interrupt every launch.
   return restoredCount > 0;
@@ -36073,27 +36325,34 @@ function scheduleSavedLocalMusicFolderRestore(delay) {
 function refreshSavedLocalMusicFolderInBackground(folderPath, snapshotSignature) {
   var api = desktopLocalMusicApi();
   if (!folderPath || !api || typeof api.scanLocalMusicFolder !== 'function') return;
+  var refreshMutationVersion = localFolderPathMutationVersion(folderPath);
+  if (!localFolderScanRequestIsCurrent(folderPath, refreshMutationVersion)) return;
   setTimeout(function(){
+    if (!localFolderScanRequestIsCurrent(folderPath, refreshMutationVersion)) return;
     api.scanLocalMusicFolder(folderPath).then(function(result){
       if (!result || !result.ok || !result.files || !result.files.length) return;
+      var resolvedFolderPath = result.folderPath || folderPath;
+      if (!localFolderScanRequestIsCurrent(folderPath, refreshMutationVersion, resolvedFolderPath)) return;
       var nextSig = localLibrarySnapshotSignature(result.files || []);
-      saveLocalLibrarySnapshot(result.folderPath || folderPath, result.files || [], !!result.truncated);
+      saveLocalLibrarySnapshot(resolvedFolderPath, result.files || [], !!result.truncated);
       if (snapshotSignature && nextSig === snapshotSignature) {
-        scheduleLocalLibraryIndexSave(result.folderPath || folderPath, localLibrarySongs || [], 900);
+        scheduleLocalLibraryIndexSave(resolvedFolderPath, localLibrarySongs || [], 900);
         return;
       }
       if (playQueue.length) {
         showToast('本地音乐文件夹已更新，下次启动会自动同步');
-        scheduleLocalLibraryIndexSave(result.folderPath || folderPath, localLibrarySongs || [], 900);
+        scheduleLocalLibraryIndexSave(resolvedFolderPath, localLibrarySongs || [], 900);
         return;
       }
       return handleLocalFolderFiles(result.files || [], {
         folderOnly: true,
-        folderPath: result.folderPath || folderPath,
+        folderPath: resolvedFolderPath,
         persist: false,
         autoPlay: false,
         restored: true,
         refreshed: true,
+        restoreFolderPath: folderPath,
+        restoreMutationVersion: refreshMutationVersion,
         truncated: !!result.truncated
       });
     }).catch(function(e){
@@ -36132,6 +36391,14 @@ function analyzeLocalLibraryDuplicates(songs) {
 }
 async function handleLocalFolderFiles(files, opts) {
   opts = opts || {};
+  var importedFolderMutationVersion = null;
+  var importedFolderBulkMutationVersion = opts.restored ? null : localFolderBulkMutationVersion;
+  if (opts.folderPath && !opts.restored) {
+    var importedFolderKey = localFolderPathIdentity(opts.folderPath);
+    if (importedFolderKey) delete localFolderRemovalTombstones[importedFolderKey];
+    importedFolderMutationVersion = markLocalFolderPathMutation(opts.folderPath);
+  }
+  if (opts.restored && opts.folderPath && !localFolderScanRequestIsCurrent(opts.restoreFolderPath || opts.folderPath, opts.restoreMutationVersion, opts.folderPath)) return false;
   var songs = createLocalSongsFromFiles(files, { folderOnly: !!opts.folderOnly });
   var duplicateStats = analyzeLocalLibraryDuplicates(songs);
   if (!songs.length) {
@@ -36155,6 +36422,9 @@ async function handleLocalFolderFiles(files, opts) {
     });
   }
   if (!deferAssetHydration) await assetHydrationPromise;
+  if (!opts.restored && localFolderBulkMutationVersion !== importedFolderBulkMutationVersion) return false;
+  if (opts.folderPath && !opts.restored && (isLocalFolderRemovalTombstoned(opts.folderPath) || localFolderPathMutationVersion(opts.folderPath) !== importedFolderMutationVersion)) return false;
+  if (opts.restored && opts.folderPath && !localFolderScanRequestIsCurrent(opts.restoreFolderPath || opts.folderPath, opts.restoreMutationVersion, opts.folderPath)) return false;
   if (opts.folderPath && opts.persist !== false) rememberLocalLibraryFolderPath(opts.folderPath);
   if (opts.folderPath && !opts.fromSnapshot) saveLocalLibrarySnapshot(opts.folderPath, files, !!opts.truncated);
   finalizeListenSession(false);
@@ -36244,7 +36514,9 @@ async function handleFiles(files) {
   if (audioFile) {
     var lyricFile = findLocalLyricFile(audioFile, buildLocalLyricMaps(list));
     var singleSong = makeLocalSongFromFile(audioFile, lyricFile, imgFile);
+    var singleFileBulkMutationVersion = localFolderBulkMutationVersion;
     await hydrateLocalAssetCacheForSongs([singleSong]);
+    if (localFolderBulkMutationVersion !== singleFileBulkMutationVersion) return;
     finalizeListenSession(false);
     localLibrarySongs = [singleSong];
     playQueue = [singleSong];
@@ -40274,6 +40546,12 @@ function toggleFx(key) {
     showToast('开发中，暂不可用');
     return;
   }
+  if (key === 'wallpaperMode') {
+    startupWallpaperRestorePending = false;
+    startupWallpaperRestoreRequested = false;
+    if (startupWallpaperRestoreTimer) clearTimeout(startupWallpaperRestoreTimer);
+    startupWallpaperRestoreTimer = 0;
+  }
   fx[key] = !fx[key];
   var toggleId = 't-' + (key === 'floatLayer' ? 'float' : key === 'aiDepth' ? 'aidepth' : key);
   var toggle = document.getElementById(toggleId);
@@ -43013,7 +43291,8 @@ document.addEventListener('pointerdown', function(event){
 //  启动页 (splash) 控制
 // ============================================================
 
-var skipStartupSplash = document.documentElement.classList.contains('ui-motion-off');
+var startupSafeMode = /(?:\?|&)mineradio-safe-start=1(?:&|$)/.test(String(location.search || ''));
+var skipStartupSplash = startupSafeMode || document.documentElement.classList.contains('ui-motion-off');
 if (!skipStartupSplash) document.body.classList.add('splash-active');
 var splashAnimating = !skipStartupSplash;
 var splashCanvas = null, splashCtx = null;
@@ -43030,6 +43309,15 @@ var splashSoundFallbackArmed = false;
 var splashTimer = null;
 var reduceSplashMotion = false;
 var splashReadyToEnter = false;
+
+function reportMineradioStartupReady(stage) {
+  try {
+    var api = window.desktopWindow;
+    if (api && typeof api.reportStartupReady === 'function') {
+      api.reportStartupReady({ stage: String(stage || 'home-revealed'), safeMode: startupSafeMode });
+    }
+  } catch (_startupReadyError) {}
+}
 
 function splashClamp01(v) { return Math.max(0, Math.min(1, v)); }
 function splashSmoothstep(edge0, edge1, x) {
@@ -43580,6 +43868,8 @@ function dismissSplash() {
     if (typeof flushHomeWallpaperPrewarmAfterSplash === 'function') flushHomeWallpaperPrewarmAfterSplash();
     if (typeof scheduleSavedLocalMusicFolderRestore === 'function') scheduleSavedLocalMusicFolderRestore(420);
     markAppPerf('home-revealed');
+    reportMineradioStartupReady('home-revealed');
+    if (typeof scheduleSavedWallpaperModeRestore === 'function') scheduleSavedWallpaperModeRestore(520);
     if (s && s.parentNode) s.style.display = 'none';
     requestAnimationFrame(function(){
       var homeShown = updateEmptyHomeVisibility({ forceLoad: true });
@@ -43617,6 +43907,8 @@ document.addEventListener('DOMContentLoaded', function(){
     splashAnimating = false;
     splashReadyToEnter = false;
     document.body.classList.remove('splash-active', 'splash-revealing');
+    reportMineradioStartupReady('no-splash');
+    if (typeof scheduleSavedWallpaperModeRestore === 'function') scheduleSavedWallpaperModeRestore(520);
     return;
   }
   markAppPerf('dom-content-loaded');
@@ -43632,6 +43924,8 @@ document.addEventListener('DOMContentLoaded', function(){
       updateEmptyHomeVisibility({ forceLoad: true });
       if (typeof flushHomeWallpaperPrewarmAfterSplash === 'function') flushHomeWallpaperPrewarmAfterSplash();
       markAppPerf('home-revealed-no-animation');
+      reportMineradioStartupReady(startupSafeMode ? 'safe-home-revealed' : 'home-revealed-no-animation');
+      if (typeof scheduleSavedWallpaperModeRestore === 'function') scheduleSavedWallpaperModeRestore(520);
     });
     return;
   }
@@ -44099,27 +44393,74 @@ function pushWallpaperState(force) {
   desktopOverlayPushState.lastWallpaperKey = key;
   api.updateWallpaperMode(payload).catch(function(e){ console.warn('wallpaper update failed:', e); });
 }
+var startupWallpaperRestorePending = false;
+var startupWallpaperRestoreRequested = false;
+var startupWallpaperRestoreTimer = 0;
+var wallpaperModeRendererGeneration = 0;
+function scheduleSavedWallpaperModeRestore(delay) {
+  if (!startupWallpaperRestorePending || startupSafeMode) return;
+  if (startupWallpaperRestoreTimer) clearTimeout(startupWallpaperRestoreTimer);
+  startupWallpaperRestoreTimer = setTimeout(function(){
+    startupWallpaperRestoreTimer = 0;
+    if (document.body.classList.contains('splash-active')) {
+      scheduleSavedWallpaperModeRestore(420);
+      return;
+    }
+    startupWallpaperRestorePending = false;
+    fx.wallpaperMode = !!startupWallpaperRestoreRequested;
+    updateFxInputs();
+    applyWallpaperModeState(false);
+  }, Math.max(120, Number(delay) || 0));
+}
 function applyWallpaperModeState(force) {
   var api = getDesktopWindowApi();
   if (!api) return;
   normalizeDevelopmentLockedFxState();
   var payload = wallpaperPayload();
   if (typeof api.setWallpaperMode === 'function') {
+    function retryWallpaperDisable(failure) {
+      console.warn('wallpaper detach failed, retrying:', failure);
+      var retryId = ++wallpaperModeRendererGeneration;
+      api.setWallpaperMode(false, { enabled:false, recoveryRetry:true }).then(function(retryResult){
+        if (retryId !== wallpaperModeRendererGeneration || (retryResult && retryResult.stale)) return;
+        if (retryResult && retryResult.ok && retryResult.enabled === false) return;
+        console.warn('wallpaper detach retry failed:', retryResult);
+        showToast('桌面融合关闭失败，已保存诊断信息；请重启软件完成恢复');
+      }).catch(function(retryError){
+        if (retryId !== wallpaperModeRendererGeneration) return;
+        console.warn('wallpaper detach retry failed:', retryError);
+        showToast('桌面融合关闭失败，请重启软件完成恢复');
+      });
+    }
+    var requestId = ++wallpaperModeRendererGeneration;
     api.setWallpaperMode(!!payload.enabled, payload).then(function(result){
-      if (!payload.enabled || (result && result.ok)) return;
+      if (requestId !== wallpaperModeRendererGeneration || (result && result.stale)) return;
+      var succeeded = payload.enabled
+        ? !!(result && result.ok && result.interactive === true)
+        : !!(result && result.ok && result.enabled === false);
+      if (succeeded) return;
+      if (!payload.enabled) {
+        retryWallpaperDisable(result);
+        return;
+      }
       console.warn('wallpaper state failed:', result);
       fx.wallpaperMode = false;
       updateFxInputs();
       saveLyricLayout();
+      retryWallpaperDisable(result);
       var detail = String(result && result.detail || '').replace(/\s+/g, ' ').trim();
       showToast('桌面融合启动失败' + (detail ? '：' + detail.slice(0, 120) : '，请查看 desktop-fusion.log'));
     }).catch(function(e){
+      if (requestId !== wallpaperModeRendererGeneration) return;
       console.warn('wallpaper state failed:', e);
       if (payload.enabled) {
         fx.wallpaperMode = false;
         updateFxInputs();
         saveLyricLayout();
+        retryWallpaperDisable(e);
         showToast('桌面融合启动失败，请重启软件后再试');
+      } else {
+        retryWallpaperDisable(e);
       }
     });
   }
@@ -44494,7 +44835,15 @@ scheduleUiWarmTask(function(){
 applyFxFabAutoHideState();
 applyControlsAutoHidePreference();
 applyDesktopLyricsState(false);
-applyWallpaperModeState(false);
+// Restoring a persisted desktop-fusion state reparents the native window.
+// Never do that while the renderer and splash are still bootstrapping.
+startupWallpaperRestoreRequested = !!fx.wallpaperMode && !startupSafeMode;
+startupWallpaperRestorePending = startupWallpaperRestoreRequested;
+if (startupWallpaperRestorePending) {
+  fx.wallpaperMode = false;
+  updateFxInputs();
+}
+if (!startupWallpaperRestorePending) applyWallpaperModeState(false);
 setShelfMode(fx.shelf);
 applyStartupStarfieldPreset();
 // A saved soundscape preset needs its canvas visibility initialized on boot.
@@ -45066,6 +45415,9 @@ function animate() {
   renderer.render(scene, camera);
 }
 animate();
+// Function declarations are hoisted, so the main-process watchdog needs an
+// explicit sentinel that is reached only after the complete startup script ran.
+window.__mineradioRendererBootstrapped = true;
 </script>
 
 

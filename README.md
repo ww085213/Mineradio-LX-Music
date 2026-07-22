@@ -1,25 +1,24 @@
 # Mineradio - LX Music / MR
 
-## 最新版本：1.5.6.1
+## 最新版本：1.5.6.2
 
-[下载 Windows 安装包](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.6.1/Mineradio.Setup.1.5.6.1.exe) / [查看 v1.5.6.1 Release](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.5.6.1)
+[下载 Windows 安装包](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.6.2/Mineradio.Setup.1.5.6.2.exe) / [查看 v1.5.6.2 Release](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.5.6.2)
 
-Windows 安装向导支持选择安装目录和是否创建桌面快捷方式。已有版本可直接覆盖安装，安装程序不会触碰 `%APPDATA%\Mineradio` 中的歌单、设置和用户数据。升级前建议退出正在运行的 Mineradio。
+Windows 10/11 x64 安装向导支持选择安装目录和是否创建桌面快捷方式。原版、旧版和其他二创版本均可使用完整安装包直接覆盖升级；安装程序会更新程序文件并保留 `%APPDATA%\Mineradio` 中的歌单、设置和用户数据。升级前建议退出正在运行的 Mineradio。
 
-1.5.6.1 主要更新：
+1.5.6.2 主要更新：
 
-- 修复拖动或点击 Now Flow 进度条时被外层点击事件识别为暂停的问题。
-- Now Flow 空白区域不再切换播放状态，播放和暂停只由专门的播放/暂停按钮触发。
-- 重做新装与覆盖安装兼容，修复上一版安装目录误判和程序运行时安装不稳定的问题。
-- 桌面融合固定后彻底忽略鼠标移动，不再弹出隐藏控件。
-- Now Flow 进度条新增当前/总时长、点击拖动、键盘调整和落雪联动定位。
-- 正式安装包完整包含 FFmpeg、RePKG 与许可文件，新装电脑也能使用 Wallpaper Engine 壁纸转换。
-- 增加启动失败日志与明确提示，避免无信息闪退。
-- 动态匹配刷新率，播放和交互保持高帧率，空闲、固定桌面和后台状态主动降载。
+- 修复覆盖原版、旧版或其他二创版本后卡在 Mineradio 启动页的问题。
+- 启动恢复改为白名单迁移与分级自修复，不再要求手动删除整个用户配置目录。
+- Wallpaper Engine、桌面融合和桌面歌词的旧状态异常时会自动备份、回退并恢复普通窗口。
+- 非关键图片、字体等资源失败不再阻塞启动；移除启动阶段对 Google Fonts 的联网硬依赖。
+- 新增本地自建歌单和文件夹歌单删除、批量删除；只删除歌单记录，不删除硬盘音乐文件或当前播放队列。
+- 修复删除歌单与后台文件夹扫描并发时，已删除歌单重新出现或新导入路径被覆盖的问题。
+- 资料库卡片的“歌曲数 · 来源”文字上移 3px，并提高字重和对比度。
 
-[查看 Mineradio 1.5.6.1 完整更新说明](RELEASE_NOTES_1.5.6.1.md)
+[查看 Mineradio 1.5.6.2 完整更新说明](RELEASE_NOTES_1.5.6.2.md)
 
-SHA-256：`FE896798B10142A1139FC150BF7BA30CC5B8FC684268F6E37238E3860FCF5667`
+SHA-256：`a044b72841af4cb502188b7b9dcb12bef26ddfca001140e965937fc3a0185077`
 
 > 当前 Windows 安装包未使用 Authenticode 代码签名证书，Windows SmartScreen 可能提示“未知发布者”。请仅从本仓库 Release 下载，并核对上方 SHA-256。
 
@@ -83,8 +82,8 @@ npm run build:win
 
 构建产物输出到 `dist/`：
 
-- `Mineradio.Setup.1.5.6.1.exe`
-- `Mineradio.Setup.1.5.6.1.exe.blockmap`
+- `Mineradio.Setup.1.5.6.2.exe`
+- `Mineradio.Setup.1.5.6.2.exe.blockmap`
 - `latest.yml`
 
 macOS DMG 需要在 macOS 环境构建：

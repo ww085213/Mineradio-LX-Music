@@ -4,8 +4,11 @@ const PERSISTENT_UI_STATE_KEYS = [
   'apex-player-volume',
   'mineradio-lyric-layout-v1',
   'mineradio-playback-quality-v1',
+  'mineradio-audio-effects-v1',
+  'mineradio-playback-tuning-v1',
   'mineradio-diy-player-mode-v1',
   'mineradio-playlist-panel-pinned-v1',
+  'mineradio-playlist-panel-pinned-v2',
   'mineradio-playlist-panel-position-v1',
   'mineradio-home-playlist-order-v1',
   'mineradio-home-more-playlists-expanded-v1',
@@ -26,6 +29,9 @@ const PERSISTENT_UI_STATE_KEYS = [
   'mineradio-hidden-wallpapers-v1',
   'mineradio-favorite-wallpapers-v1',
   'mineradio-last-visual-preset-v1',
+  'mineradio-local-user-playlists-v1',
+  'mineradio-playlist-custom-covers-v1',
+  'mineradio-lx-playlist-song-order-v1',
   'mineradio-playback-session-v1',
   'mineradio-user-fx-archives-v1',
   'mineradio-hotkey-settings-v1',
@@ -33,17 +39,183 @@ const PERSISTENT_UI_STATE_KEYS = [
   'mineradio-upload-tip-seen',
 ];
 
+const JSON_ARRAY_UI_STATE_KEYS = new Set([
+  'mineradio-home-playlist-order-v1',
+  'mineradio-local-library-folders-v2',
+  'mineradio-hidden-wallpapers-v1',
+  'mineradio-favorite-wallpapers-v1',
+  'mineradio-local-user-playlists-v1',
+  'mineradio-user-fx-archives-v1',
+]);
+const JSON_OBJECT_UI_STATE_KEYS = new Set([
+  'mineradio-lyric-layout-v1',
+  'mineradio-audio-effects-v1',
+  'mineradio-playback-tuning-v1',
+  'mineradio-playlist-panel-position-v1',
+  'mineradio-wallpaper-scene-recordings-v1',
+  'mineradio-free-camera-v1',
+  'mineradio-playlist-custom-covers-v1',
+  'mineradio-lx-playlist-song-order-v1',
+  'mineradio-playback-session-v1',
+  'mineradio-hotkey-settings-v1',
+]);
+const FLAG_UI_STATE_KEYS = new Set([
+  'mineradio-diy-player-mode-v1',
+  'mineradio-playlist-panel-pinned-v1',
+  'mineradio-playlist-panel-pinned-v2',
+  'mineradio-home-more-playlists-expanded-v1',
+  'mineradio-user-capsule-auto-hide-v1',
+  'mineradio-fx-fab-auto-hide-v1',
+  'mineradio-controls-auto-hide-v1',
+  'mineradio-ui-motion-v1',
+  'mineradio-primary-nav-auto-hide-v1',
+  'mineradio-primary-nav-auto-hide-v2',
+  'mineradio-primary-nav-auto-hide-v3',
+  'mineradio-primary-nav-manual-hidden-v1',
+  'mineradio-visual-guide-seen-v2',
+  'mineradio-upload-tip-seen',
+]);
+const NUMBER_UI_STATE_KEYS = new Set([
+  'apex-player-volume',
+  'mineradio-wallpaper-record-fps-v1',
+  'mineradio-wallpaper-record-fps-v2',
+  'mineradio-last-visual-preset-v1',
+]);
+const LARGE_UI_STATE_KEYS = new Set([
+  'mineradio-lyric-layout-v1',
+  'mineradio-wallpaper-scene-recordings-v1',
+  'mineradio-local-user-playlists-v1',
+  'mineradio-playlist-custom-covers-v1',
+  'mineradio-user-fx-archives-v1',
+]);
+const STARTUP_SAFE_RESET_KEYS = [
+  'mineradio-lyric-layout-v1',
+  'mineradio-last-visual-preset-v1',
+  'mineradio-free-camera-v1',
+];
+const STARTUP_SAFE_MODE = /(?:\?|&)mineradio-safe-start=1(?:&|$)/.test(String(window.location.search || ''));
+const PROFILE_NATIVE_STATE_REPAIR = /(?:\?|&)mineradio-profile-repair=1(?:&|$)/.test(String(window.location.search || ''));
+let rendererStartupReportedReady = false;
+
+function sanitizePersistentUiStateValue(key, value) {
+  if (!PERSISTENT_UI_STATE_KEYS.includes(key) || typeof value !== 'string') return null;
+  const limit = LARGE_UI_STATE_KEYS.has(key) ? 16 * 1024 * 1024 : 512 * 1024;
+  if (value.length > limit) return null;
+  if (FLAG_UI_STATE_KEYS.has(key)) return /^(?:0|1)$/.test(value) ? value : null;
+  if (NUMBER_UI_STATE_KEYS.has(key)) {
+    if (!value.trim()) return null;
+    const number = Number(value);
+    if (!Number.isFinite(number)) return null;
+    if (key === 'apex-player-volume' && (number < 0 || number > 1)) return null;
+    if (/wallpaper-record-fps/.test(key) && (number < 15 || number > 120)) return null;
+    if (key === 'mineradio-last-visual-preset-v1' && (number < 0 || number > 12)) return null;
+    return value;
+  }
+  if (key === 'mineradio-playback-quality-v1') {
+    return /^(?:standard|high|exhigh|lossless|hires|jymaster|128k|320k|flac|flac24bit)$/.test(value) ? value : null;
+  }
+  if (JSON_ARRAY_UI_STATE_KEYS.has(key) || JSON_OBJECT_UI_STATE_KEYS.has(key)) {
+    try {
+      const parsed = JSON.parse(value);
+      if (JSON_ARRAY_UI_STATE_KEYS.has(key) && !Array.isArray(parsed)) return null;
+      if (JSON_OBJECT_UI_STATE_KEYS.has(key) && (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))) return null;
+      return JSON.stringify(parsed);
+    } catch (_error) {
+      return null;
+    }
+  }
+  return value.length <= 32768 ? value : null;
+}
+
+function applyStartupSafeReset() {
+  if (!STARTUP_SAFE_MODE) return;
+  const rendererValues = {};
+  let totalLength = 0;
+  STARTUP_SAFE_RESET_KEYS.forEach((key) => {
+    try {
+      const value = window.localStorage.getItem(key);
+      if (typeof value !== 'string' || value.length > 24 * 1024 * 1024) return;
+      if (totalLength + value.length > 32 * 1024 * 1024) return;
+      rendererValues[key] = value;
+      totalLength += value.length;
+    } catch (_error) {}
+  });
+  let resetResult = null;
+  try { resetResult = ipcRenderer.sendSync('mineradio-startup-safe-reset-sync', rendererValues); }
+  catch (_error) { resetResult = null; }
+  if (!resetResult || !resetResult.ok) {
+    try {
+      ipcRenderer.send('mineradio-startup-issue', {
+        type: 'safe-reset-backup-failed',
+        message: String(resetResult && resetResult.error || 'STARTUP_SAFE_RESET_UNAVAILABLE'),
+      });
+    } catch (_error) {}
+    return;
+  }
+  const backedUpKeys = new Set(Array.isArray(resetResult.backedUpRendererKeys)
+    ? resetResult.backedUpRendererKeys
+    : []);
+  backedUpKeys.forEach((key) => {
+    if (!STARTUP_SAFE_RESET_KEYS.includes(key)) return;
+    try { window.localStorage.removeItem(key); } catch (_error) {}
+  });
+}
+
+function applyProfileNativeStateRepair() {
+  if (!PROFILE_NATIVE_STATE_REPAIR) return;
+  const key = 'mineradio-lyric-layout-v1';
+  let original = null;
+  try { original = window.localStorage.getItem(key); } catch (_error) { return; }
+  let backupResult = null;
+  try {
+    backupResult = ipcRenderer.sendSync(
+      'mineradio-profile-native-state-repair-backup-sync',
+      original,
+    );
+  } catch (_error) { backupResult = null; }
+  if (!backupResult || !backupResult.ok || backupResult.pending === false) return;
+  try {
+    if (original != null) {
+      const parsed = JSON.parse(original);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('PROFILE_LAYOUT_INVALID');
+      parsed.wallpaperMode = false;
+      parsed.desktopLyrics = false;
+      window.localStorage.setItem(key, JSON.stringify(parsed));
+    }
+  } catch (_error) {
+    try { window.localStorage.removeItem(key); } catch (_removeError) { return; }
+  }
+  try {
+    ipcRenderer.sendSync('mineradio-profile-native-state-repair-complete-sync', backupResult.token);
+  } catch (_error) {}
+}
+
 function restorePersistentUiState() {
   try {
     const values = ipcRenderer.sendSync('mineradio-ui-state-read-sync') || {};
     PERSISTENT_UI_STATE_KEYS.forEach((key) => {
-      if (typeof values[key] !== 'string') return;
-      if (window.localStorage.getItem(key) != null) return;
-      window.localStorage.setItem(key, values[key]);
+      const existing = window.localStorage.getItem(key);
+      if (existing != null) {
+        const limit = LARGE_UI_STATE_KEYS.has(key) ? 16 * 1024 * 1024 : 512 * 1024;
+        // Keep an existing oversized value in its original Chromium profile.
+        // It is skipped for synchronous backup, not treated as corruption.
+        if (existing.length > limit) return;
+        const sanitizedExisting = sanitizePersistentUiStateValue(key, existing);
+        if (sanitizedExisting != null) {
+          if (sanitizedExisting !== existing) window.localStorage.setItem(key, sanitizedExisting);
+          return;
+        }
+        window.localStorage.removeItem(key);
+      }
+      if (STARTUP_SAFE_MODE) return;
+      const sanitizedBackup = sanitizePersistentUiStateValue(key, values[key]);
+      if (sanitizedBackup != null) window.localStorage.setItem(key, sanitizedBackup);
     });
   } catch (_e) {}
 }
 
+applyProfileNativeStateRepair();
+applyStartupSafeReset();
 restorePersistentUiState();
 
 contextBridge.exposeInMainWorld('desktopWindow', {
@@ -78,6 +250,14 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   exportJsonFile: (payload) => ipcRenderer.invoke('mineradio-export-json-file', payload || {}),
   importJsonFile: () => ipcRenderer.invoke('mineradio-import-json-file'),
   backupUiState: (patch) => ipcRenderer.invoke('mineradio-ui-state-write', patch || {}),
+  reportStartupReady: (payload) => {
+    rendererStartupReportedReady = true;
+    ipcRenderer.send('mineradio-startup-ready', {
+      ...(payload || {}),
+      safeMode: STARTUP_SAFE_MODE,
+    });
+  },
+  reportStartupIssue: (payload) => ipcRenderer.send('mineradio-startup-issue', payload || {}),
   chooseLocalMusicFiles: () => ipcRenderer.invoke('mineradio-local-music-choose-files'),
   chooseLocalMusicFolder: () => ipcRenderer.invoke('mineradio-local-music-choose-folder'),
   chooseLocalCoverFile: () => ipcRenderer.invoke('mineradio-local-cover-choose-file'),
@@ -129,6 +309,33 @@ contextBridge.exposeInMainWorld('desktopWindow', {
     ipcRenderer.on('desktop-window-state', listener);
     return () => ipcRenderer.removeListener('desktop-window-state', listener);
   },
+});
+
+window.addEventListener('error', (event) => {
+  if (rendererStartupReportedReady) return;
+  // Capture-phase `error` also fires for images, fonts and other resources.
+  // Those failures are non-fatal and must not be recorded as renderer crashes.
+  if (event && event.target && event.target !== window && !event.error) return;
+  try {
+    ipcRenderer.send('mineradio-startup-issue', {
+      type: 'error',
+      message: String(event && event.message || 'Renderer error').slice(0, 600),
+      filename: String(event && event.filename || '').slice(-240),
+      line: Number(event && event.lineno) || 0,
+      column: Number(event && event.colno) || 0,
+    });
+  } catch (_error) {}
+}, true);
+
+window.addEventListener('unhandledrejection', (event) => {
+  if (rendererStartupReportedReady) return;
+  try {
+    const reason = event && event.reason;
+    ipcRenderer.send('mineradio-startup-issue', {
+      type: 'unhandledrejection',
+      message: String(reason && (reason.stack || reason.message) || reason || 'Unhandled rejection').slice(0, 1200),
+    });
+  } catch (_error) {}
 });
 
 window.addEventListener('DOMContentLoaded', () => {
