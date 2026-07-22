@@ -16,7 +16,7 @@
     "build:mac": "electron-builder --mac dmg zip --universal --publish never"
   },
   "build": {
-    "buildVersion": "1.5.6.1",
+    "buildVersion": "1.5.6.2",
     "appId": "com.mineradio.desktop",
     "productName": "Mineradio",
     "directories": {
@@ -90,10 +90,10 @@
           ]
         }
       ],
-      "artifactName": "Mineradio-1.5.6.1-mac-${arch}.${ext}"
+      "artifactName": "Mineradio-1.5.6.2-mac-${arch}.${ext}"
     },
     "dmg": {
-      "artifactName": "Mineradio-1.5.6.1-mac-${arch}.${ext}"
+      "artifactName": "Mineradio-1.5.6.2-mac-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -105,7 +105,7 @@
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "include": "build/installer.nsh",
-      "artifactName": "Mineradio.Setup.1.5.6.1.${ext}"
+      "artifactName": "Mineradio.Setup.1.5.6.2.${ext}"
     },
     "publish": [
       {
@@ -116,7 +116,7 @@
     ]
   },
   "mineradio": {
-    "releaseVersion": "1.5.6.1",
+    "releaseVersion": "1.5.6.2",
     "update": {
       "provider": "github",
       "owner": "ww085213",

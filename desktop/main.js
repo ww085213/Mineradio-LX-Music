@@ -9,6 +9,9 @@ const { execFile, spawn } = require('child_process');
 let mainWindow = null;
 let mainWindowDesktopEmbedded = false;
 let mainWindowDesktopInteractive = false;
+// A native SetParent/style command can fail after it has already changed part
+// of the HWND state. While uncertain, never trust the JS flag to skip detach.
+let mainWindowDesktopEmbeddingUncertain = false;
 let mainWindowPreDesktopBounds = null;
 let mainWindowPreDesktopState = null;
 let localServer = null;
@@ -55,6 +58,12 @@ let mainWindowPreFullscreenBounds = null;
 let mainWindowStateTimer = null;
 let mainWindowBoundsSaveTimer = null;
 let mainWindowSplashWatchdogTimer = null;
+let mainWindowStartupReady = false;
+let mainWindowStartupRecoveryAttempted = false;
+let mainWindowStartupRecoveryStage = 0;
+let mainWindowStartupRecoveryPromise = null;
+let mainWindowStartupSafeMode = false;
+let profileNativeStartupRepairPending = false;
 let tray = null;
 let trayRightClickGuardUntil = 0;
 let trayPlaybackState = { title: '', artist: '', playing: false, volume: 80 };
@@ -101,6 +110,110 @@ const APP_TRAY_GUID = '7e6162ca-f43f-4d0a-b5bb-8b8fcd17a865';
 const APP_ICON_ICO = path.join(__dirname, '..', 'build', 'icon.ico');
 const APP_TRAY_ICON_PNG = path.join(__dirname, '..', 'public', 'tray-icon.png');
 const STABLE_USER_DATA_NAME = 'Mineradio';
+const PROFILE_COMPAT_SCHEMA = 2;
+const PROFILE_COMPAT_FILE = 'profile-compat-v2.json';
+const PROFILE_NATIVE_REPAIR_FILE = 'profile-native-state-repair-v2.json';
+const PROFILE_NATIVE_REPAIR_COMPLETE_FILE = 'profile-native-state-repair-v2.complete.json';
+const APP_RELEASE_VERSION = (() => {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) || {};
+    return String(pkg.mineradio?.releaseVersion || pkg.version || '0.0.0');
+  } catch (_error) {
+    return '0.0.0';
+  }
+})();
+const DESKTOP_UI_STATE_KEYS = new Set([
+  'apex-player-volume',
+  'mineradio-lyric-layout-v1',
+  'mineradio-playback-quality-v1',
+  'mineradio-audio-effects-v1',
+  'mineradio-playback-tuning-v1',
+  'mineradio-diy-player-mode-v1',
+  'mineradio-playlist-panel-pinned-v1',
+  'mineradio-playlist-panel-pinned-v2',
+  'mineradio-playlist-panel-position-v1',
+  'mineradio-home-playlist-order-v1',
+  'mineradio-home-more-playlists-expanded-v1',
+  'mineradio-wallpaper-scene-recordings-v1',
+  'mineradio-wallpaper-record-fps-v1',
+  'mineradio-wallpaper-record-fps-v2',
+  'mineradio-user-capsule-auto-hide-v1',
+  'mineradio-fx-fab-auto-hide-v1',
+  'mineradio-controls-auto-hide-v1',
+  'mineradio-ui-motion-v1',
+  'mineradio-primary-nav-auto-hide-v1',
+  'mineradio-primary-nav-auto-hide-v2',
+  'mineradio-primary-nav-auto-hide-v3',
+  'mineradio-primary-nav-manual-hidden-v1',
+  'mineradio-free-camera-v1',
+  'mineradio-local-library-folder-v1',
+  'mineradio-local-library-folders-v2',
+  'mineradio-hidden-wallpapers-v1',
+  'mineradio-favorite-wallpapers-v1',
+  'mineradio-last-visual-preset-v1',
+  'mineradio-local-user-playlists-v1',
+  'mineradio-playlist-custom-covers-v1',
+  'mineradio-lx-playlist-song-order-v1',
+  'mineradio-playback-session-v1',
+  'mineradio-user-fx-archives-v1',
+  'mineradio-hotkey-settings-v1',
+  'mineradio-visual-guide-seen-v2',
+  'mineradio-upload-tip-seen',
+]);
+const JSON_ARRAY_UI_STATE_KEYS = new Set([
+  'mineradio-home-playlist-order-v1',
+  'mineradio-local-library-folders-v2',
+  'mineradio-hidden-wallpapers-v1',
+  'mineradio-favorite-wallpapers-v1',
+  'mineradio-local-user-playlists-v1',
+  'mineradio-user-fx-archives-v1',
+]);
+const JSON_OBJECT_UI_STATE_KEYS = new Set([
+  'mineradio-lyric-layout-v1',
+  'mineradio-audio-effects-v1',
+  'mineradio-playback-tuning-v1',
+  'mineradio-playlist-panel-position-v1',
+  'mineradio-wallpaper-scene-recordings-v1',
+  'mineradio-free-camera-v1',
+  'mineradio-playlist-custom-covers-v1',
+  'mineradio-lx-playlist-song-order-v1',
+  'mineradio-playback-session-v1',
+  'mineradio-hotkey-settings-v1',
+]);
+const FLAG_UI_STATE_KEYS = new Set([
+  'mineradio-diy-player-mode-v1',
+  'mineradio-playlist-panel-pinned-v1',
+  'mineradio-playlist-panel-pinned-v2',
+  'mineradio-home-more-playlists-expanded-v1',
+  'mineradio-user-capsule-auto-hide-v1',
+  'mineradio-fx-fab-auto-hide-v1',
+  'mineradio-controls-auto-hide-v1',
+  'mineradio-ui-motion-v1',
+  'mineradio-primary-nav-auto-hide-v1',
+  'mineradio-primary-nav-auto-hide-v2',
+  'mineradio-primary-nav-auto-hide-v3',
+  'mineradio-primary-nav-manual-hidden-v1',
+  'mineradio-visual-guide-seen-v2',
+  'mineradio-upload-tip-seen',
+]);
+const NUMBER_UI_STATE_KEYS = new Set([
+  'apex-player-volume',
+  'mineradio-wallpaper-record-fps-v1',
+  'mineradio-wallpaper-record-fps-v2',
+  'mineradio-last-visual-preset-v1',
+]);
+const LARGE_UI_STATE_KEYS = new Set([
+  'mineradio-lyric-layout-v1',
+  'mineradio-wallpaper-scene-recordings-v1',
+  'mineradio-local-user-playlists-v1',
+  'mineradio-playlist-custom-covers-v1',
+  'mineradio-user-fx-archives-v1',
+]);
+const STARTUP_SAFE_RESET_KEYS = new Set([
+  'mineradio-lyric-layout-v1',
+  'mineradio-last-visual-preset-v1',
+  'mineradio-free-camera-v1',
+]);
 let cachedAppWindowIcon = null;
 
 function getAppWindowIcon() {
@@ -163,44 +276,315 @@ function repairWindowsShellShortcutIcons() {
   if (ie4uinit && fs.existsSync(ie4uinit)) execFile(ie4uinit, ['-show'], { windowsHide: true }, () => {});
 }
 
-function copyMissingUserData(sourceDir, targetDir) {
-  if (!sourceDir || !targetDir || sourceDir === targetDir || !fs.existsSync(sourceDir)) return;
-  fs.mkdirSync(targetDir, { recursive: true });
-  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
-    if (entry.name === 'lockfile') continue;
-    const source = path.join(sourceDir, entry.name);
-    const target = path.join(targetDir, entry.name);
-    if (fs.existsSync(target)) continue;
+function sanitizeDesktopUiStateValue(key, value, options = {}) {
+  if (!DESKTOP_UI_STATE_KEYS.has(key) || typeof value !== 'string') return null;
+  const limit = LARGE_UI_STATE_KEYS.has(key) ? 16 * 1024 * 1024 : 512 * 1024;
+  // Oversized known values are not suitable for synchronous renderer backup,
+  // but an existing target profile must not lose them during housekeeping.
+  if (value.length > limit) return options.preserveOversizedKnownValues ? value : null;
+  const text = String(value);
+  if (FLAG_UI_STATE_KEYS.has(key)) return /^(?:0|1)$/.test(text) ? text : null;
+  if (NUMBER_UI_STATE_KEYS.has(key)) {
+    if (!text.trim()) return null;
+    const number = Number(text);
+    if (!Number.isFinite(number)) return null;
+    if (key === 'apex-player-volume' && (number < 0 || number > 1)) return null;
+    if (/wallpaper-record-fps/.test(key) && (number < 15 || number > 120)) return null;
+    if (key === 'mineradio-last-visual-preset-v1' && (number < 0 || number > 12)) return null;
+    return text;
+  }
+  if (key === 'mineradio-playback-quality-v1') {
+    return /^(?:standard|high|exhigh|lossless|hires|jymaster|128k|320k|flac|flac24bit)$/.test(text) ? text : null;
+  }
+  if (JSON_ARRAY_UI_STATE_KEYS.has(key) || JSON_OBJECT_UI_STATE_KEYS.has(key)) {
     try {
-      fs.cpSync(source, target, { recursive: true, errorOnExist: false });
-    } catch (error) {
-      console.warn('User data migration skipped entry:', source, error.message);
+      const parsed = JSON.parse(text);
+      if (JSON_ARRAY_UI_STATE_KEYS.has(key) && !Array.isArray(parsed)) return null;
+      if (JSON_OBJECT_UI_STATE_KEYS.has(key) && (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))) return null;
+      if (key === 'mineradio-lyric-layout-v1' && options.stripNativeStartupState) {
+        parsed.wallpaperMode = false;
+        parsed.desktopLyrics = false;
+      }
+      return JSON.stringify(parsed);
+    } catch (_error) {
+      return null;
     }
+  }
+  return text.length <= 32768 ? text : null;
+}
+
+function sanitizeDesktopUiStateValues(values, options = {}) {
+  const clean = {};
+  if (!values || typeof values !== 'object' || Array.isArray(values)) return clean;
+  Object.entries(values).forEach(([key, value]) => {
+    const sanitized = sanitizeDesktopUiStateValue(key, value, options);
+    if (sanitized != null) clean[key] = sanitized;
+  });
+  return clean;
+}
+
+function writeJsonFileAtomic(file, value) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temporary = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  try {
+    fs.writeFileSync(temporary, JSON.stringify(value, null, 2), 'utf8');
+    fs.renameSync(temporary, file);
+  } catch (error) {
+    try { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); } catch (_cleanupError) {}
+    throw error;
   }
 }
 
-function mergeDesktopUiStateFile(sourceDir, targetDir) {
+function backupCorruptProfileFile(file, stableDir, label) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backupDir = path.join(stableDir, 'recovery', `corrupt-profile-${stamp}`);
+  fs.mkdirSync(backupDir, { recursive: true });
+  const backupFile = path.join(backupDir, `${String(label || 'state').replace(/[^a-z0-9._-]/gi, '_')}.json`);
+  fs.copyFileSync(file, backupFile, fs.constants.COPYFILE_EXCL);
+  return backupFile;
+}
+
+function copyMissingAppOwnedTree(sourceDir, targetDir, depth = 0) {
+  if (!sourceDir || !targetDir || sourceDir === targetDir || !fs.existsSync(sourceDir) || depth > 6) return true;
+  try { fs.mkdirSync(targetDir, { recursive: true }); } catch (_error) { return false; }
+  let entries = [];
+  try { entries = fs.readdirSync(sourceDir, { withFileTypes: true }); } catch (_error) { return false; }
+  let complete = true;
+  for (const entry of entries) {
+    if (entry.isSymbolicLink()) continue;
+    const source = path.join(sourceDir, entry.name);
+    const target = path.join(targetDir, entry.name);
+    if (entry.isDirectory()) {
+      if (!copyMissingAppOwnedTree(source, target, depth + 1)) complete = false;
+      continue;
+    }
+    if (!entry.isFile() || fs.existsSync(target)) continue;
+    try {
+      if (fs.statSync(source).size > 8 * 1024 * 1024) continue;
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(source, target, fs.constants.COPYFILE_EXCL);
+    } catch (error) {
+      complete = false;
+      console.warn('App-owned user data migration skipped entry:', source, error.message);
+    }
+  }
+  return complete;
+}
+
+function mergeDesktopUiStateFile(sourceDir, targetDir, options = {}) {
   const sourceFile = path.join(sourceDir, 'desktop-ui-state.json');
   const targetFile = path.join(targetDir, 'desktop-ui-state.json');
-  if (!fs.existsSync(sourceFile)) return;
+  if (!fs.existsSync(sourceFile)) return true;
+  const sameFile = path.resolve(sourceFile).toLowerCase() === path.resolve(targetFile).toLowerCase();
   try {
-    const source = JSON.parse(fs.readFileSync(sourceFile, 'utf8')) || {};
-    const target = fs.existsSync(targetFile) ? JSON.parse(fs.readFileSync(targetFile, 'utf8')) || {} : {};
+    let source = {};
+    let target = {};
+    if (sameFile) {
+      try {
+        target = JSON.parse(fs.readFileSync(targetFile, 'utf8')) || {};
+        source = target;
+      } catch (error) {
+        backupCorruptProfileFile(targetFile, targetDir, 'desktop-ui-state');
+        console.warn('Corrupt stable desktop UI state quarantined:', error.message);
+      }
+    } else {
+      try {
+        source = JSON.parse(fs.readFileSync(sourceFile, 'utf8')) || {};
+      } catch (error) {
+        if (error instanceof SyntaxError) {
+          console.warn('Corrupt legacy desktop UI state skipped:', sourceFile);
+          return true;
+        }
+        throw error;
+      }
+      if (fs.existsSync(targetFile)) {
+        try { target = JSON.parse(fs.readFileSync(targetFile, 'utf8')) || {}; }
+        catch (error) {
+          backupCorruptProfileFile(targetFile, targetDir, 'desktop-ui-state');
+          console.warn('Corrupt stable desktop UI state quarantined:', error.message);
+          target = {};
+        }
+      }
+    }
+    const sourceValues = sanitizeDesktopUiStateValues(source.values, { stripNativeStartupState: true });
+    const targetValues = sanitizeDesktopUiStateValues(target.values, {
+      preserveOversizedKnownValues: true,
+      stripNativeStartupState: !!options.stripTargetNativeStartupState,
+    });
     const next = {
       schema: 1,
       updatedAt: Math.max(Number(source.updatedAt) || 0, Number(target.updatedAt) || 0, Date.now()),
-      values: { ...(target.values || {}), ...(source.values || {}) },
+      // Existing stable-profile values always win. A legacy/fork profile may
+      // only fill missing, validated app-owned keys.
+      values: { ...sourceValues, ...targetValues },
     };
-    fs.mkdirSync(targetDir, { recursive: true });
-    fs.writeFileSync(targetFile, JSON.stringify(next, null, 2), 'utf8');
+    writeJsonFileAtomic(targetFile, next);
+    return true;
   } catch (error) {
     console.warn('Desktop UI state migration skipped:', error.message);
+    return false;
   }
 }
 
-function migrateUserDataToStablePath(stableDir) {
+function mergeDesktopShellSettingsFile(sourceDir, targetDir) {
+  const sourceFile = path.join(sourceDir, 'desktop-shell-settings.json');
+  const targetFile = path.join(targetDir, 'desktop-shell-settings.json');
+  if (!fs.existsSync(sourceFile)) return true;
+  const sameFile = path.resolve(sourceFile).toLowerCase() === path.resolve(targetFile).toLowerCase();
+  try {
+    let source = {};
+    let target = {};
+    if (sameFile) {
+      try {
+        target = JSON.parse(fs.readFileSync(targetFile, 'utf8')) || {};
+        source = target;
+      } catch (error) {
+        backupCorruptProfileFile(targetFile, targetDir, 'desktop-shell-settings');
+        console.warn('Corrupt stable desktop shell settings quarantined:', error.message);
+      }
+    } else {
+      try { source = JSON.parse(fs.readFileSync(sourceFile, 'utf8')) || {}; }
+      catch (error) {
+        if (error instanceof SyntaxError) {
+          console.warn('Corrupt legacy desktop shell settings skipped:', sourceFile);
+          return true;
+        }
+        throw error;
+      }
+      if (fs.existsSync(targetFile)) {
+        try { target = JSON.parse(fs.readFileSync(targetFile, 'utf8')) || {}; }
+        catch (error) {
+          backupCorruptProfileFile(targetFile, targetDir, 'desktop-shell-settings');
+          console.warn('Corrupt stable desktop shell settings quarantined:', error.message);
+          target = {};
+        }
+      }
+    }
+    const next = { ...source, ...target };
+    writeJsonFileAtomic(targetFile, next);
+    return true;
+  } catch (error) {
+    console.warn('Desktop shell settings migration skipped:', error.message);
+    return false;
+  }
+}
+
+function quarantineDisposableChromiumData(stableDir, reason) {
+  const names = [
+    'Cache', 'Code Cache', 'GPUCache', 'DawnGraphiteCache', 'DawnWebGPUCache',
+    'ShaderCache', 'GrShaderCache', 'Session Storage', 'blob_storage', 'Shared Dictionary',
+  ];
+  const existing = names.filter(name => fs.existsSync(path.join(stableDir, name)));
+  if (!existing.length) return { backupDir: '', complete: true };
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backupDir = path.join(stableDir, 'recovery', `profile-cache-${stamp}`);
+  fs.mkdirSync(backupDir, { recursive: true });
+  let complete = true;
+  for (const name of existing) {
+    const source = path.join(stableDir, name);
+    const target = path.join(backupDir, name);
+    try { fs.renameSync(source, target); }
+    catch (error) {
+      complete = false;
+      console.warn('Profile cache quarantine skipped:', source, error.message);
+    }
+  }
+  try { fs.writeFileSync(path.join(backupDir, 'reason.txt'), String(reason || 'version-change'), 'utf8'); } catch (_error) {}
+  return { backupDir, complete };
+}
+
+async function backupChromiumLocalStorageForRecovery(stableDir, reason) {
+  const source = path.join(stableDir, 'Local Storage');
+  if (!fs.existsSync(source)) return { ok: true, backupDir: '', hadStorage: false };
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backupDir = path.join(stableDir, 'recovery', `profile-storage-${stamp}`);
+  await fs.promises.mkdir(backupDir, { recursive: true });
+  await fs.promises.cp(source, path.join(backupDir, 'Local Storage'), {
+    recursive: true,
+    errorOnExist: true,
+    force: false,
+  });
+  await fs.promises.writeFile(
+    path.join(backupDir, 'reason.txt'),
+    String(reason || 'startup-storage-recovery'),
+    'utf8',
+  );
+  return { ok: true, backupDir, hadStorage: true };
+}
+
+async function backupAndClearChromiumLocalStorage(reason, control = {}) {
+  try { await session.defaultSession.flushStorageData(); } catch (_flushError) {}
+  let backup;
+  try {
+    backup = await backupChromiumLocalStorageForRecovery(app.getPath('userData'), reason);
+  } catch (error) {
+    writeStartupDiagnostic('startup-storage-backup-failed', error);
+    return { ok: false, error: 'STARTUP_STORAGE_BACKUP_FAILED' };
+  }
+  if (control.cancelled) return { ...backup, ok: false, cancelled: true };
+  try {
+    await session.defaultSession.clearStorageData({ storages: ['localstorage'] });
+    return { ...backup, ok: true };
+  } catch (error) {
+    writeStartupDiagnostic('startup-storage-clear-failed', error);
+    return { ...backup, ok: false, error: 'STARTUP_STORAGE_CLEAR_FAILED' };
+  }
+}
+
+function readProfileCompat(stableDir) {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(stableDir, PROFILE_COMPAT_FILE), 'utf8')) || {};
+  } catch (_error) {
+    return {};
+  }
+}
+
+function writeProfileCompat(
+  stableDir,
+  migratedFrom,
+  schema = PROFILE_COMPAT_SCHEMA,
+  releaseVersion = APP_RELEASE_VERSION,
+) {
+  const file = path.join(stableDir, PROFILE_COMPAT_FILE);
+  const next = {
+    schema,
+    releaseVersion,
+    updatedAt: Date.now(),
+    migratedFrom: Array.from(new Set(migratedFrom || [])),
+  };
+  writeJsonFileAtomic(file, next);
+}
+
+function profileNativeRepairPath(stableDir) {
+  return path.join(stableDir, PROFILE_NATIVE_REPAIR_FILE);
+}
+
+function profileNativeRepairCompletePath(stableDir) {
+  return path.join(stableDir, PROFILE_NATIVE_REPAIR_COMPLETE_FILE);
+}
+
+function scheduleProfileNativeStateRepair(stableDir, previous) {
+  const file = profileNativeRepairPath(stableDir);
+  if (!fs.existsSync(file)) {
+    writeJsonFileAtomic(file, {
+      schema: 1,
+      token: crypto.randomBytes(16).toString('hex'),
+      fromSchema: Number(previous && previous.schema) || 0,
+      fromRelease: String(previous && previous.releaseVersion || 'legacy'),
+      createdAt: Date.now(),
+    });
+  }
+  profileNativeStartupRepairPending = true;
+}
+
+function prepareStableUserData(stableDir) {
   try {
     const appDataDir = app.getPath('appData');
+    const previous = readProfileCompat(stableDir);
+    const nativeRepairAlreadyCompleted = fs.existsSync(profileNativeRepairCompletePath(stableDir));
+    const needsNativeStartupStateReset = !nativeRepairAlreadyCompleted && (
+      Number(previous.schema) < PROFILE_COMPAT_SCHEMA || previous.releaseVersion === '1.5.6.1'
+    );
     const candidates = new Set();
     for (const entry of fs.readdirSync(appDataDir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
@@ -208,12 +592,51 @@ function migrateUserDataToStablePath(stableDir) {
       if (/^Mineradio/i.test(entry.name)) candidates.add(path.join(appDataDir, entry.name));
     }
     fs.mkdirSync(stableDir, { recursive: true });
-    for (const candidate of candidates) {
-      copyMissingUserData(candidate, stableDir);
-      mergeDesktopUiStateFile(candidate, stableDir);
+    const migratedFrom = [];
+    let migrationComplete = true;
+    let cacheQuarantineComplete = true;
+    if (Number(previous.schema) < PROFILE_COMPAT_SCHEMA) {
+      for (const candidate of Array.from(candidates).sort()) {
+        const uiComplete = mergeDesktopUiStateFile(candidate, stableDir);
+        const shellComplete = mergeDesktopShellSettingsFile(candidate, stableDir);
+        const sourcesComplete = copyMissingAppOwnedTree(path.join(candidate, 'sources'), path.join(stableDir, 'sources'));
+        if (uiComplete && shellComplete && sourcesComplete) migratedFrom.push(path.basename(candidate));
+        else migrationComplete = false;
+      }
     }
+    if (previous.releaseVersion !== APP_RELEASE_VERSION) {
+      const quarantine = quarantineDisposableChromiumData(
+        stableDir,
+        `${previous.releaseVersion || 'legacy'} -> ${APP_RELEASE_VERSION}`,
+      );
+      cacheQuarantineComplete = !!(quarantine && quarantine.complete);
+    }
+    // Re-write the stable backup once so malformed values already imported by
+    // 1.5.6.1 cannot be restored by preload on the next renderer launch.
+    const stableState = path.join(stableDir, 'desktop-ui-state.json');
+    if (fs.existsSync(stableState)) {
+      const stableStateComplete = mergeDesktopUiStateFile(stableDir, stableDir, {
+        // One-time repair for legacy/1.5.6.1 native window state. Later normal
+        // upgrades must preserve the user's desktop-mode preference.
+        stripTargetNativeStartupState: needsNativeStartupStateReset,
+      });
+      if (!stableStateComplete) migrationComplete = false;
+    }
+    if (needsNativeStartupStateReset) scheduleProfileNativeStateRepair(stableDir, previous);
+    else profileNativeStartupRepairPending = fs.existsSync(profileNativeRepairPath(stableDir));
+    const previousMigratedFrom = Array.isArray(previous.migratedFrom) ? previous.migratedFrom : [];
+    const nextSchema = migrationComplete
+      ? PROFILE_COMPAT_SCHEMA
+      : Math.min(Number(previous.schema) || 0, PROFILE_COMPAT_SCHEMA - 1);
+    writeProfileCompat(
+      stableDir,
+      [...previousMigratedFrom, ...migratedFrom],
+      nextSchema,
+      cacheQuarantineComplete ? APP_RELEASE_VERSION : String(previous.releaseVersion || ''),
+    );
   } catch (error) {
-    console.warn('User data migration skipped:', error.message);
+    console.warn('Stable user data preparation skipped:', error.message);
+    profileNativeStartupRepairPending = fs.existsSync(profileNativeRepairPath(stableDir));
   }
 }
 
@@ -225,7 +648,6 @@ const stableUserDataPath = explicitUserDataPath
   ? path.resolve(explicitUserDataPath)
   : path.join(app.getPath('appData'), STABLE_USER_DATA_NAME);
 app.setPath('userData', stableUserDataPath);
-if (!explicitUserDataPath) migrateUserDataToStablePath(stableUserDataPath);
 app.setName(APP_NAME);
 if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID);
 
@@ -236,7 +658,7 @@ function writeStartupDiagnostic(stage, error) {
     const details = error && error.stack ? error.stack : String(error && error.message ? error.message : error || 'UNKNOWN_ERROR');
     const entry = [
       `[${new Date().toISOString()}] ${stage}`,
-      `app=${app.getVersion()} electron=${process.versions.electron || ''} node=${process.versions.node || ''}`,
+      `app=${app.getVersion()} release=${APP_RELEASE_VERSION} electron=${process.versions.electron || ''} node=${process.versions.node || ''}`,
       `exec=${process.execPath}`,
       details,
       '',
@@ -264,39 +686,6 @@ function writeDesktopFusionDiagnostic(stage, error, stderr) {
     fs.appendFileSync(path.join(app.getPath('userData'), 'desktop-fusion.log'), line, 'utf8');
   } catch (_error) {}
 }
-const DESKTOP_UI_STATE_KEYS = new Set([
-  'apex-player-volume',
-  'mineradio-lyric-layout-v1',
-  'mineradio-playback-quality-v1',
-  'mineradio-diy-player-mode-v1',
-  'mineradio-playlist-panel-pinned-v1',
-  'mineradio-playlist-panel-position-v1',
-  'mineradio-home-playlist-order-v1',
-  'mineradio-home-more-playlists-expanded-v1',
-  'mineradio-wallpaper-scene-recordings-v1',
-  'mineradio-wallpaper-record-fps-v1',
-  'mineradio-wallpaper-record-fps-v2',
-  'mineradio-user-capsule-auto-hide-v1',
-  'mineradio-fx-fab-auto-hide-v1',
-  'mineradio-controls-auto-hide-v1',
-  'mineradio-ui-motion-v1',
-  'mineradio-primary-nav-auto-hide-v1',
-  'mineradio-primary-nav-auto-hide-v2',
-  'mineradio-primary-nav-auto-hide-v3',
-  'mineradio-primary-nav-manual-hidden-v1',
-  'mineradio-free-camera-v1',
-  'mineradio-local-library-folder-v1',
-  'mineradio-local-library-folders-v2',
-  'mineradio-hidden-wallpapers-v1',
-  'mineradio-favorite-wallpapers-v1',
-  'mineradio-last-visual-preset-v1',
-  'mineradio-playback-session-v1',
-  'mineradio-user-fx-archives-v1',
-  'mineradio-hotkey-settings-v1',
-  'mineradio-visual-guide-seen-v2',
-  'mineradio-upload-tip-seen',
-]);
-
 const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['autoplay-policy', 'no-user-gesture-required'],
   // Keep accelerated rendering available without forcing a discrete GPU or
@@ -312,6 +701,7 @@ for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
 // local clean-profile verification so an installed/admin instance does not
 // prevent testing the exact files that are about to be packaged.
 const gotSingleInstanceLock = process.argv.includes('--mineradio-test-instance') || app.requestSingleInstanceLock();
+if (gotSingleInstanceLock && !explicitUserDataPath) prepareStableUserData(stableUserDataPath);
 
 function findOpenPort(startPort) {
   return new Promise((resolve, reject) => {
@@ -1037,8 +1427,7 @@ function readDesktopShellSettings() {
 function writeDesktopShellSettings(patch) {
   const file = path.join(app.getPath('userData'), DESKTOP_SHELL_SETTINGS_FILE);
   const next = { ...readDesktopShellSettings(), ...(patch || {}) };
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(next, null, 2), 'utf8');
+  writeJsonFileAtomic(file, next);
   return next;
 }
 
@@ -1046,39 +1435,155 @@ function desktopUiStatePath() {
   return path.join(app.getPath('userData'), DESKTOP_UI_STATE_FILE);
 }
 
-function readDesktopUiState() {
+function readRawDesktopUiState() {
   try {
     const file = desktopUiStatePath();
     if (!fs.existsSync(file)) return { schema: 1, values: {}, updatedAt: 0 };
     const data = JSON.parse(fs.readFileSync(file, 'utf8')) || {};
-    return {
-      schema: 1,
-      values: data.values && typeof data.values === 'object' ? data.values : {},
-      updatedAt: Number(data.updatedAt) || 0,
-    };
+    return data && typeof data === 'object' && !Array.isArray(data)
+      ? data
+      : { schema: 1, values: {}, updatedAt: 0 };
   } catch (_e) {
     return { schema: 1, values: {}, updatedAt: 0 };
   }
 }
 
+function readDesktopUiState() {
+  const data = readRawDesktopUiState();
+  return {
+    schema: 1,
+    values: sanitizeDesktopUiStateValues(data.values),
+    updatedAt: Number(data.updatedAt) || 0,
+  };
+}
+
 function writeDesktopUiStatePatch(patch) {
-  const current = readDesktopUiState();
-  const values = { ...(current.values || {}) };
+  const current = readRawDesktopUiState();
+  const values = sanitizeDesktopUiStateValues(current.values, { preserveOversizedKnownValues: true });
   Object.entries(patch || {}).forEach(([key, value]) => {
     if (!DESKTOP_UI_STATE_KEYS.has(key)) return;
     if (value == null) {
       delete values[key];
       return;
     }
-    const text = String(value);
-    if (text.length > 2 * 1024 * 1024) return;
+    const text = sanitizeDesktopUiStateValue(key, String(value));
+    if (text == null) return;
     values[key] = text;
   });
   const next = { schema: 1, updatedAt: Date.now(), values };
   const file = desktopUiStatePath();
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(next, null, 2), 'utf8');
+  writeJsonFileAtomic(file, next);
   return next;
+}
+
+function resetStartupCriticalUiState(reason, rendererValues = {}) {
+  const current = readRawDesktopUiState();
+  const removed = {};
+  const rawValues = current.values && typeof current.values === 'object' && !Array.isArray(current.values)
+    ? current.values
+    : {};
+  const values = sanitizeDesktopUiStateValues(rawValues, { preserveOversizedKnownValues: true });
+  STARTUP_SAFE_RESET_KEYS.forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(rawValues, key)) removed[key] = rawValues[key];
+    if (typeof rendererValues[key] === 'string') removed[key] = rendererValues[key];
+    delete values[key];
+  });
+  if (!Object.keys(removed).length) return { ok: true, removed: [] };
+  let backupDir = '';
+  try {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    backupDir = path.join(app.getPath('userData'), 'recovery', `startup-state-${stamp}`);
+    fs.mkdirSync(backupDir, { recursive: true });
+    fs.writeFileSync(path.join(backupDir, 'desktop-ui-state.json'), JSON.stringify(current, null, 2), 'utf8');
+    fs.writeFileSync(path.join(backupDir, 'renderer-local-storage.json'), JSON.stringify({
+      schema: 1,
+      values: Object.fromEntries(Object.entries(removed).filter(([, value]) => typeof value === 'string')),
+    }, null, 2), 'utf8');
+    fs.writeFileSync(path.join(backupDir, 'reason.txt'), String(reason || 'startup-safe-mode'), 'utf8');
+  } catch (backupError) {
+    writeStartupDiagnostic('startup-safe-backup-failed', backupError);
+    return { ok: false, error: 'STARTUP_SAFE_BACKUP_FAILED', removed: [] };
+  }
+  const next = { schema: 1, updatedAt: Date.now(), values };
+  try {
+    writeJsonFileAtomic(desktopUiStatePath(), next);
+  } catch (writeError) {
+    writeStartupDiagnostic('startup-safe-state-write-failed', writeError);
+    return { ok: false, error: 'STARTUP_SAFE_STATE_WRITE_FAILED', removed: [], backupDir };
+  }
+  return {
+    ok: true,
+    removed: Object.keys(removed),
+    backedUpRendererKeys: Object.keys(rendererValues).filter(key => Object.prototype.hasOwnProperty.call(removed, key)),
+    backupDir,
+  };
+}
+
+function beginProfileNativeStateRepair(rendererLayoutValue) {
+  const pendingFile = profileNativeRepairPath(app.getPath('userData'));
+  if (!fs.existsSync(pendingFile)) {
+    profileNativeStartupRepairPending = false;
+    return { ok: true, pending: false };
+  }
+  const pending = JSON.parse(fs.readFileSync(pendingFile, 'utf8')) || {};
+  if (!pending.token) throw new Error('PROFILE_REPAIR_TOKEN_MISSING');
+  if (rendererLayoutValue != null && typeof rendererLayoutValue !== 'string') {
+    throw new Error('PROFILE_REPAIR_VALUE_INVALID');
+  }
+  if (typeof rendererLayoutValue === 'string' && rendererLayoutValue.length > 32 * 1024 * 1024) {
+    throw new Error('PROFILE_REPAIR_VALUE_TOO_LARGE');
+  }
+  if (!pending.backupDir || !fs.existsSync(pending.backupDir)) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupDir = path.join(app.getPath('userData'), 'recovery', `native-state-repair-${stamp}`);
+    fs.mkdirSync(backupDir, { recursive: true });
+    writeJsonFileAtomic(path.join(backupDir, 'renderer-local-storage.json'), {
+      schema: 1,
+      values: rendererLayoutValue == null ? {} : { 'mineradio-lyric-layout-v1': rendererLayoutValue },
+    });
+    fs.writeFileSync(path.join(backupDir, 'reason.txt'), 'one-time native startup state compatibility repair', 'utf8');
+    pending.backupDir = backupDir;
+    pending.backedUpAt = Date.now();
+    writeJsonFileAtomic(pendingFile, pending);
+  }
+  profileNativeStartupRepairPending = true;
+  return { ok: true, pending: true, token: String(pending.token) };
+}
+
+function completeProfileNativeStateRepair(token) {
+  const stableDir = app.getPath('userData');
+  const pendingFile = profileNativeRepairPath(stableDir);
+  if (!fs.existsSync(pendingFile)) {
+    writeJsonFileAtomic(profileNativeRepairCompletePath(stableDir), { schema: 1, completedAt: Date.now() });
+    profileNativeStartupRepairPending = false;
+    return { ok: true, completed: true };
+  }
+  const pending = JSON.parse(fs.readFileSync(pendingFile, 'utf8')) || {};
+  if (!token || String(token) !== String(pending.token || '')) {
+    return { ok: false, error: 'PROFILE_REPAIR_TOKEN_MISMATCH' };
+  }
+  writeJsonFileAtomic(profileNativeRepairCompletePath(stableDir), {
+    schema: 1,
+    completedAt: Date.now(),
+    backupDir: String(pending.backupDir || ''),
+  });
+  fs.unlinkSync(pendingFile);
+  profileNativeStartupRepairPending = false;
+  return { ok: true, completed: true };
+}
+
+function markMainWindowStartupReady(payload) {
+  mainWindowStartupReady = true;
+  if (mainWindowSplashWatchdogTimer) {
+    clearTimeout(mainWindowSplashWatchdogTimer);
+    mainWindowSplashWatchdogTimer = null;
+  }
+  if (payload && payload.safeMode) mainWindowStartupSafeMode = true;
+  // Renderer-ready is the authoritative startup signal. Do not keep a healthy
+  // page hidden merely because an optional subresource has not fired window.load.
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    restoreMainWindowElectronInteraction(mainWindow, true);
+  }
 }
 
 /**
@@ -1161,7 +1666,7 @@ function refreshTrayMenu() {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('mineradio-wallpaper-command', { command: 'wallpaper-off' });
         }
-        setMainWindowDesktopEmbedded(false);
+        queueWallpaperModeTransition(false, { enabled: false, source: 'tray' });
       },
     },
     {
@@ -2249,12 +2754,30 @@ $nativeCorner=1
   }, () => {});
 }
 
-function setMainWindowDesktopEmbedded(enabled) {
+function restoreMainWindowElectronInteraction(win, focus = true) {
+  if (!win || win.isDestroyed()) return;
+  mainWindowDesktopInteractive = false;
+  try { win.webContents.setBackgroundThrottling(true); } catch (_e) {}
+  try { win.setResizable(true); } catch (_e) {}
+  try { win.setMovable(true); } catch (_e) {}
+  try { win.setFocusable(true); } catch (_e) {}
+  try { win.setIgnoreMouseEvents(false); } catch (_e) {}
+  try { win.setSkipTaskbar(false); } catch (_e) {}
+  try { win.show(); } catch (_e) {}
+  if (focus) {
+    try { win.focus(); } catch (_e) {}
+  }
+  try { sendWindowState(win); } catch (_e) {}
+}
+
+function setMainWindowDesktopEmbedded(enabled, options = {}) {
   if (process.platform !== 'win32' || !mainWindow || mainWindow.isDestroyed()) {
     return Promise.resolve({ ok: false, error: 'MAIN_WINDOW_UNAVAILABLE' });
   }
   const next = !!enabled;
-  if (next === mainWindowDesktopEmbedded) return Promise.resolve({ ok: true, enabled: next });
+  if (!options.force && !mainWindowDesktopEmbeddingUncertain && next === mainWindowDesktopEmbedded) {
+    return Promise.resolve({ ok: true, enabled: next });
+  }
   const win = mainWindow;
   const hwnd = nativeWindowHandleDecimal(win);
   if (next) capturePreDesktopWindowState(win);
@@ -2333,6 +2856,7 @@ using System;
 using System.Runtime.InteropServices;
 public static class MineradioDesktopDetach {
   [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SetParent(IntPtr child, IntPtr parent);
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr GetParent(IntPtr child);
   [DllImport("user32.dll", SetLastError=true)] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int w, int hgt, uint flags);
   [DllImport("user32.dll", EntryPoint="GetWindowLongPtr", SetLastError=true)] public static extern IntPtr GetWindowLongPtr(IntPtr h, int index);
   [DllImport("user32.dll", EntryPoint="SetWindowLongPtr", SetLastError=true)] public static extern IntPtr SetWindowLongPtr(IntPtr h, int index, IntPtr value);
@@ -2341,6 +2865,7 @@ public static class MineradioDesktopDetach {
 "@
 $target=[IntPtr]::new([Int64]${hwnd})
 [MineradioDesktopDetach]::SetParent($target,[IntPtr]::Zero)|Out-Null
+if ([MineradioDesktopDetach]::GetParent($target) -ne [IntPtr]::Zero) { throw "DESKTOP_DETACH_FAILED" }
 $style=[MineradioDesktopDetach]::GetWindowLongPtr($target,-16).ToInt64()
 $style=($style -band (-bnot 0x40000000L)) -bor 0x80000000L
 [MineradioDesktopDetach]::SetWindowLongPtr($target,-16,[IntPtr]::new($style))|Out-Null
@@ -2351,6 +2876,7 @@ $corner=2
 [MineradioDesktopDetach]::DwmSetWindowAttribute($target,33,[ref]$corner,4)|Out-Null
 [MineradioDesktopDetach]::SetWindowPos($target,[IntPtr]::Zero,${restore.x},${restore.y},${restore.width},${restore.height},0x0060)|Out-Null
 `;
+  mainWindowDesktopEmbeddingUncertain = true;
   return new Promise((resolve) => {
     execFile(WINDOWS_POWERSHELL_EXE, ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
       windowsHide: true,
@@ -2359,10 +2885,15 @@ $corner=2
       if (error || !mainWindow || mainWindow.isDestroyed()) {
         if (error) writeDesktopFusionDiagnostic(next ? 'embed' : 'detach', error, stderr);
         const detail = String(stderr || (error && error.message) || '').trim().split(/\r?\n/).filter(Boolean).slice(-3).join(' | ').slice(0, 600);
+        // PowerShell can fail after SetParent/style changes have already been
+        // applied. Never leave the Electron window mouse-transparent merely
+        // because the JS bookkeeping flag was not updated yet.
+        if (mainWindow && !mainWindow.isDestroyed()) restoreMainWindowElectronInteraction(mainWindow, true);
         resolve({ ok: false, error: error ? 'DESKTOP_EMBED_FAILED' : 'MAIN_WINDOW_UNAVAILABLE', detail });
         return;
       }
       mainWindowDesktopEmbedded = next;
+      mainWindowDesktopEmbeddingUncertain = false;
       mainWindowDesktopInteractive = false;
       // Desktop fusion is continuously visible and must remain at full speed.
       // Normal/minimized mode may use Chromium's power throttling.
@@ -2493,6 +3024,7 @@ if (${next ? '$true' : '$false'}) {
   [MineradioDesktopLayer]::SetWindowPos($target,[IntPtr]::Zero,0,0,$width,$height,0x0070)|Out-Null
 }
 `;
+  mainWindowDesktopEmbeddingUncertain = true;
   return new Promise((resolve) => {
     execFile(WINDOWS_POWERSHELL_EXE, ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
       windowsHide: true,
@@ -2501,10 +3033,17 @@ if (${next ? '$true' : '$false'}) {
       if (error || !mainWindow || mainWindow.isDestroyed()) {
         if (error) writeDesktopFusionDiagnostic(next ? 'interactive' : 'reattach', error, stderr);
         const detail = String(stderr || (error && error.message) || '').trim().split(/\r?\n/).filter(Boolean).slice(-3).join(' | ').slice(0, 600);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindowDesktopEmbeddingUncertain = true;
+          try { mainWindow.setIgnoreMouseEvents(false); } catch (_e) {}
+          try { mainWindow.setFocusable(true); } catch (_e) {}
+          try { mainWindow.show(); } catch (_e) {}
+        }
         resolve({ ok: false, error: error ? 'DESKTOP_LAYER_FAILED' : 'MAIN_WINDOW_UNAVAILABLE', detail });
         return;
       }
       mainWindowDesktopInteractive = next;
+      mainWindowDesktopEmbeddingUncertain = false;
       try {
         if (next) win.setIgnoreMouseEvents(false);
         else win.setIgnoreMouseEvents(true);
@@ -2691,7 +3230,7 @@ ipcMain.handle('desktop-window-minimize', (event) => {
   // remains a separate, user-configurable action for the close button.
   if (mainWindowDesktopEmbedded) {
     win.webContents.send('mineradio-wallpaper-command', { command: 'wallpaper-off' });
-    setMainWindowDesktopEmbedded(false).finally(() => {
+    queueWallpaperModeTransition(false, { enabled: false, source: 'minimize' }).finally(() => {
       if (!win.isDestroyed()) win.minimize();
     });
     return;
@@ -2848,6 +3387,54 @@ ipcMain.handle('mineradio-import-json-file', async (event) => {
 
 ipcMain.on('mineradio-ui-state-read-sync', (event) => {
   event.returnValue = readDesktopUiState().values || {};
+});
+
+ipcMain.on('mineradio-startup-safe-reset-sync', (event, rendererValues) => {
+  try {
+    const safeRendererValues = {};
+    let totalLength = 0;
+    STARTUP_SAFE_RESET_KEYS.forEach((key) => {
+      const value = rendererValues && rendererValues[key];
+      if (typeof value !== 'string' || value.length > 24 * 1024 * 1024) return;
+      if (totalLength + value.length > 32 * 1024 * 1024) return;
+      safeRendererValues[key] = value;
+      totalLength += value.length;
+    });
+    event.returnValue = resetStartupCriticalUiState('automatic startup recovery', safeRendererValues);
+  }
+  catch (error) { event.returnValue = { ok: false, error: error.message || 'STARTUP_SAFE_RESET_FAILED' }; }
+});
+
+ipcMain.on('mineradio-profile-native-state-repair-backup-sync', (event, rendererLayoutValue) => {
+  const sender = BrowserWindow.fromWebContents(event.sender);
+  if (!mainWindow || sender !== mainWindow) {
+    event.returnValue = { ok: false, error: 'PROFILE_REPAIR_SENDER_REJECTED' };
+    return;
+  }
+  try { event.returnValue = beginProfileNativeStateRepair(rendererLayoutValue); }
+  catch (error) { event.returnValue = { ok: false, error: error.message || 'PROFILE_REPAIR_BACKUP_FAILED' }; }
+});
+
+ipcMain.on('mineradio-profile-native-state-repair-complete-sync', (event, token) => {
+  const sender = BrowserWindow.fromWebContents(event.sender);
+  if (!mainWindow || sender !== mainWindow) {
+    event.returnValue = { ok: false, error: 'PROFILE_REPAIR_SENDER_REJECTED' };
+    return;
+  }
+  try { event.returnValue = completeProfileNativeStateRepair(token); }
+  catch (error) { event.returnValue = { ok: false, error: error.message || 'PROFILE_REPAIR_COMPLETE_FAILED' }; }
+});
+
+ipcMain.on('mineradio-startup-ready', (event, payload) => {
+  const sender = BrowserWindow.fromWebContents(event.sender);
+  if (!mainWindow || sender !== mainWindow) return;
+  markMainWindowStartupReady(payload || {});
+});
+
+ipcMain.on('mineradio-startup-issue', (event, payload) => {
+  const sender = BrowserWindow.fromWebContents(event.sender);
+  if (!mainWindow || sender !== mainWindow) return;
+  writeStartupDiagnostic('renderer-startup-issue', JSON.stringify(payload || {}));
 });
 
 ipcMain.handle('mineradio-ui-state-write', async (_event, patch) => {
@@ -3184,20 +3771,98 @@ ipcMain.handle('mineradio-desktop-lyrics-stop-global-drag', async () => {
   }
 });
 
-ipcMain.handle('mineradio-wallpaper-set-enabled', async (_event, enabled, payload) => {
+let wallpaperModeTransitionGeneration = 0;
+let wallpaperModeTransitionChain = Promise.resolve();
+
+async function rollbackWallpaperModeTransition(error, detail, extra = {}) {
+  let rollback = null;
   try {
-    wallpaperState = { ...wallpaperState, ...(payload || {}), enabled: !!enabled };
-    closeWallpaperWindow();
-    const result = await setMainWindowDesktopEmbedded(!!enabled);
-    if (enabled && result && result.ok) {
-      const interactive = await setMainWindowDesktopInteractive(true);
-      return { ...result, interactive: !!(interactive && interactive.ok && interactive.interactive) };
-    }
-    return result;
-  } catch (e) {
-    return { ok: false, error: e.message || 'DESKTOP_EMBED_FAILED' };
+    rollback = await setMainWindowDesktopEmbedded(false, { force: true });
+  } catch (rollbackError) {
+    rollback = { ok: false, error: rollbackError && rollbackError.message || 'DESKTOP_ROLLBACK_FAILED' };
   }
+  wallpaperState.enabled = false;
+  restoreMainWindowElectronInteraction(mainWindow, true);
+  return {
+    ok: false,
+    enabled: false,
+    interactive: false,
+    error: error || 'DESKTOP_EMBED_FAILED',
+    detail: detail || '',
+    rolledBack: !!(rollback && rollback.ok),
+    rollbackError: rollback && !rollback.ok ? rollback.error || '' : '',
+    ...extra,
+  };
+}
+
+async function applyWallpaperModeTransition(requestId, enabled, payload) {
+  const requested = !!enabled;
+  if (requestId !== wallpaperModeTransitionGeneration) {
+    return { ok: false, enabled: false, interactive: false, stale: true };
+  }
+  closeWallpaperWindow();
+  wallpaperState = { ...wallpaperState, ...(payload || {}), enabled: false };
+  try {
+    if (!requested) {
+      const detached = await setMainWindowDesktopEmbedded(false, { force: true });
+      restoreMainWindowElectronInteraction(mainWindow, true);
+      return {
+        ...(detached || {}),
+        ok: !!(detached && detached.ok),
+        enabled: false,
+        interactive: false,
+        stale: requestId !== wallpaperModeTransitionGeneration,
+      };
+    }
+    const embedded = await setMainWindowDesktopEmbedded(true);
+    if (!embedded || !embedded.ok) {
+      return rollbackWallpaperModeTransition(
+        embedded && embedded.error || 'DESKTOP_EMBED_FAILED',
+        embedded && embedded.detail || '',
+      );
+    }
+    if (requestId !== wallpaperModeTransitionGeneration) {
+      return rollbackWallpaperModeTransition('DESKTOP_REQUEST_SUPERSEDED', '', { stale: true });
+    }
+    const interactive = await setMainWindowDesktopInteractive(true);
+    if (!interactive || !interactive.ok || !interactive.interactive) {
+      return rollbackWallpaperModeTransition(
+        interactive && interactive.error || 'DESKTOP_INTERACTIVE_FAILED',
+        interactive && interactive.detail || '',
+      );
+    }
+    if (requestId !== wallpaperModeTransitionGeneration) {
+      return rollbackWallpaperModeTransition('DESKTOP_REQUEST_SUPERSEDED', '', { stale: true });
+    }
+    wallpaperState.enabled = true;
+    return { ...embedded, ok: true, enabled: true, interactive: true };
+  } catch (error) {
+    return rollbackWallpaperModeTransition(error && error.message || 'DESKTOP_EMBED_FAILED', '');
+  }
+}
+
+ipcMain.handle('mineradio-wallpaper-set-enabled', (_event, enabled, payload) => {
+  return queueWallpaperModeTransition(enabled, payload);
 });
+
+function queueWallpaperModeTransition(enabled, payload) {
+  const requestId = ++wallpaperModeTransitionGeneration;
+  const task = wallpaperModeTransitionChain
+    .catch(() => {})
+    .then(() => applyWallpaperModeTransition(requestId, enabled, payload));
+  wallpaperModeTransitionChain = task.catch(() => {});
+  return task;
+}
+
+function forceDisableWallpaperMode(reason) {
+  // Emergency shutdown still goes through the same FIFO as normal toggles.
+  // Incrementing the generation makes any in-flight enable roll itself back;
+  // queuing the final forced detach guarantees it is the last native command.
+  return queueWallpaperModeTransition(false, {
+    enabled: false,
+    recoveryReason: String(reason || ''),
+  });
+}
 
 ipcMain.handle('mineradio-wallpaper-update', async (_event, payload) => {
   try {
@@ -3236,9 +3901,190 @@ ipcMain.handle('mineradio-wallpaper-capture-finish', async () => {
   return { ok:true };
 });
 
+function mainWindowUrl(port, safeStart = false) {
+  const url = new URL(`http://127.0.0.1:${port}/`);
+  url.searchParams.set('mineradio-build', APP_RELEASE_VERSION);
+  if (safeStart) url.searchParams.set('mineradio-safe-start', '1');
+  if (profileNativeStartupRepairPending) url.searchParams.set('mineradio-profile-repair', '1');
+  return url.toString();
+}
+
+function withStartupDeadline(operation, timeoutMs, code, onTimeout) {
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      try { if (typeof onTimeout === 'function') onTimeout(); } catch (_timeoutError) {}
+      const error = new Error(code || 'STARTUP_OPERATION_TIMEOUT');
+      error.code = code || 'STARTUP_OPERATION_TIMEOUT';
+      reject(error);
+    }, Math.max(250, Number(timeoutMs) || 0));
+  });
+  return Promise.race([Promise.resolve(operation), timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+function loadWindowWithStartupDeadline(win, url, timeoutMs, code, options = {}) {
+  const preserveWhenRendererReady = options && options.preserveWhenRendererReady === true;
+  return withStartupDeadline(
+    win.loadURL(url),
+    timeoutMs,
+    code,
+    () => {
+      // `loadURL()` waits for every subresource, including optional remote
+      // stylesheets.  Once the renderer has explicitly reported that the home
+      // screen is ready, a slow font/CDN request must not stop the healthy page.
+      if (preserveWhenRendererReady && mainWindowStartupReady) return;
+      try { if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.stop(); } catch (_stopError) {}
+    },
+  );
+}
+
+async function forceRevealMainWindowSplash(win) {
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return null;
+  const execution = win.webContents.executeJavaScript(`(() => {
+    const body = document.body;
+    if (!body) return { revealed: false, bootstrapped: false };
+    const bootstrapped = window.__mineradioRendererBootstrapped === true;
+    const splash = document.getElementById('splash');
+    const splashVisible = !!(splash && !splash.classList.contains('hide') && splash.style.display !== 'none');
+    if (splashVisible) {
+      splash.classList.add('hide');
+      splash.style.display = 'none';
+    }
+    body.classList.remove('splash-active', 'splash-revealing');
+    if (typeof splashAnimating !== 'undefined') splashAnimating = false;
+    if (typeof splashReadyToEnter !== 'undefined') splashReadyToEnter = false;
+    if (typeof updateEmptyHomeVisibility === 'function') updateEmptyHomeVisibility({ forceLoad: true });
+    if (typeof wakeMainRenderLoop === 'function') wakeMainRenderLoop();
+    if (bootstrapped && typeof reportMineradioStartupReady === 'function') {
+      reportMineradioStartupReady('watchdog-home-revealed');
+    }
+    return {
+      revealed: splashVisible,
+      bootstrapped
+    };
+  })()`, true).catch(() => null);
+  return Promise.race([
+    execution,
+    new Promise(resolve => setTimeout(() => resolve(null), 1800)),
+  ]);
+}
+
+async function runMainWindowStartupRecoveryStage(win, stage, reason) {
+  writeStartupDiagnostic(`startup-safe-recovery-stage-${stage}`, reason || 'STARTUP_TIMEOUT');
+  try {
+    await withStartupDeadline(
+      forceDisableWallpaperMode(`startup-recovery-stage-${stage}`),
+      15000,
+      `STARTUP_WALLPAPER_DETACH_STAGE_${stage}_TIMEOUT`,
+    );
+  } catch (error) {
+    writeStartupDiagnostic(`startup-wallpaper-detach-stage-${stage}-failed`, error);
+  }
+  if (mainWindowStartupReady || win.isDestroyed() || win.webContents.isDestroyed()) return true;
+
+  if (stage === 2) {
+    try {
+      await loadWindowWithStartupDeadline(win, 'about:blank', 5000, 'STARTUP_BLANK_LOAD_TIMEOUT');
+    } catch (error) {
+      writeStartupDiagnostic('startup-blank-load-failed', error);
+    }
+    let storageReset = null;
+    const storageResetControl = { cancelled: false };
+    try {
+      storageReset = await withStartupDeadline(
+        backupAndClearChromiumLocalStorage(reason || 'SECOND_STAGE_STARTUP_RECOVERY', storageResetControl),
+        12000,
+        'STARTUP_STORAGE_RESET_TIMEOUT',
+        () => { storageResetControl.cancelled = true; },
+      );
+    } catch (error) {
+      writeStartupDiagnostic('startup-storage-reset-timeout', error);
+    }
+    if (!storageReset || !storageReset.ok) {
+      writeStartupDiagnostic(
+        'startup-storage-reset-skipped',
+        storageReset && storageReset.error || 'Storage recovery unavailable; continuing safe load',
+      );
+    }
+  }
+  if (mainWindowStartupReady || win.isDestroyed() || win.webContents.isDestroyed()) return true;
+  try {
+    await withStartupDeadline(
+      session.defaultSession.clearCache(),
+      6000,
+      `STARTUP_CACHE_CLEAR_STAGE_${stage}_TIMEOUT`,
+    );
+  } catch (_cacheError) {}
+  try {
+    await loadWindowWithStartupDeadline(
+      win,
+      mainWindowUrl(mainServerPort, true),
+      12000,
+      `STARTUP_SAFE_LOAD_STAGE_${stage}_TIMEOUT`,
+    );
+    restoreMainWindowElectronInteraction(win, true);
+    return true;
+  } catch (error) {
+    writeStartupDiagnostic(`startup-safe-reload-stage-${stage}-failed`, error);
+    restoreMainWindowElectronInteraction(win, true);
+    return false;
+  }
+}
+
+function recoverMainWindowStartup(win, reason) {
+  // Already-ready means startup recovery has nothing left to do and should be
+  // reported as success to callers. Returning false here used to make a benign
+  // loadURL subresource timeout bubble up and terminate the whole application.
+  if (mainWindowStartupReady) return Promise.resolve(true);
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return Promise.resolve(false);
+  if (mainWindowStartupRecoveryPromise) return mainWindowStartupRecoveryPromise;
+  if (mainWindowStartupRecoveryStage >= 2) return Promise.resolve(false);
+
+  mainWindowStartupRecoveryAttempted = true;
+  mainWindowStartupSafeMode = true;
+  const recovery = (async () => {
+    for (let stage = mainWindowStartupRecoveryStage + 1; stage <= 2; stage += 1) {
+      mainWindowStartupRecoveryStage = stage;
+      const loaded = await runMainWindowStartupRecoveryStage(win, stage, reason);
+      if (loaded || mainWindowStartupReady) return true;
+      if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return false;
+    }
+    return false;
+  })();
+  const recoveryPromise = recovery.finally(() => {
+    if (mainWindowStartupRecoveryPromise === recoveryPromise) mainWindowStartupRecoveryPromise = null;
+  });
+  mainWindowStartupRecoveryPromise = recoveryPromise;
+  return recoveryPromise;
+}
+
+async function handleMainWindowStartupWatchdog(win) {
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed() || mainWindowStartupReady) return;
+  const result = await forceRevealMainWindowSplash(win);
+  if (mainWindowStartupReady || !win || win.isDestroyed() || win.webContents.isDestroyed()) return;
+  if (result && result.bootstrapped) {
+    console.warn('[Startup] splash watchdog forced the home screen to reveal');
+    await forceDisableWallpaperMode('startup-watchdog');
+    await new Promise(resolve => setTimeout(resolve, 500));
+    if (mainWindowStartupReady) return;
+  }
+  if (mainWindowStartupReady) return;
+  await recoverMainWindowStartup(win, result ? 'RENDERER_BOOTSTRAP_INCOMPLETE' : 'RENDERER_UNRESPONSIVE');
+}
+
 async function createWindow() {
   htmlFullscreenActive = false;
   windowFullscreenActive = false;
+  mainWindowDesktopEmbedded = false;
+  mainWindowDesktopInteractive = false;
+  mainWindowDesktopEmbeddingUncertain = false;
+  mainWindowStartupReady = false;
+  mainWindowStartupRecoveryAttempted = false;
+  mainWindowStartupRecoveryStage = 0;
+  mainWindowStartupRecoveryPromise = null;
+  mainWindowStartupSafeMode = false;
   const port = await findOpenPort(3000);
   mainServerPort = port;
 
@@ -3309,25 +4155,8 @@ async function createWindow() {
     const watchedWindow = mainWindow;
     mainWindowSplashWatchdogTimer = setTimeout(() => {
       mainWindowSplashWatchdogTimer = null;
-      if (!watchedWindow || watchedWindow.isDestroyed() || watchedWindow.webContents.isDestroyed()) return;
-      watchedWindow.webContents.executeJavaScript(`(() => {
-        const body = document.body;
-        if (!body || !body.classList.contains('splash-active')) return false;
-        const splash = document.getElementById('splash');
-        if (splash) {
-          splash.classList.add('hide');
-          splash.style.display = 'none';
-        }
-        body.classList.remove('splash-active', 'splash-revealing');
-        if (typeof splashAnimating !== 'undefined') splashAnimating = false;
-        if (typeof splashReadyToEnter !== 'undefined') splashReadyToEnter = false;
-        if (typeof updateEmptyHomeVisibility === 'function') updateEmptyHomeVisibility({ forceLoad: true });
-        if (typeof wakeMainRenderLoop === 'function') wakeMainRenderLoop();
-        return true;
-      })()`, true).then((recovered) => {
-        if (recovered) console.warn('[Startup] splash watchdog forced the home screen to reveal');
-      }).catch((error) => {
-        console.warn('[Startup] splash watchdog could not reach the renderer:', error.message);
+      handleMainWindowStartupWatchdog(watchedWindow).catch((error) => {
+        writeStartupDiagnostic('startup-watchdog-failed', error);
       });
     }, 8000);
   });
@@ -3335,16 +4164,32 @@ async function createWindow() {
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     console.error('[Renderer] process gone:', details && details.reason, details && details.exitCode);
     if (appQuitting) return;
-    setTimeout(() => {
+    setTimeout(async () => {
       if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
-      try {
-        mainWindow.webContents.reload();
-        mainWindow.show();
-        mainWindow.focus();
-      } catch (error) {
-        console.error('[Renderer] recovery failed:', error);
+      if (!mainWindowStartupReady) {
+        await recoverMainWindowStartup(mainWindow, JSON.stringify(details || {})).catch(() => {});
+        return;
       }
+      mainWindowStartupReady = false;
+      mainWindowStartupRecoveryAttempted = false;
+      mainWindowStartupRecoveryStage = 0;
+      mainWindowStartupRecoveryPromise = null;
+      await recoverMainWindowStartup(mainWindow, JSON.stringify(details || {})).catch((error) => {
+        console.error('[Renderer] recovery failed:', error);
+      });
     }, 700);
+  });
+
+  mainWindow.on('unresponsive', () => {
+    writeStartupDiagnostic('main-window-unresponsive', 'Renderer did not respond');
+    if (!mainWindowStartupReady) recoverMainWindowStartup(mainWindow, 'WINDOW_UNRESPONSIVE').catch(() => {});
+  });
+
+  mainWindow.webContents.on('did-fail-load', (_event, code, description, validatedURL, isMainFrame) => {
+    if (!isMainFrame || code === -3) return;
+    const detail = `${code} ${description || ''} ${validatedURL || ''}`.trim();
+    writeStartupDiagnostic('main-window-did-fail-load', detail);
+    if (!mainWindowStartupReady) recoverMainWindowStartup(mainWindow, detail).catch(() => {});
   });
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
@@ -3470,7 +4315,27 @@ async function createWindow() {
     setTimeout(() => applyWindowedBounds(mainWindow, restoreBounds), 50);
   });
 
-  await mainWindow.loadURL(`http://127.0.0.1:${port}`);
+  try {
+    await loadWindowWithStartupDeadline(
+      mainWindow,
+      mainWindowUrl(port, false),
+      12000,
+      'INITIAL_MAIN_WINDOW_LOAD_TIMEOUT',
+      { preserveWhenRendererReady: true },
+    );
+  } catch (error) {
+    if (mainWindowStartupReady && error && error.code === 'INITIAL_MAIN_WINDOW_LOAD_TIMEOUT') {
+      // The app's renderer-ready IPC is the authoritative startup signal.
+      // Electron's loadURL promise can remain pending on an optional resource,
+      // which is not a reason to enter recovery or terminate the application.
+      writeStartupDiagnostic('initial-main-window-subresource-timeout-ignored', error);
+      restoreMainWindowElectronInteraction(mainWindow, true);
+      return;
+    }
+    writeStartupDiagnostic('initial-main-window-load-failed', error);
+    const recovered = await recoverMainWindowStartup(mainWindow, 'INITIAL_MAIN_WINDOW_LOAD_FAILED');
+    if (!recovered) throw error;
+  }
 }
 
 if (!gotSingleInstanceLock) {
