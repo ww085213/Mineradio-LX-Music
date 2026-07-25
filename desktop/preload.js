@@ -220,6 +220,8 @@ restorePersistentUiState();
 
 contextBridge.exposeInMainWorld('desktopWindow', {
   isDesktop: true,
+  getMemorySnapshot: () => ipcRenderer.invoke('mineradio-memory-get-snapshot'),
+  trimAppMemory: (payload) => ipcRenderer.invoke('mineradio-memory-trim-app', payload || {}),
   minimize: () => ipcRenderer.invoke('desktop-window-minimize'),
   toggleMaximize: () => ipcRenderer.invoke('desktop-window-toggle-maximize'),
   toggleFullscreen: () => ipcRenderer.invoke('desktop-window-toggle-fullscreen'),

@@ -1326,7 +1326,7 @@ html.local-only-mode #ai-depth-chip{display:none!important;visibility:hidden!imp
 /*  控制台 — 简化版                                              */
 /* ============================================================ */
 #fx-panel{position:fixed;z-index:18;right:-460px;bottom:92px;width:min(444px,calc(100vw - 48px));max-height:min(650px,calc(100vh - 132px));max-height:min(650px,calc(100dvh - 132px));min-height:0;box-sizing:border-box;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-gutter:stable;background:var(--glass-bg);border:1px solid rgba(0,245,212,0.16);border-radius:20px;padding:18px 18px 32px;backdrop-filter:blur(44px) saturate(1.34);-webkit-backdrop-filter:blur(44px) saturate(1.34);box-shadow:var(--glass-shadow);opacity:0;transition:right .55s cubic-bezier(.16,1,.3,1),opacity .45s cubic-bezier(.16,1,.3,1),transform .55s cubic-bezier(.16,1,.3,1);pointer-events:none;transform:translateY(18px) scale(.97);scrollbar-width:auto;scrollbar-color:rgba(0,245,212,.42) transparent}
-#fx-panel.show, #fx-panel.peek{right:24px;opacity:1;pointer-events:auto;transform:translateY(0)}
+#fx-panel.show, #fx-panel.peek{right:24px;opacity:1;pointer-events:auto;transform:none}
 #fx-panel.show{animation:fx-panel-in .56s cubic-bezier(.16,1,.3,1)}
 #fx-panel.closing{animation:fx-panel-out .26s cubic-bezier(.5,0,.7,1)}
 #fx-panel::-webkit-scrollbar{width:8px}
@@ -2154,7 +2154,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
   top:-18px;
   z-index:4;
   display:grid;
-  grid-template-columns:repeat(5,minmax(0,1fr));
+  grid-template-columns:repeat(6,minmax(0,1fr));
   gap:5px;
   margin:-2px -2px 14px;
   padding:5px;
@@ -2165,7 +2165,115 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
   backdrop-filter:blur(18px) saturate(1.12);
   -webkit-backdrop-filter:blur(18px) saturate(1.12);
 }
-.fx-panel-tabs button{
+.fx-feature-finder{
+  position:relative;
+  grid-column:1 / -1;
+  min-width:0;
+}
+.fx-feature-finder::before{
+  content:'';
+  position:absolute;
+  z-index:1;
+  left:11px;
+  top:50%;
+  width:13px;
+  height:13px;
+  border:1.6px solid rgba(255,255,255,.54);
+  border-radius:50%;
+  transform:translateY(-58%);
+  pointer-events:none;
+}
+.fx-feature-finder::after{
+  content:'';
+  position:absolute;
+  z-index:1;
+  left:22px;
+  top:21px;
+  width:6px;
+  height:1.6px;
+  border-radius:999px;
+  background:rgba(255,255,255,.54);
+  transform:rotate(45deg);
+  pointer-events:none;
+}
+.fx-feature-search{
+  display:block;
+  box-sizing:border-box;
+  width:100%;
+  height:34px;
+  padding:0 30px 0 34px;
+  border:1px solid rgba(255,255,255,.09)!important;
+  border-radius:11px;
+  outline:0;
+  background:rgba(0,0,0,.28)!important;
+  color:#fff!important;
+  font:650 11.5px/1 var(--font-sans);
+  letter-spacing:.02em;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.055)!important;
+}
+.fx-feature-search:focus{
+  border-color:rgba(var(--fc-accent-rgb),.34)!important;
+  box-shadow:0 0 0 3px rgba(var(--fc-accent-rgb),.07),inset 0 1px 0 rgba(255,255,255,.07)!important;
+}
+.fx-feature-search::placeholder{color:rgba(255,255,255,.38)!important}
+.fx-feature-clear{
+  position:absolute;
+  z-index:2;
+  right:6px;
+  top:6px;
+  width:22px!important;
+  height:22px!important;
+  min-width:22px!important;
+  padding:0!important;
+  border:0!important;
+  border-radius:50%!important;
+  background:transparent!important;
+  box-shadow:none!important;
+  color:rgba(255,255,255,.44)!important;
+  font:700 15px/22px var(--font-sans)!important;
+  opacity:0;
+  pointer-events:none;
+}
+.fx-feature-finder.has-query .fx-feature-clear{opacity:1;pointer-events:auto}
+.fx-feature-results{
+  position:absolute;
+  z-index:20;
+  top:40px;
+  left:0;
+  right:0;
+  display:none;
+  max-height:260px;
+  overflow:auto;
+  padding:5px;
+  border:1px solid rgba(255,255,255,.11);
+  border-radius:13px;
+  background:rgba(5,6,9,.96);
+  box-shadow:0 22px 58px rgba(0,0,0,.52),inset 0 1px 0 rgba(255,255,255,.08);
+  backdrop-filter:blur(22px) saturate(1.12);
+  -webkit-backdrop-filter:blur(22px) saturate(1.12);
+}
+.fx-feature-results.show{display:block}
+.fx-feature-result{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  width:100%;
+  min-height:34px;
+  padding:6px 8px;
+  border:0;
+  border-radius:9px;
+  background:transparent;
+  color:rgba(255,255,255,.88);
+  text-align:left;
+  cursor:pointer;
+}
+.fx-feature-result:hover,.fx-feature-result:focus-visible{outline:0;background:rgba(var(--fc-accent-rgb),.11)}
+.fx-feature-result-name{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:650 11.5px/1.25 var(--font-sans)}
+.fx-feature-result-tab{flex:0 0 auto;padding:3px 6px;border-radius:999px;background:rgba(255,255,255,.07);color:rgba(255,255,255,.48);font:700 9px/1 var(--font-sans)}
+.fx-feature-empty{padding:13px 8px;text-align:center;color:rgba(255,255,255,.42);font-size:11px}
+#fx-panel .fx-find-hit{animation:fx-find-hit 1.35s ease both}
+@keyframes fx-find-hit{0%,100%{box-shadow:inherit}18%,72%{border-color:rgba(var(--fc-accent-rgb),.55)!important;box-shadow:0 0 0 3px rgba(var(--fc-accent-rgb),.12),0 12px 30px rgba(0,0,0,.20)!important}}
+.fx-panel-tabs > button{
   min-width:0;
   height:30px;
   border:0;
@@ -2177,8 +2285,8 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
   cursor:pointer;
   transition:background .18s,color .18s,box-shadow .18s,transform .18s;
 }
-.fx-panel-tabs button:hover{color:#fff;background:rgba(255,255,255,.055)}
-.fx-panel-tabs button.active{
+.fx-panel-tabs > button:hover{color:#fff;background:rgba(255,255,255,.055)}
+.fx-panel-tabs > button.active{
   color:#fff;
   background:rgba(var(--fc-accent-rgb),.15);
   box-shadow:inset 0 0 0 1px rgba(var(--fc-accent-rgb),.24),0 8px 22px rgba(var(--fc-accent-rgb),.08);
@@ -2203,7 +2311,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
 @media (max-width:720px){
   .fx-panel-tabs{display:flex;overflow-x:auto;scrollbar-width:none;top:-14px}
   .fx-panel-tabs::-webkit-scrollbar{display:none}
-  .fx-panel-tabs button{flex:0 0 auto;min-width:58px;padding:0 10px}
+  .fx-panel-tabs > button{flex:0 0 auto;min-width:58px;padding:0 10px}
   .cover-color-pop,.color-lab-pop{width:calc(100vw - 28px)!important}
 }
 
@@ -3409,13 +3517,13 @@ body.now-flow-only #now-flow .nf-btn[aria-pressed="true"]{
   box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 12px 34px rgba(0,0,0,.16)!important;
   border-radius:16px!important;
 }
-#fx-panel .fx-panel-tabs button,#playlist-panel .panel-tab{
+#fx-panel .fx-panel-tabs > button,#playlist-panel .panel-tab{
   border-radius:12px!important;
   color:rgba(255,255,255,.58)!important;
   transition:background .18s,color .18s,box-shadow .18s,transform .18s!important;
 }
-#fx-panel .fx-panel-tabs button:hover,#playlist-panel .panel-tab:hover{background:rgba(255,255,255,.07)!important;color:#fff!important}
-#fx-panel .fx-panel-tabs button.active,#playlist-panel .panel-tab.active{
+#fx-panel .fx-panel-tabs > button:hover,#playlist-panel .panel-tab:hover{background:rgba(255,255,255,.07)!important;color:#fff!important}
+#fx-panel .fx-panel-tabs > button.active,#playlist-panel .panel-tab.active{
   color:#fff!important;
   background:linear-gradient(145deg,rgba(255,255,255,.16),rgba(var(--fc-accent-rgb),.10))!important;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.20),0 9px 24px rgba(0,0,0,.18),0 0 18px rgba(var(--fc-accent-rgb),.06)!important;
@@ -3464,7 +3572,7 @@ html.control-glass-svg-ok #fx-panel{
 html.control-glass-svg-ok #playlist-panel .fx-mini-btn,
 html.control-glass-svg-ok #playlist-panel .panel-tab,
 html.control-glass-svg-ok #fx-panel .fx-mini-btn,
-html.control-glass-svg-ok #fx-panel .fx-panel-tabs button{
+html.control-glass-svg-ok #fx-panel .fx-panel-tabs > button{
   backdrop-filter:url(#mineradio-search-pill-glass-filter) saturate(1)!important;
   -webkit-backdrop-filter:url(#mineradio-search-pill-glass-filter) saturate(1)!important;
 }
@@ -3840,6 +3948,10 @@ html:fullscreen body.desktop-shell.empty-home-active.controls-visible #empty-hom
 .radio-mode-card::before{content:'';position:absolute;z-index:-1;inset:-22%;background:radial-gradient(circle at 76% 24%,rgba(255,255,255,.34),transparent 21%),repeating-radial-gradient(circle at 82% 34%,rgba(255,255,255,.13) 0 2px,transparent 3px 14px);opacity:.66;transform:rotate(-12deg)}
 .radio-mode-card::after{content:'';position:absolute;z-index:-1;right:-30px;bottom:-52px;width:150px;height:150px;border:22px solid rgba(255,255,255,.10);border-radius:50%;box-shadow:0 0 0 18px rgba(0,0,0,.08)}
 .radio-mode-card:hover,.radio-mode-card:focus-visible{transform:translateY(-3px) scale(1.008);border-color:rgba(255,255,255,.34);box-shadow:0 26px 64px rgba(0,0,0,.30),0 0 28px color-mix(in srgb,var(--radio-a) 20%,transparent);filter:saturate(1.08);outline:none}
+.radio-mode-card.favorite{border-color:rgba(255,214,102,.52);box-shadow:0 18px 44px rgba(0,0,0,.22),0 0 24px rgba(255,214,102,.12),inset 0 1px 0 rgba(255,255,255,.20)}
+.radio-mode-favorite{position:absolute;z-index:3;right:58px;top:15px;width:36px;height:36px;display:grid;place-items:center;border:1px solid rgba(255,255,255,.14);border-radius:50%;background:rgba(0,0,0,.20);color:rgba(255,255,255,.68);font-size:18px;line-height:1;cursor:pointer;transition:color .18s,background .18s,border-color .18s,transform .18s}
+.radio-mode-favorite:hover{color:#ffe9a6;border-color:rgba(255,233,166,.42);background:rgba(0,0,0,.32);transform:scale(1.07)}
+.radio-mode-favorite.active{color:#ffd45e;border-color:rgba(255,212,94,.58);background:rgba(83,57,5,.58);text-shadow:0 0 15px rgba(255,212,94,.48)}
 .radio-mode-card.loading{pointer-events:none;filter:saturate(.68);opacity:.74}.radio-mode-kicker{font-size:9px;font-weight:850;letter-spacing:.18em;color:rgba(255,255,255,.72)}.radio-mode-title{display:block;max-width:82%;margin-top:44px;font-size:19px;font-weight:820;line-height:1.08;text-shadow:0 4px 18px rgba(0,0,0,.25)}.radio-mode-sub{display:block;max-width:88%;margin-top:7px;font-size:10.5px;line-height:1.42;color:rgba(255,255,255,.76)}.radio-mode-play{position:absolute;right:15px;top:15px;width:36px;height:36px;display:grid;place-items:center;border-radius:50%;background:rgba(0,0,0,.23);box-shadow:inset 0 1px 0 rgba(255,255,255,.18);font-size:14px}.radio-mode-card.loading .radio-mode-play{animation:radioSpin .8s linear infinite}
 @keyframes radioSpin{to{transform:rotate(360deg)}}
 @media (max-width:1120px){.radio-mode-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
@@ -4294,6 +4406,97 @@ body.now-flow-only #now-flow,body.now-flow-only #now-flow:hover,body.now-flow-on
 }
 .home-card::before,.home-insight-card::before,#app-primary-nav::before{
   opacity:calc(.18 + var(--liquid-glass-opacity) * .35)!important;
+}
+
+/* Expanded search sources use the same liquid-glass material as the player. */
+#search-mode-tabs:not(.is-collapsed){
+  box-sizing:border-box!important;
+  width:100%!important;
+  padding:0!important;
+  margin-top:4px!important;
+  gap:3px!important;
+  justify-content:space-between!important;
+  border-radius:0!important;
+  background:transparent!important;
+  border:0!important;
+  box-shadow:none!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+}
+#search-mode-tabs:not(.is-collapsed)>button{
+  height:32px!important;
+  padding:0 10px!important;
+  border:1px solid rgba(255,255,255,.28)!important;
+  background:
+    linear-gradient(145deg,rgba(255,255,255,.20),rgba(255,255,255,.055) 46%,rgba(8,12,18,.12)),
+    rgba(224,236,248,.075)!important;
+  color:rgba(255,255,255,.88)!important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.48),
+    inset 0 -1px 0 rgba(0,0,0,.12),
+    0 5px 15px rgba(0,0,0,.16)!important;
+  backdrop-filter:blur(17px) saturate(1.72) brightness(1.10)!important;
+  -webkit-backdrop-filter:blur(17px) saturate(1.72) brightness(1.10)!important;
+}
+#search-mode-tabs:not(.is-collapsed)>button:hover{
+  background:linear-gradient(145deg,rgba(255,255,255,.28),rgba(255,255,255,.09) 52%,rgba(var(--fc-accent-rgb),.08))!important;
+  border-color:rgba(255,255,255,.46)!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.68),0 7px 20px rgba(0,0,0,.20),0 0 18px rgba(255,255,255,.08)!important;
+}
+#search-mode-tabs:not(.is-collapsed)>button.active{
+  background:
+    linear-gradient(145deg,rgba(255,255,255,.25),rgba(var(--fc-accent-rgb),.15) 55%,rgba(7,14,18,.12))!important;
+  border-color:rgba(var(--fc-accent-rgb),.46)!important;
+  color:#fff!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.68),inset 0 0 0 1px rgba(var(--fc-accent-rgb),.16),0 7px 22px rgba(0,0,0,.18),0 0 20px rgba(var(--fc-accent-rgb),.11)!important;
+}
+html.control-glass-svg-ok #search-mode-tabs:not(.is-collapsed)>button{
+  backdrop-filter:url(#mineradio-search-pill-glass-filter) saturate(1.12)!important;
+  -webkit-backdrop-filter:url(#mineradio-search-pill-glass-filter) saturate(1.12)!important;
+}
+#search-mode-tabs .search-mode-toggle{
+  position:relative!important;
+  box-sizing:border-box!important;
+  flex:0 0 32px!important;
+  width:32px!important;
+  min-width:32px!important;
+  height:32px!important;
+  padding:0!important;
+  display:grid!important;
+  place-items:center!important;
+}
+#search-mode-tabs:not(.is-collapsed)>.search-mode-toggle{
+  padding:0!important;
+}
+#search-mode-tabs.is-collapsed,
+html.control-glass-svg-ok #search-mode-tabs.is-collapsed{
+  margin-top:4px!important;
+}
+#search-mode-tabs .search-mode-toggle::before{
+  content:''!important;
+  position:absolute!important;
+  left:50%!important;
+  top:50%!important;
+  width:12px!important;
+  height:2px!important;
+  border-radius:999px!important;
+  background:currentColor!important;
+  transform:translate(-50%,-50%)!important;
+}
+#search-mode-tabs .search-mode-toggle::after{
+  content:''!important;
+  position:absolute!important;
+  left:50%!important;
+  top:50%!important;
+  width:12px!important;
+  height:2px!important;
+  border-radius:999px!important;
+  background:currentColor!important;
+  opacity:0!important;
+  transform:translate(-50%,-50%) rotate(90deg)!important;
+}
+#search-mode-tabs.is-collapsed .search-mode-toggle::after{
+  opacity:1!important;
 }
 
 
@@ -4844,54 +5047,22 @@ body.now-flow-only #now-flow,body.now-flow-only #now-flow:hover,body.now-flow-on
         <button data-stage-lyrics-rows="6">6行</button>
         <button data-stage-lyrics-rows="8">8行</button>
       </div>
-      <div class="fx-section-label">桌面歌词</div>
-      <div class="fx-slider"><label>桌面歌词大小</label><input id="fx-desktoplyricssize" type="range" min="0.5" max="4" step="0.01"><output></output></div>
-      <div class="fx-slider"><label>桌面歌词透明</label><input id="fx-desktoplyricsopacity" type="range" min="0.28" max="1" step="0.01"><output></output></div>
-      <div class="fx-slider"><label>桌面歌词左右</label><input id="fx-desktoplyricsx" type="range" min="0.02" max="0.98" step="0.01"><output></output></div>
-      <div class="fx-slider"><label>桌面歌词高度</label><input id="fx-desktoplyricsy" type="range" min="0.08" max="0.92" step="0.01"><output></output></div>
-      <div class="fx-seg" id="desktop-lyrics-position-preset-seg">
-        <button type="button" onclick="setDesktopLyricsPositionPreset('left')">靠左</button>
-        <button type="button" onclick="setDesktopLyricsPositionPreset('center')">居中</button>
-        <button type="button" onclick="setDesktopLyricsPositionPreset('right')">靠右</button>
-        <button type="button" onclick="setDesktopLyricsPositionPreset('reset')">复位</button>
-      </div>
-      <div class="fx-section-label">桌面歌词帧率</div>
-      <div class="fx-seg" id="desktop-lyrics-fps-seg">
-        <button data-desktop-lyrics-fps="24">24</button>
-        <button data-desktop-lyrics-fps="30">30</button>
-        <button data-desktop-lyrics-fps="60">60</button>
-        <button data-desktop-lyrics-fps="120">120</button>
-        <button data-desktop-lyrics-fps="165">165</button>
-      </div>
-      <div class="fx-section-label">桌面歌词布局</div>
-      <div class="fx-seg" id="desktop-lyrics-rows-seg">
-        <button data-desktop-lyrics-rows="single">单行</button>
-        <button data-desktop-lyrics-rows="double">舞台双行</button>
-        <button data-desktop-lyrics-rows="triple">舞台三行</button>
-        <button data-desktop-lyrics-rows="quad">舞台四行</button>
-      </div>
-      <div class="fx-seg" id="desktop-lyrics-align-seg">
-        <button data-desktop-lyrics-align="left">左对齐</button>
-        <button data-desktop-lyrics-align="center">居中</button>
-        <button data-desktop-lyrics-align="right">右对齐</button>
-      </div>
-      <div class="fx-section-label">桌面歌词字体</div>
-      <div class="fx-font-grid expanded" id="desktop-lyrics-font-grid">
-        <button type="button" data-desktop-lyrics-font="follow">跟随</button>
-        <button type="button" data-desktop-lyrics-font="sans">默认</button>
-        <button type="button" data-desktop-lyrics-font="hei">黑体</button>
-        <button type="button" data-desktop-lyrics-font="song">宋体</button>
-        <button type="button" data-desktop-lyrics-font="bold-song">粗宋</button>
-        <button type="button" data-desktop-lyrics-font="stone-song">石印宋</button>
-        <button type="button" data-desktop-lyrics-font="kai-song">楷宋</button>
-        <button type="button" data-desktop-lyrics-font="serif-en">Serif</button>
-        <button type="button" data-desktop-lyrics-font="gothic">Gothic</button>
-        <button type="button" data-desktop-lyrics-font="editorial">Editorial</button>
-        <button type="button" data-desktop-lyrics-font="humanist">Humanist</button>
-        <button type="button" data-desktop-lyrics-font="mono">等宽</button>
-        <button type="button" data-desktop-lyrics-font="display">标题</button>
-      </div>
-      <div class="fx-section-label">播放器内歌词位置</div>
+      <div class="fx-section-label">桌面 / 壁纸</div>
+          <div class="fx-slider"><label>桌面歌词大小</label><input id="fx-desktoplyricssize" type="range" min="0.72"
+              max="1.55" step="0.01"><output></output></div>
+          <div class="fx-slider"><label>桌面歌词透明</label><input id="fx-desktoplyricsopacity" type="range" min="0.28"
+              max="1" step="0.01"><output></output></div>
+          <div class="fx-slider"><label>桌面歌词高度</label><input id="fx-desktoplyricsy" type="range" min="0.08" max="0.92"
+              step="0.01"><output></output></div>
+          <div class="fx-section-label">桌面帧数</div>
+          <div class="fx-seg" id="desktop-lyrics-fps-seg">
+            <button data-desktop-lyrics-fps="24">24</button>
+            <button data-desktop-lyrics-fps="30">30</button>
+            <button data-desktop-lyrics-fps="60">60</button>
+            <button data-desktop-lyrics-fps="120">120</button>
+            <button data-desktop-lyrics-fps="0">无上限</button>
+          </div>
+          <div class="fx-section-label">播放器内歌词位置</div>
       <div class="fx-seg" id="lyric-layout-preset-seg">
         <button type="button" data-lyric-layout-preset="left" onclick="setPlayerLyricPositionPreset('left')">左侧</button>
         <button type="button" data-lyric-layout-preset="center" onclick="setPlayerLyricPositionPreset('center')">居中</button>
@@ -5010,7 +5181,6 @@ body.now-flow-only #now-flow,body.now-flow-only #now-flow:hover,body.now-flow-on
         <div class="fx-toggle" id="t-edge" onclick="toggleFx('edge')"><span>轮廓高亮</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-desktopLyrics" onclick="toggleFx('desktopLyrics')" title="全屏幕置顶歌词"><span>桌面歌词</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-desktopLyricsClickThrough" onclick="toggleFx('desktopLyricsClickThrough')" title="建议保持开启；位置在上方“桌面歌词左右/高度”滑块里调整，不在桌面拖动"><span>桌面歌词锁定</span><span class="dot"></span></div>
-        <div class="fx-toggle" id="t-desktopLyricsGlow" onclick="toggleFx('desktopLyricsGlow')" title="只关闭桌面歌词泛光，不影响主界面歌词"><span>桌面歌词泛光</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-desktopLyricsCinema" onclick="toggleFx('desktopLyricsCinema')" title="桌面歌词绑定鼓点电影震动，基础漂浮始终保留"><span>桌面歌词电影震动</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-desktopLyricsHighlight" onclick="toggleFx('desktopLyricsHighlight')" title="桌面歌词按播放进度高亮"><span>桌面歌词高亮跟随</span><span class="dot"></span></div>
         <div class="fx-toggle desktop-wallpaper-setting" id="t-wallpaperMode" onclick="toggleFx('wallpaperMode')" title="把当前播放封面、歌曲和歌词同步到 Windows 桌面壁纸层"><span>桌面融合播放<em class="fx-dev-badge">可用</em></span><span class="dot"></span></div>
@@ -5326,7 +5496,7 @@ body.now-flow-only #now-flow,body.now-flow-only #now-flow:hover,body.now-flow-on
       </div>
     </div>
     <div id="volume-control" class="volume-control">
-      <button id="volume-btn" class="ctrl-btn" onclick="toggleVolumePanel(event)" title="音量 / 静音"><svg id="volume-icon" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15 9.5a4 4 0 0 1 0 5"/></svg></button>
+      <button id="volume-btn" class="ctrl-btn" onclick="toggleVolumePanel(event)" title="滚轮调音量 / 双击静音"><svg id="volume-icon" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15 9.5a4 4 0 0 1 0 5"/></svg></button>
       <div class="volume-popover" onclick="event.stopPropagation()">
         <input id="volume-slider" type="range" min="0" max="1" step="0.01" value="1" aria-label="音量">
         <span id="volume-value">100%</span>
@@ -5415,8 +5585,8 @@ body.now-flow-only #now-flow,body.now-flow-only #now-flow:hover,body.now-flow-on
     </div>
     <button class="nf-btn nf-round nf-hide-mid" data-nf-icon="queue" type="button" onpointerdown="nfOpenQueue(event)" onkeydown="if(event.key==='Enter'||event.key===' '){nfOpenQueue(event)}" title="播放列表" aria-label="播放列表"></button>
     <div class="nf-volume-wrap nf-hide-sm">
-      <button id="nf-volume-btn" class="nf-btn nf-round" data-nf-icon="volume" type="button" onclick="nfToggleVolume(event)" ondblclick="nfAction(event, toggleMute)" title="音量 / 双击静音" aria-label="音量 / 双击静音"></button>
-      <div class="nf-volume-popover" onclick="event.stopPropagation()">
+      <button id="nf-volume-btn" class="nf-btn nf-round" data-nf-icon="volume" type="button" onclick="nfToggleVolume(event)" ondblclick="nfAction(event, toggleMute)" onwheel="nfWheelVolume(event)" title="滚轮调音量 / 双击静音" aria-label="滚轮调音量 / 双击静音"></button>
+      <div class="nf-volume-popover" onclick="event.stopPropagation()" onwheel="nfWheelVolume(event)">
         <input id="nf-volume-slider" type="range" min="0" max="1" step="0.01" value="1" oninput="nfSetVolume(this.value)" aria-label="音量">
         <span id="nf-volume-label">100%</span>
       </div>
@@ -5558,7 +5728,7 @@ body.now-flow-only #now-flow,body.now-flow-only #now-flow:hover,body.now-flow-on
         <div>
           <div class="update-kicker">MINERADIO 二创版</div>
           <div id="update-modal-title" class="update-title">New release</div>
-          <div id="update-modal-version" class="update-version">Mineradio v1.5.6.1</div>
+          <div id="update-modal-version" class="update-version">Mineradio v1.5.6.3</div>
         </div>
       </div>
       <div class="update-hero">
@@ -6030,8 +6200,8 @@ var updatePreviewState = {
   installerPath: '',
   installerOpened: false,
   cached: false,
-  currentVersion: '1.5.6.1',
-  version: '1.5.6.1',
+  currentVersion: '1.5.6.3',
+  version: '1.5.6.3',
   configured: false,
   preview: true,
   updateAvailable: false,
@@ -7107,7 +7277,7 @@ var fxDefaults = {
   desktopLyricsGlow: true,
   desktopLyricsCinema: true,
   desktopLyricsHighlight: false,
-  desktopLyricsFps: 120,
+  desktopLyricsFps: 60,
   desktopLyricsRows: 'double',
   desktopLyricsAlign: 'center',
   desktopLyricsFont: 'follow',
@@ -7221,7 +7391,7 @@ var PACKAGED_DEFAULT_FX_SNAPSHOT = Object.freeze({
   desktopLyricsGlow: true,
   desktopLyricsCinema: true,
   desktopLyricsHighlight: false,
-  desktopLyricsFps: 120,
+  desktopLyricsFps: 60,
   desktopLyricsRows: 'double',
   desktopLyricsAlign: 'center',
   desktopLyricsFont: 'follow',
@@ -7292,6 +7462,9 @@ function readSavedPlaybackVisualPreset() {
 }
 var playbackVisualPreset = readSavedPlaybackVisualPreset();
 var startupVisualPreviewActive = false;
+// Keep an immutable copy of the last valid custom background. Media playback
+// failures are runtime concerns and must never erase the user's saved choice.
+var lastKnownGoodBackgroundMedia = null;
 var fx = Object.assign({}, fxDefaults, readSavedLyricLayout());
 fx.preset = playbackVisualPreset;
 try {
@@ -12219,6 +12392,8 @@ function readSavedLyricLayout() {
   try {
     var savedLayoutRaw = localStorage.getItem(LYRIC_LAYOUT_STORE_KEY);
     var raw = savedLayoutRaw ? (JSON.parse(savedLayoutRaw) || {}) : packagedDefaultLyricLayoutRaw();
+    var normalizedSavedBackgroundMedia = normalizeCustomBackgroundMedia(raw.backgroundMedia || raw.backgroundImage);
+    if (normalizedSavedBackgroundMedia) lastKnownGoodBackgroundMedia = Object.assign({}, normalizedSavedBackgroundMedia);
     var savedLyricAnimation = (typeof LyricAnimation !== 'undefined' && LyricAnimation.normalizeFx) ? LyricAnimation.normalizeFx(raw) : {};
     var savedPreset = clampRange(Number(raw.preset) || 0, 0, 12);
     if (savedPreset === 10) savedPreset = 8;
@@ -12305,10 +12480,10 @@ function readSavedLyricLayout() {
       controlGlassChromaticOffset: savedGlassOffset,
       backgroundColorCustom: savedBgCustom,
       backgroundImage: normalizeCustomBackgroundImage(raw.backgroundImage),
-      backgroundMedia: normalizeCustomBackgroundMedia(raw.backgroundMedia || raw.backgroundImage),
+      backgroundMedia: normalizedSavedBackgroundMedia,
       lxDualPlayback: false,
       desktopLyrics: raw.desktopLyrics === true,
-      desktopLyricsSize: clampRange(Number(raw.desktopLyricsSize) || fxDefaults.desktopLyricsSize, 0.5, 4),
+      desktopLyricsSize: clampRange(Number(raw.desktopLyricsSize) || fxDefaults.desktopLyricsSize, 0.72, 1.55),
       desktopLyricsOpacity: clampRange(raw.desktopLyricsOpacity == null ? fxDefaults.desktopLyricsOpacity : Number(raw.desktopLyricsOpacity), 0.28, 1),
       desktopLyricsX: clampRange(raw.desktopLyricsX == null ? fxDefaults.desktopLyricsX : Number(raw.desktopLyricsX), 0.02, 0.98),
       desktopLyricsY: clampRange(raw.desktopLyricsY == null ? fxDefaults.desktopLyricsY : Number(raw.desktopLyricsY), 0.08, 0.92),
@@ -12357,6 +12532,12 @@ function saveLyricLayout() {
     var presetForSave = startupVisualPreviewActive && !playing && currentIdx < 0
       ? playbackVisualPreset
       : clampRange(Number(fx.preset) || 0, 0, presetMeta.length - 1);
+    var normalizedBackgroundMediaForSave = normalizeCustomBackgroundMedia(fx.backgroundMedia || fx.backgroundImage);
+    if (normalizedBackgroundMediaForSave) lastKnownGoodBackgroundMedia = Object.assign({}, normalizedBackgroundMediaForSave);
+    var protectedBackgroundMediaForSave = normalizedBackgroundMediaForSave
+      || (customBgVideoSessionDisabled && lastKnownGoodBackgroundMedia
+        ? Object.assign({}, lastKnownGoodBackgroundMedia)
+        : null);
     var layoutPayload = {
       visualPresetSchema: VISUAL_PRESET_SCHEMA,
       desktopLyricsSchema: 'desktop-lyrics-v4',
@@ -12413,10 +12594,10 @@ function saveLyricLayout() {
       controlGlassChromaticOffset: clampRange(fx.controlGlassChromaticOffset == null ? fxDefaults.controlGlassChromaticOffset : Number(fx.controlGlassChromaticOffset), 0, 140),
       backgroundColorCustom: fx.backgroundColorMode === 'custom' || !!fx.backgroundColorCustom,
       backgroundImage: normalizeCustomBackgroundImage(fx.backgroundImage),
-      backgroundMedia: normalizeCustomBackgroundMedia(fx.backgroundMedia || fx.backgroundImage),
+      backgroundMedia: protectedBackgroundMediaForSave,
       lxDualPlayback: false,
       desktopLyrics: !!fx.desktopLyrics,
-      desktopLyricsSize: clampRange(Number(fx.desktopLyricsSize) || fxDefaults.desktopLyricsSize, 0.5, 4),
+      desktopLyricsSize: clampRange(Number(fx.desktopLyricsSize) || fxDefaults.desktopLyricsSize, 0.72, 1.55),
       desktopLyricsOpacity: clampRange(fx.desktopLyricsOpacity == null ? fxDefaults.desktopLyricsOpacity : Number(fx.desktopLyricsOpacity), 0.28, 1),
       desktopLyricsX: clampRange(fx.desktopLyricsX == null ? fxDefaults.desktopLyricsX : Number(fx.desktopLyricsX), 0.02, 0.98),
       desktopLyricsY: clampRange(fx.desktopLyricsY == null ? fxDefaults.desktopLyricsY : Number(fx.desktopLyricsY), 0.08, 0.92),
@@ -12795,6 +12976,10 @@ var customBgObjectUrl = '';
 var customBgApplyToken = 0;
 var customBgVideoPowerTimer = 0;
 var customBgVideoReleasedForPower = false;
+var customBgVideoSessionDisabled = /(?:^|[?&])safeMedia=1(?:&|$)/.test(String(location.search || ''));
+var customBgVideoSessionFailedKey = '';
+var customBgVideoLoadTimer = 0;
+var customBgVideoBound = false;
 var wallpaperCoverExpanded = false;
 var wallpaperCoverToggleTouched = false;
 var coverToggleTransitionUntil = 0;
@@ -12802,6 +12987,57 @@ var coverToggleBlankCanvas = null;
 var coverToggleRealCanvas = null;
 function currentCustomBackgroundMedia() {
   return normalizeCustomBackgroundMedia(fx && (fx.backgroundMedia || fx.backgroundImage));
+}
+function customBackgroundMediaKey(media) {
+  media = normalizeCustomBackgroundMedia(media);
+  if (!media) return '';
+  return [media.type || '', media.id || '', media.src || '', media.name || ''].join('|');
+}
+function clearCustomBackgroundVideoLoadTimer() {
+  if (!customBgVideoLoadTimer) return;
+  clearTimeout(customBgVideoLoadTimer);
+  customBgVideoLoadTimer = 0;
+}
+function resetCustomBackgroundVideoSessionFailure() {
+  customBgVideoSessionDisabled = false;
+  customBgVideoSessionFailedKey = '';
+  clearCustomBackgroundVideoLoadTimer();
+  document.body.classList.remove('custom-background-video-session-failed');
+}
+function disableCustomBackgroundVideoForSession(media, reason) {
+  media = normalizeCustomBackgroundMedia(media);
+  var key = customBackgroundMediaKey(media);
+  if (!media || media.type !== 'video' || key !== customBackgroundMediaKey(currentCustomBackgroundMedia())) return;
+  customBgVideoSessionDisabled = true;
+  customBgVideoSessionFailedKey = key;
+  clearCustomBackgroundVideoLoadTimer();
+  customBgApplyToken++;
+  document.body.classList.add('custom-background-video-session-failed');
+  var video = document.getElementById('custom-bg-video');
+  if (video) {
+    try { video.pause(); } catch (_pauseError) {}
+    try { video.removeAttribute('src'); video.load(); } catch (_releaseError) {}
+  }
+  if (customBgObjectUrl) {
+    try { URL.revokeObjectURL(customBgObjectUrl); } catch (_revokeError) {}
+    customBgObjectUrl = '';
+  }
+  var layer = document.getElementById('custom-bg');
+  if (layer) layer.style.setProperty('--custom-bg-video-opacity', '0');
+  console.warn('[BackgroundVideo] disabled for this session; saved configuration retained:', reason || 'media initialization failed');
+  // A broken decoder must not be able to hold the startup screen open.
+  if (document.body.classList.contains('splash-active') && typeof dismissSplash === 'function') dismissSplash();
+}
+function bindCustomBackgroundVideoFailureGuard(video) {
+  if (!video || customBgVideoBound) return;
+  customBgVideoBound = true;
+  video.addEventListener('loadeddata', clearCustomBackgroundVideoLoadTimer);
+  video.addEventListener('canplay', clearCustomBackgroundVideoLoadTimer);
+  video.addEventListener('error', function(){
+    var media = currentCustomBackgroundMedia();
+    var code = video.error && video.error.code ? ('media error ' + video.error.code) : 'media element error';
+    disableCustomBackgroundVideoForSession(media, code);
+  });
 }
 function hasCustomHomeBackground() {
   var media = currentCustomBackgroundMedia();
@@ -23473,23 +23709,45 @@ var secondaryLibraryEntries = [];
 var secondaryLibrarySelectedKey = '';
 var platformRankingState = { source:'all', songs:[], cache:Object.create(null), loading:false, error:'', requestToken:0, chartMode:'', chartLabel:'' };
 var radioModeState = { category:'all', loadingId:'', requestToken:0, orderNonce:0 };
+var RADIO_MODE_FAVORITES_KEY = 'mineradio-radio-mode-favorites-v1';
+var radioModeFavoriteIds = (function(){
+  try {
+    var saved = JSON.parse(localStorage.getItem(RADIO_MODE_FAVORITES_KEY) || '[]');
+    return Array.isArray(saved) ? saved.map(String).filter(Boolean) : [];
+  } catch (_error) {
+    return [];
+  }
+})();
 var RADIO_MODE_DEFINITIONS = [
-  { id:'personal', category:'personal', kicker:'FOR YOU', title:'私人漫游', sub:'从你的常听歌手与本地收藏继续发现', keywords:[], queries:['华语流行','宝藏单曲'], a:'#5b7cff', b:'#7734b8' },
-  { id:'heartbeat', category:'personal', kicker:'HEARTBEAT', title:'心动模式', sub:'喜欢过的旋律，混入一些相似惊喜', keywords:['喜欢','收藏'], queries:['治愈 流行','心动 情歌'], a:'#ff758f', b:'#a62972' },
-  { id:'daily', category:'scene', kicker:'DAILY FLOW', title:'今日漫游', sub:'不选曲，让今天的声音自然往下走', keywords:[], queries:['今日热歌','流行新歌'], a:'#4fd6c8', b:'#186f8f' },
-  { id:'commute', category:'scene', kicker:'ON THE WAY', title:'通勤节拍', sub:'适合路上、地铁和城市穿行的节奏', keywords:['流行','节奏'], queries:['通勤 歌单','城市 流行'], a:'#ffb65a', b:'#e4503e' },
-  { id:'late', category:'scene', kicker:'AFTER DARK', title:'深夜氛围', sub:'降低亮度，留下空间感与安静人声', keywords:['治愈','安静','夜','钢琴'], queries:['深夜 治愈','安静 氛围'], a:'#4a5f88', b:'#171d42' },
-  { id:'study', category:'scene', kicker:'FOCUS', title:'专注电台', sub:'少打扰的纯音乐与轻节拍背景声', keywords:['纯音乐','钢琴','轻音乐','instrumental'], queries:['学习 纯音乐','专注 BGM'], a:'#78c6a3', b:'#35645d' },
-  { id:'dj', category:'energy', kicker:'HOT DJ', title:'热门 DJ', sub:'Remix、电子律动与开车带感节拍', keywords:['dj','remix','mix'], queries:['DJ Remix','热门 DJ'], a:'#35bfff', b:'#3c34d9' },
-  { id:'high', category:'energy', kicker:'HIGH ENERGY', title:'高燃模式', sub:'副歌起飞，适合运动与快速回血', keywords:['高燃','热血','摇滚'], queries:['高燃 热血','运动 歌单'], a:'#ff4b4b', b:'#8b162d' },
-  { id:'game', category:'energy', kicker:'GAME ON', title:'游戏战歌', sub:'开局、团战和 Boss 时刻的推进感', keywords:['游戏','game','bgm','电竞'], queries:['游戏 战歌','电竞 BGM'], a:'#29d6d0', b:'#1477c9' },
-  { id:'anime', category:'style', kicker:'ANIME', title:'二次元', sub:'动画、虚拟歌姬与熟悉的日系旋律', keywords:['动漫','动画','初音','anime','vocaloid'], queries:['二次元 动漫','Vocaloid'], a:'#f786c4', b:'#7356d8' },
-  { id:'jpop', category:'style', kicker:'J-POP', title:'日本流行', sub:'清亮人声与层次丰富的日系编曲', keywords:['日语','j-pop','jpop','日本'], queries:['J-Pop 日本流行','日语 流行'], a:'#ef6262', b:'#a21842' },
-  { id:'rnb', category:'style', kicker:'R&B', title:'R&B 夜色', sub:'松弛律动、丝滑转音与低饱和夜晚', keywords:['r&b','rnb','soul'], queries:['R&B Soul','华语 R&B'], a:'#8f9e24', b:'#465c0f' },
-  { id:'chinese', category:'style', kicker:'MANDOPOP', title:'华语流行', sub:'熟悉的表达，也加入正在发生的新歌', keywords:['华语','中文'], queries:['华语流行','华语新歌'], a:'#4b8db5', b:'#214965' },
-  { id:'rock', category:'style', kicker:'ROCK', title:'摇滚现场', sub:'吉他、鼓点和不需要解释的释放', keywords:['摇滚','rock','乐队'], queries:['摇滚 乐队','华语摇滚'], a:'#d65d3f', b:'#77271e' },
-  { id:'bgm', category:'style', kicker:'SOUNDTRACK', title:'BGM 背景音乐', sub:'电影、动漫与游戏里的无歌词叙事', keywords:['bgm','原声','ost','纯音乐'], queries:['BGM 纯音乐','影视原声 OST'], a:'#68717c', b:'#2c3542' },
-  { id:'electronic', category:'style', kicker:'ELECTRONIC', title:'电子脉冲', sub:'合成器、低频与整齐推进的律动', keywords:['电子','electronic','edm'], queries:['电子音乐 EDM','Electronic'], a:'#7b5cff', b:'#173ea7' }
+  { id:'personal', category:'personal', kicker:'FOR YOU', title:'私人漫游', sub:'从你的常听歌手与本地收藏继续发现', keywords:[], queries:['华语流行歌曲','宝藏流行单曲','热门流行歌曲'], a:'#5b7cff', b:'#7734b8' },
+  { id:'heartbeat', category:'personal', kicker:'HEARTBEAT', title:'心动模式', sub:'喜欢过的旋律，混入一些相似惊喜', keywords:['喜欢','收藏'], queries:['王心凌','梁静茹','周兴哲'], a:'#ff758f', b:'#a62972' },
+  { id:'daily', category:'scene', kicker:'DAILY FLOW', title:'今日漫游', sub:'今天值得循环的流行歌曲与新鲜旋律', keywords:[], queries:['今日流行新歌','热门华语歌曲','流行热歌'], a:'#4fd6c8', b:'#186f8f' },
+  { id:'commute', category:'scene', kicker:'ON THE WAY', title:'通勤节拍', sub:'适合路上、地铁和城市穿行的节奏', keywords:['流行','节奏'], queries:['五月天','苏打绿','张杰'], a:'#ffb65a', b:'#e4503e' },
+  { id:'late', category:'scene', kicker:'AFTER DARK', title:'深夜氛围', sub:'安静人声与有空间感的夜晚歌曲', keywords:['治愈','安静','夜','钢琴'], queries:['陈绮贞','陈粒','孙燕姿'], a:'#4a5f88', b:'#171d42' },
+  { id:'study', category:'scene', kicker:'FOCUS', title:'专注电台', sub:'少打扰的纯音乐、钢琴与轻节拍', keywords:['纯音乐','钢琴','轻音乐','instrumental'], queries:['久石让','Bandari','Richard Clayderman'], a:'#78c6a3', b:'#35645d' },
+  { id:'morning', category:'scene', kicker:'GOOD MORNING', title:'清晨唤醒', sub:'明亮、轻快，给新一天一个舒服开场', keywords:['清晨','早晨','阳光','轻快'], queries:['苏打绿','旅行团乐队','房东的猫'], a:'#ffd166', b:'#ef8354' },
+  { id:'rain', category:'scene', kicker:'RAINY CAFE', title:'雨天咖啡馆', sub:'雨声之外，是温暖松弛的旋律与爵士', keywords:['雨','咖啡','爵士','慵懒'], queries:['Norah Jones','小野丽莎','陈绮贞'], a:'#69a8c8', b:'#44546a' },
+  { id:'roadtrip', category:'scene', kicker:'ROAD TRIP', title:'公路旅行', sub:'向远方行驶时适合一起唱的歌', keywords:['旅行','公路','开车','民谣'], queries:['许巍','朴树','逃跑计划'], a:'#f6bd60', b:'#bc6c25' },
+  { id:'sleep', category:'scene', kicker:'SLEEP TIGHT', title:'睡前轻音乐', sub:'只保留舒缓器乐与安静旋律，不含助眠节目', keywords:['睡前','舒缓','钢琴','纯音乐'], queries:['坂本龙一','久石让','Bandari'], a:'#7189bf', b:'#342e59' },
+  { id:'dj', category:'energy', kicker:'HOT DJ', title:'热门 DJ', sub:'Remix、电子律动与开车带感节拍', keywords:['dj','remix','mix'], queries:['Alan Walker','Avicii','Martin Garrix'], a:'#35bfff', b:'#3c34d9' },
+  { id:'high', category:'energy', kicker:'HIGH ENERGY', title:'高燃模式', sub:'副歌起飞，适合运动与快速回血', keywords:['高燃','热血','摇滚'], queries:['Imagine Dragons','Linkin Park','Fall Out Boy'], a:'#ff4b4b', b:'#8b162d' },
+  { id:'game', category:'energy', kicker:'GAME ON', title:'游戏战歌', sub:'开局、团战和 Boss 时刻的推进感', keywords:['游戏','game','bgm','电竞'], queries:['英雄联盟 主题曲','王者荣耀 游戏原声','魔兽世界 游戏原声'], a:'#29d6d0', b:'#1477c9' },
+  { id:'nightrun', category:'energy', kicker:'NIGHT RUN', title:'城市夜跑', sub:'稳定拍点与电子律动，把步伐带起来', keywords:['夜跑','运动','跑步','电子'], queries:['The Weeknd','Dua Lipa','Calvin Harris'], a:'#00d4aa', b:'#075985' },
+  { id:'anime', category:'style', kicker:'ANIME', title:'二次元', sub:'动画、虚拟歌姬与熟悉的日系旋律', keywords:['动漫','动画','初音','anime','vocaloid'], queries:['Aimer','LiSA 日本歌手','RADWIMPS'], a:'#f786c4', b:'#7356d8' },
+  { id:'jpop', category:'style', kicker:'J-POP', title:'日本流行', sub:'清亮人声与层次丰富的日系编曲', keywords:['日语','j-pop','jpop','日本'], queries:['J-POP 日本流行歌曲','米津玄师','YOASOBI'], a:'#ef6262', b:'#a21842' },
+  { id:'kpop', category:'style', kicker:'K-POP', title:'韩流热单', sub:'舞台感、流行制作与抓耳副歌', keywords:['韩语','k-pop','kpop','韩国'], queries:['BLACKPINK','BTS','NewJeans'], a:'#ff7eb3', b:'#7a5195' },
+  { id:'rnb', category:'style', kicker:'R&B', title:'R&B 夜色', sub:'松弛律动、丝滑转音与低饱和夜晚', keywords:['r&b','rnb','soul'], queries:['方大同','陶喆 R&B','周杰伦 R&B'], a:'#8f9e24', b:'#465c0f' },
+  { id:'chinese', category:'style', kicker:'MANDOPOP', title:'华语流行', sub:'熟悉的表达，也加入正在发生的新歌', keywords:['华语','中文'], queries:['周杰伦','林俊杰','孙燕姿'], a:'#4b8db5', b:'#214965' },
+  { id:'cantonese', category:'style', kicker:'CANTOPOP', title:'粤语金曲', sub:'港乐旋律、粤语新声与经典回忆', keywords:['粤语','港乐','香港'], queries:['陈奕迅 粤语','张国荣 粤语','Beyond 粤语'], a:'#e76f51', b:'#7f1d1d' },
+  { id:'rock', category:'style', kicker:'ROCK', title:'摇滚现场', sub:'吉他、鼓点和不需要解释的释放', keywords:['摇滚','rock','乐队'], queries:['五月天','Beyond','草东没有派对'], a:'#d65d3f', b:'#77271e' },
+  { id:'folk', category:'style', kicker:'ACOUSTIC', title:'独立民谣', sub:'木吉他、故事感和不拥挤的人声', keywords:['民谣','木吉他','独立'], queries:['赵雷','宋冬野','陈鸿宇'], a:'#b08968', b:'#5e503f' },
+  { id:'jazz', category:'style', kicker:'JAZZ CLUB', title:'爵士酒馆', sub:'夜色、铜管、钢琴与松弛摇摆', keywords:['爵士','jazz','swing'], queries:['Norah Jones','Chet Baker','Diana Krall'], a:'#c59d5f', b:'#5c3d2e' },
+  { id:'classical', category:'style', kicker:'CLASSICAL', title:'古典乐章', sub:'钢琴、弦乐与交响作品的完整呼吸', keywords:['古典','钢琴','交响','classical'], queries:['Beethoven','Chopin','Mozart'], a:'#a8a29e', b:'#44403c' },
+  { id:'guofeng', category:'style', kicker:'CHINESE STYLE', title:'国风雅韵', sub:'古风人声、民族器乐与东方意境', keywords:['古风','国风','中国风'], queries:['许嵩 中国风','周深 国风','银临 古风'], a:'#d4a373', b:'#606c38' },
+  { id:'retro', category:'style', kicker:'GOLDEN OLDIES', title:'复古金曲', sub:'八九十年代的华语旋律与共同记忆', keywords:['经典','老歌','怀旧'], queries:['邓丽君','张学友','刘德华'], a:'#cb997e', b:'#6b4f4f' },
+  { id:'bgm', category:'style', kicker:'SOUNDTRACK', title:'BGM 背景音乐', sub:'电影、动漫与游戏里的无歌词叙事', keywords:['bgm','原声','ost','纯音乐'], queries:['Hans Zimmer','久石让','坂本龙一'], a:'#68717c', b:'#2c3542' },
+  { id:'electronic', category:'style', kicker:'ELECTRONIC', title:'电子脉冲', sub:'合成器、低频与整齐推进的律动', keywords:['电子','electronic','edm'], queries:['Porter Robinson','Madeon','Avicii'], a:'#7b5cff', b:'#173ea7' },
+  { id:'healing', category:'personal', kicker:'LET IT GO', title:'失恋疗愈', sub:'允许难过，也把旋律慢慢唱到释怀', keywords:['失恋','伤感','释怀','情歌'], queries:['梁静茹','A-Lin','周兴哲'], a:'#9d4edd', b:'#3c096c' }
 ];
 function setSecondaryPage(page) {
   var libraryPage = document.getElementById('secondary-library-page');
@@ -23613,6 +23871,30 @@ function openPlatformRanking(source) {
 function radioModeDefinition(id) {
   return RADIO_MODE_DEFINITIONS.find(function(item){ return item.id === String(id || ''); }) || null;
 }
+function isRadioModeFavorite(id) {
+  return radioModeFavoriteIds.indexOf(String(id || '')) >= 0;
+}
+function saveRadioModeFavorites() {
+  try { localStorage.setItem(RADIO_MODE_FAVORITES_KEY, JSON.stringify(radioModeFavoriteIds)); } catch (_error) {}
+}
+function toggleRadioModeFavorite(id, event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  id = String(id || '');
+  if (!radioModeDefinition(id)) return;
+  var index = radioModeFavoriteIds.indexOf(id);
+  if (index >= 0) {
+    radioModeFavoriteIds.splice(index, 1);
+    showToast('已取消收藏电台');
+  } else {
+    radioModeFavoriteIds.unshift(id);
+    showToast('已收藏电台，并置顶显示');
+  }
+  saveRadioModeFavorites();
+  renderRadioModes();
+}
 function radioSongKey(song) {
   if (!song) return '';
   if (song.localPath) return 'local|' + String(song.localPath).toLowerCase();
@@ -23621,11 +23903,30 @@ function radioSongKey(song) {
   if (remoteId) return source + '|' + String(remoteId);
   return simpleSearchNorm(song.name || song.title || '') + '|' + simpleSearchNorm(song.singer || song.artist || '');
 }
+var RADIO_NON_MUSIC_PATTERN = /(播客|电台节目|有声|朗读|朗诵|诵读|评书|相声|脱口秀|访谈|课程|语录|鸡汤|心理测试|睡眠故事|睡前故事|情感故事|助眠解压|掏耳|采耳|按摩|颅内|触发音|白噪音|冥想引导|asmr|audio\s*book|podcast)/i;
+var RADIO_NON_MUSIC_ARTIST_PATTERN = /^(路乃嘉|子劲|疗愈音律|胖达|睡眠研究所|喜马拉雅|蜻蜓FM|懒人听书)$/i;
+function isRadioMusicSong(song) {
+  if (!song) return false;
+  if (song.type === 'podcast-radio' || song.radioId || song.programId) return false;
+  if (!song.id && !song.songmid && !song.hash && !song.localPath) return false;
+  var title = String(song.name || song.title || '').trim();
+  var artist = String(song.singer || song.artist || '').trim();
+  if (!title || !artist) return false;
+  var combined = title + ' ' + artist + ' ' + String(song.album || '');
+  if (RADIO_NON_MUSIC_PATTERN.test(combined) || RADIO_NON_MUSIC_ARTIST_PATTERN.test(artist)) return false;
+  if (/^\s*\d{1,3}[.、]\s*/.test(title)) return false;
+  if (/第\s*\d+\s*(期|集|章)|\bEP\.?\s*\d+\b/i.test(title)) return false;
+  if (/(人生是|永远不要|自我成长|好好心疼|认清一个|真正成熟的爱|朋友圈点赞|不用回我信息|恋爱中|你是我不聊天|爱而不得.*忘而不舍)/.test(title)) return false;
+  if (title.length > 42) return false;
+  if (title.length > 12 && /[，,“”]/.test(title)) return false;
+  if (title.length > 18 && /[？?：:]|\.\.\.|…/.test(title)) return false;
+  return true;
+}
 function radioUniqueSongs(songs, limit) {
   var seen = Object.create(null);
   var out = [];
   (songs || []).forEach(function(song){
-    if (!song || out.length >= limit) return;
+    if (!isRadioMusicSong(song) || out.length >= limit) return;
     var key = radioSongKey(song);
     if (!key || seen[key]) return;
     seen[key] = true;
@@ -23661,13 +23962,23 @@ function renderRadioModes() {
   updateRadioCategoryTabs();
   var modes = RADIO_MODE_DEFINITIONS.filter(function(mode){ return radioModeState.category === 'all' || mode.category === radioModeState.category; });
   modes = radioShuffle(modes, 'radio-order|' + radioModeState.category + '|' + radioModeState.orderNonce);
+  modes.sort(function(a, b){
+    var ai = radioModeFavoriteIds.indexOf(a.id);
+    var bi = radioModeFavoriteIds.indexOf(b.id);
+    if (ai < 0 && bi < 0) return 0;
+    if (ai < 0) return 1;
+    if (bi < 0) return -1;
+    return ai - bi;
+  });
   root.innerHTML = modes.map(function(mode){
     var loading = radioModeState.loadingId === mode.id;
-    return '<button class="radio-mode-card' + (loading ? ' loading' : '') + '" type="button" style="--radio-a:' + mode.a + ';--radio-b:' + mode.b + '" onclick="playRadioMode(\'' + mode.id + '\')" aria-label="播放' + escHtml(mode.title) + '电台">' +
+    var favorite = isRadioModeFavorite(mode.id);
+    return '<button class="radio-mode-card' + (loading ? ' loading' : '') + (favorite ? ' favorite' : '') + '" type="button" style="--radio-a:' + mode.a + ';--radio-b:' + mode.b + '" onclick="playRadioMode(\'' + mode.id + '\')" aria-label="播放' + escHtml(mode.title) + '电台">' +
       '<span class="radio-mode-kicker">' + escHtml(mode.kicker) + '</span>' +
+      '<span class="radio-mode-favorite' + (favorite ? ' active' : '') + '" role="button" title="' + (favorite ? '取消收藏' : '收藏并置顶') + '" aria-label="' + (favorite ? '取消收藏' : '收藏') + escHtml(mode.title) + '" onclick="toggleRadioModeFavorite(\'' + mode.id + '\',event)">' + (favorite ? '★' : '☆') + '</span>' +
       '<span class="radio-mode-play" aria-hidden="true">' + (loading ? '↻' : '▶') + '</span>' +
       '<span class="radio-mode-title">' + escHtml(mode.title) + '</span>' +
-      '<span class="radio-mode-sub">' + escHtml(loading ? '正在挑选 60 首歌曲…' : mode.sub) + '</span></button>';
+      '<span class="radio-mode-sub">' + escHtml(loading ? '正在筛选符合主题的纯歌曲…' : mode.sub) + '</span></button>';
   }).join('');
 }
 function openRadioModes(category) {
@@ -23734,21 +24045,16 @@ async function buildRadioModeSongs(mode) {
   queries.push(mode.title);
   queries = queries.filter(function(item, index, list){ return item && list.indexOf(item) === index; }).slice(0, 3);
   var batches = await Promise.all(queries.map(function(query){
-    return apiJson('/api/lx-source/search?q=' + encodeURIComponent(query) + '&limit=30&sources=tx,wy,kw,kg,mg&t=' + Date.now(), { timeoutMs:26000 })
-      .then(function(result){ return result && Array.isArray(result.songs) ? result.songs : []; })
+    return apiJson('/api/lx-source/search?q=' + encodeURIComponent(query) + '&limit=36&sources=kw,kg,mg&t=' + Date.now(), { timeoutMs:32000 })
+      .then(function(result){
+        var items = result && Array.isArray(result.songs) ? result.songs : [];
+        return items.filter(isRadioMusicSong).slice(0, 24);
+      })
       .catch(function(error){ console.warn('[RadioModeSearch]', query, error); return []; });
   }));
   var combined = local.slice();
   batches.forEach(function(items){ combined = combined.concat(items); });
   var songs = radioUniqueSongs(combined, 60);
-  if (songs.length < 60) {
-    try {
-      var hot = await apiJson('/api/daily-hot?limit=60&source=all&t=' + Date.now(), { timeoutMs:45000 });
-      songs = radioUniqueSongs(songs.concat(hot && hot.songs || []), 60);
-    } catch (error) {
-      console.warn('[RadioModeFill]', error);
-    }
-  }
   return radioShuffle(songs, mode.id + '|queue|' + Date.now() + '|' + radioModeState.orderNonce).slice(0, 60);
 }
 function radioModeQueueSong(song, mode) {
@@ -29756,6 +30062,19 @@ function bindVolumeControls() {
   if (wrap) {
     wrap.addEventListener('mouseenter', keepVolumePanelOpen);
     wrap.addEventListener('mouseleave', closeVolumePanelSoon);
+    var volumeWheelToastTimer = null;
+    wrap.addEventListener('wheel', function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      keepVolumePanelOpen();
+      var direction = e.deltaY < 0 ? 1 : -1;
+      setVolume(clampRange(targetVolume + direction * 0.02, 0, 1), true);
+      if (volumeWheelToastTimer) clearTimeout(volumeWheelToastTimer);
+      volumeWheelToastTimer = setTimeout(function(){
+        volumeWheelToastTimer = null;
+        showToast('音量 ' + Math.round(targetVolume * 100) + '%');
+      }, 220);
+    }, { passive:false });
   }
   if (slider) {
     slider.addEventListener('input', function(){ setVolume(slider.value, true); });
@@ -34111,6 +34430,23 @@ function nfSetVolume(value) {
   nowFlowWakeControls(2400);
   updateNowFlowActions();
 }
+var nfVolumeWheelToastTimer = null;
+function nfWheelVolume(e) {
+  if (!e) return;
+  e.preventDefault();
+  e.stopPropagation();
+  var direction = e.deltaY < 0 ? 1 : -1;
+  setVolume(clampRange(targetVolume + direction * 0.02, 0, 1), true);
+  var root = document.getElementById('now-flow');
+  if (root) root.classList.add('nf-volume-open');
+  nowFlowWakeControls(3200);
+  updateNowFlowActions();
+  if (nfVolumeWheelToastTimer) clearTimeout(nfVolumeWheelToastTimer);
+  nfVolumeWheelToastTimer = setTimeout(function(){
+    nfVolumeWheelToastTimer = null;
+    showToast('音量 ' + Math.round(targetVolume * 100) + '%');
+  }, 220);
+}
 function nfToggleNowFlowAutoHide(e) {
   nfStop(e);
   nowFlowPrefs.autoHide = !nowFlowAutoHideEnabled();
@@ -34336,7 +34672,7 @@ function updateNowFlowActions() {
       var muted = vol <= 0.01;
       vb.classList.toggle('active', muted);
       nfSetButtonIcon(vb, muted ? 'volumeOff' : 'volume');
-      vb.title = muted ? '已静音 / 双击恢复' : '音量 / 双击静音';
+      vb.title = muted ? '已静音 / 滚轮调音量 / 双击恢复' : '滚轮调音量 / 双击静音';
       vb.setAttribute('aria-label', vb.title);
     }
   } catch (e) {}
@@ -37613,7 +37949,7 @@ function updateCustomBackgroundVideoPowerState() {
     customBgVideoPowerTimer = 0;
   }
   var media = normalizeCustomBackgroundMedia(fx && (fx.backgroundMedia || fx.backgroundImage));
-  var hasVideo = !!(media && media.type === 'video');
+  var hasVideo = !!(media && media.type === 'video' && !customBgVideoSessionDisabled);
   var shouldSuspend = hasVideo && isDeepBackgroundMode() && !isLiveBackgroundKeepMode();
   if (!shouldSuspend) {
     if (!hasVideo) return;
@@ -37652,6 +37988,11 @@ function applyCustomBackground() {
       : normalizeHexColor(songAdaptiveBackgroundColor || '#000000', '#000000'));
   var image = media && media.type === 'image' ? media.src : '';
   var hasVideo = !!(media && media.type === 'video');
+  var mediaKey = customBackgroundMediaKey(media);
+  if (customBgVideoSessionDisabled && customBgVideoSessionFailedKey && mediaKey !== customBgVideoSessionFailedKey) {
+    resetCustomBackgroundVideoSessionFailure();
+  }
+  var playableVideo = hasVideo && !customBgVideoSessionDisabled;
   var opacity = clampRange(fx.backgroundOpacity == null ? 1 : Number(fx.backgroundOpacity), 0, 1);
   var adaptiveColor = !media && !customColor;
   var override = !!media || customColor || adaptiveColor || opacity < 1;
@@ -37664,7 +38005,7 @@ function applyCustomBackground() {
   document.body.classList.toggle('home-custom-background', hasCustomHomeBackground());
   document.body.classList.toggle('custom-background-flat', override && !media);
   document.body.classList.toggle('song-adaptive-background', adaptiveColor);
-  document.body.classList.toggle('custom-background-video', hasVideo);
+  document.body.classList.toggle('custom-background-video', playableVideo);
   document.body.classList.toggle('wallpaper-engine-background', !!(media && media.wallpaper));
   var reduceWallpaperMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   var wallpaperParallaxActive = !!media && !reduceWallpaperMotion;
@@ -37679,7 +38020,7 @@ function applyCustomBackground() {
   if (layer) {
     var imageValue = image ? 'url("' + cssImageUrl(image) + '")' : 'none';
     var imageOpacity = image ? opacity.toFixed(3) : '0';
-    var videoOpacity = hasVideo ? opacity.toFixed(3) : '0';
+    var videoOpacity = playableVideo ? opacity.toFixed(3) : '0';
     var overlayOpacity = media ? '0.18' : '0';
     if (layer.style.getPropertyValue('--custom-bg-image') !== imageValue) layer.style.setProperty('--custom-bg-image', imageValue);
     if (layer.style.getPropertyValue('--custom-bg-image-opacity') !== imageOpacity) layer.style.setProperty('--custom-bg-image-opacity', imageOpacity);
@@ -37688,7 +38029,9 @@ function applyCustomBackground() {
   }
   var token = ++customBgApplyToken;
   if (!video) return;
+  bindCustomBackgroundVideoFailureGuard(video);
   if (!hasVideo) {
+    resetCustomBackgroundVideoSessionFailure();
     if (customBgVideoPowerTimer) { clearTimeout(customBgVideoPowerTimer); customBgVideoPowerTimer = 0; }
     customBgVideoReleasedForPower = false;
     video.pause();
@@ -37697,34 +38040,61 @@ function applyCustomBackground() {
     if (customBgObjectUrl) { URL.revokeObjectURL(customBgObjectUrl); customBgObjectUrl = ''; }
     return;
   }
+  if (!playableVideo) return;
+  // Decode only after the splash has gone away. This keeps a problematic GPU
+  // media path from blocking the first usable frame of the application.
+  if (document.body.classList.contains('splash-active')) {
+    try { video.pause(); } catch (_pauseDuringSplashError) {}
+    return;
+  }
   function setVideoSrc(src) {
     if (token !== customBgApplyToken || !src) return;
-    if (customBgObjectUrl && customBgObjectUrl !== src) { URL.revokeObjectURL(customBgObjectUrl); customBgObjectUrl = ''; }
-    if (video.getAttribute('src') !== src) {
-      video.setAttribute('src', src);
-      video.load();
+    try {
+      if (customBgObjectUrl && customBgObjectUrl !== src) { URL.revokeObjectURL(customBgObjectUrl); customBgObjectUrl = ''; }
+      if (video.getAttribute('src') !== src) {
+        video.setAttribute('src', src);
+        video.load();
+      }
+      video.muted = true;
+      video.loop = true;
+      video.playsInline = true;
+      customBgVideoReleasedForPower = false;
+      clearCustomBackgroundVideoLoadTimer();
+      customBgVideoLoadTimer = setTimeout(function(){
+        customBgVideoLoadTimer = 0;
+        if (token === customBgApplyToken && video.readyState < 2) {
+          disableCustomBackgroundVideoForSession(media, 'media initialization timeout');
+        }
+      }, 6500);
+      if (isDeepBackgroundMode() && !isLiveBackgroundKeepMode()) {
+        video.pause();
+        clearCustomBackgroundVideoLoadTimer();
+        updateCustomBackgroundVideoPowerState();
+        return;
+      }
+      var p = video.play();
+      if (p && p.catch) p.catch(function(error){
+        var name = String(error && error.name || '');
+        if (name === 'AbortError' || name === 'NotAllowedError') return;
+        disableCustomBackgroundVideoForSession(media, error && error.message || 'video.play failed');
+      });
+    } catch (error) {
+      disableCustomBackgroundVideoForSession(media, error && error.message || 'video initialization failed');
     }
-    video.muted = true;
-    video.loop = true;
-    video.playsInline = true;
-    customBgVideoReleasedForPower = false;
-    if (isDeepBackgroundMode() && !isLiveBackgroundKeepMode()) {
-      video.pause();
-      updateCustomBackgroundVideoPowerState();
-      return;
-    }
-    var p = video.play();
-    if (p && p.catch) p.catch(function(){});
   }
   if (media.src) {
     setVideoSrc(media.src);
   } else if (media.id) {
     getCustomBackgroundBlob(media.id).then(function(blob){
-      if (token !== customBgApplyToken || !blob) return;
+      if (token !== customBgApplyToken) return;
+      if (!blob) {
+        disableCustomBackgroundVideoForSession(media, 'saved video blob unavailable');
+        return;
+      }
       if (customBgObjectUrl) URL.revokeObjectURL(customBgObjectUrl);
       customBgObjectUrl = URL.createObjectURL(blob);
       setVideoSrc(customBgObjectUrl);
-    }).catch(function(err){ console.warn('background video load failed:', err); });
+    }).catch(function(err){ disableCustomBackgroundVideoForSession(media, err && err.message || 'background video load failed'); });
   }
 }
 function updateCustomBackgroundControls() {
@@ -37786,8 +38156,10 @@ function toggleWallpaperMirror(silent) {
 
 function setCustomBackgroundImage(src, silent) {
   var image = normalizeCustomBackgroundImage(src);
+  resetCustomBackgroundVideoSessionFailure();
   fx.backgroundImage = image;
   fx.backgroundMedia = image ? { type: 'image', src: image } : null;
+  lastKnownGoodBackgroundMedia = fx.backgroundMedia ? Object.assign({}, fx.backgroundMedia) : null;
   updateCustomBackgroundControls();
   saveLyricLayout();
   if (!silent) showToast(fx.backgroundImage ? '背景图片已应用' : '背景图片已清除');
@@ -37797,8 +38169,10 @@ function clearCustomBackgroundImage() {
 }
 function setCustomBackgroundMedia(media, silent) {
   media = normalizeCustomBackgroundMedia(media);
+  resetCustomBackgroundVideoSessionFailure();
   fx.backgroundMedia = media;
   fx.backgroundImage = media && media.type === 'image' ? media.src : '';
+  lastKnownGoodBackgroundMedia = media ? Object.assign({}, media) : null;
   updateCustomBackgroundControls();
   saveLyricLayout();
   if (!silent) showToast(media ? (media.type === 'video' ? '背景视频已应用' : '背景图片已应用') : '背景媒体已清除');
@@ -39489,6 +39863,110 @@ function setFxPanelTab(tab) {
   });
   repositionFxFloatingPanels();
 }
+var fxFeatureTabNames = { presets:'预设', appearance:'外观', lyrics:'歌词', sound:'音效', motion:'动态', advanced:'高级' };
+function fxFeatureLabel(node) {
+  if (!node) return '';
+  var label = node.querySelector && node.querySelector('label');
+  var strong = node.querySelector && node.querySelector('strong');
+  var named = node.querySelector && node.querySelector('.fx-color-row-label,.fx-fold-title,.preset-name,.pc-name');
+  var text = (label && label.textContent) || (strong && strong.textContent) || (named && named.textContent) || node.textContent || '';
+  return text.replace(/\s+/g, ' ').trim();
+}
+function normalizeFxFeatureSearchText(text) {
+  return String(text || '')
+    .replace(/\s+/g, '')
+    .toLowerCase()
+    .replace(/帧率/g, '帧数')
+    .replace(/fps/g, '帧数')
+    .replace(/音量大小/g, '音量');
+}
+function fxFeatureCandidates(panel) {
+  var selector = '.fx-section-label,.fx-toggle,.fx-slider,.lyric-color-row,.fx-seg,.fx-fold-head,.fx-advanced-head,.preset-card,.fx-font-grid';
+  var seen = Object.create(null);
+  return Array.prototype.slice.call(panel.querySelectorAll(selector)).map(function(node){
+    if (node.classList.contains('hidden') || node.getAttribute('aria-hidden') === 'true' || node.style.display === 'none') return null;
+    var page = node.closest('.fx-tab-page');
+    if (!page) return null;
+    var title = fxFeatureLabel(node);
+    if (!title) return null;
+    var tab = page.getAttribute('data-fx-page') || 'presets';
+    var key = tab + '|' + title;
+    if (seen[key]) return null;
+    seen[key] = 1;
+    return { node:node, title:title, tab:tab };
+  }).filter(Boolean);
+}
+function installFxFeatureFinder(panel, tabs) {
+  if (!panel || !tabs || tabs.querySelector('.fx-feature-finder')) return;
+  var wrap = document.createElement('div');
+  wrap.className = 'fx-feature-finder';
+  wrap.innerHTML = '<input class="fx-feature-search" type="search" autocomplete="off" spellcheck="false" aria-label="搜索 DIY 功能" placeholder="搜索功能，例如：桌面歌词、帧率、透明度"><button class="fx-feature-clear" type="button" aria-label="清空搜索">×</button><div class="fx-feature-results" role="listbox"></div>';
+  tabs.appendChild(wrap);
+  var input = wrap.querySelector('.fx-feature-search');
+  var clear = wrap.querySelector('.fx-feature-clear');
+  var results = wrap.querySelector('.fx-feature-results');
+  function closeResults(){ results.classList.remove('show'); results.innerHTML = ''; }
+  function runSearch(){
+    var query = normalizeFxFeatureSearchText(input.value);
+    wrap.classList.toggle('has-query', !!query);
+    if (!query) { closeResults(); return; }
+    var matches = fxFeatureCandidates(panel).filter(function(item){
+      return normalizeFxFeatureSearchText(item.title).indexOf(query) !== -1;
+    }).slice(0, 10);
+    results.innerHTML = '';
+    if (!matches.length) {
+      results.innerHTML = '<div class="fx-feature-empty">没有找到，换个关键词试试</div>';
+    } else {
+      matches.forEach(function(item){
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'fx-feature-result';
+        button.setAttribute('role', 'option');
+        var name = document.createElement('span');
+        name.className = 'fx-feature-result-name';
+        name.textContent = item.title;
+        var badge = document.createElement('span');
+        badge.className = 'fx-feature-result-tab';
+        badge.textContent = fxFeatureTabNames[item.tab] || item.tab;
+        button.appendChild(name);
+        button.appendChild(badge);
+        button.addEventListener('click', function(){
+          setFxPanelTab(item.tab);
+          var fold = item.node.closest('.fx-fold,.fx-advanced');
+          if (fold) fold.classList.add('open');
+          closeResults();
+          input.value = '';
+          wrap.classList.remove('has-query');
+          setTimeout(function(){
+            item.node.scrollIntoView({ behavior:'smooth', block:'center' });
+            item.node.classList.remove('fx-find-hit');
+            void item.node.offsetWidth;
+            item.node.classList.add('fx-find-hit');
+            setTimeout(function(){ item.node.classList.remove('fx-find-hit'); }, 1450);
+          }, 40);
+        });
+        results.appendChild(button);
+      });
+    }
+    results.classList.add('show');
+  }
+  input.addEventListener('input', runSearch);
+  input.addEventListener('compositionstart', function(){
+    fxPanelImeComposing = true;
+    clearFxPanelAutoCloseTimer();
+  });
+  input.addEventListener('compositionend', function(){
+    fxPanelImeComposing = false;
+    clearFxPanelAutoCloseTimer();
+    runSearch();
+  });
+  input.addEventListener('keydown', function(e){
+    if (e.key === 'Escape') { input.value = ''; wrap.classList.remove('has-query'); closeResults(); input.blur(); }
+    if (e.key === 'Enter') { var first = results.querySelector('.fx-feature-result'); if (first) { e.preventDefault(); first.click(); } }
+  });
+  clear.addEventListener('click', function(){ input.value = ''; wrap.classList.remove('has-query'); closeResults(); input.focus(); });
+  document.addEventListener('pointerdown', function(e){ if (!wrap.contains(e.target)) closeResults(); });
+}
 function fxPanelInputId(node) {
   var input = node && node.querySelector ? node.querySelector('input[id]') : null;
   return input ? input.id : '';
@@ -39565,10 +40043,7 @@ function organizeFxPanel() {
     }
     (pages[target] || pages.presets).appendChild(node);
   });
-  ['fx-lyric-fold','fx-audio-fold','fx-overlay-fold','fx-stage-fold','fx-advanced'].forEach(function(id){
-    var fold = document.getElementById(id);
-    if (fold) fold.classList.add('open');
-  });
+  installFxFeatureFinder(panel, tabs);
   tabs.addEventListener('click', function(e){
     var btn = e.target && e.target.closest ? e.target.closest('[data-fx-tab]') : null;
     if (!btn) return;
@@ -40644,6 +41119,7 @@ function toggleFx(key) {
   }
 }
 var fxPanelAutoCloseTimer = null;
+var fxPanelImeComposing = false;
 function clearFxPanelAutoCloseTimer() {
   if (!fxPanelAutoCloseTimer) return;
   clearTimeout(fxPanelAutoCloseTimer);
@@ -40653,6 +41129,8 @@ function scheduleFxPanelAutoClose() {
   clearFxPanelAutoCloseTimer();
   fxPanelAutoCloseTimer = setTimeout(function(){
     fxPanelAutoCloseTimer = null;
+    var panel = document.getElementById('fx-panel');
+    if (fxPanelImeComposing || (panel && (panel.matches(':hover') || panel.contains(document.activeElement)))) return;
     toggleFxPanel(false);
   }, 650);
 }
@@ -40683,6 +41161,14 @@ var fxPanelAutoCloseFab = document.getElementById('fx-fab');
 if (fxPanelAutoCloseEl) {
   fxPanelAutoCloseEl.addEventListener('mouseenter', clearFxPanelAutoCloseTimer);
   fxPanelAutoCloseEl.addEventListener('mouseleave', scheduleFxPanelAutoClose);
+  fxPanelAutoCloseEl.addEventListener('focusin', clearFxPanelAutoCloseTimer);
+  fxPanelAutoCloseEl.addEventListener('focusout', function(){
+    setTimeout(function(){
+      if (!fxPanelImeComposing && fxPanelAutoCloseEl && !fxPanelAutoCloseEl.contains(document.activeElement) && !fxPanelAutoCloseEl.matches(':hover')) {
+        scheduleFxPanelAutoClose();
+      }
+    }, 0);
+  });
 }
 if (fxPanelAutoCloseFab) {
   fxPanelAutoCloseFab.addEventListener('mouseenter', clearFxPanelAutoCloseTimer);
@@ -40694,6 +41180,7 @@ if (fxPanelAutoCloseFab) {
 }
 window.addEventListener('blur', function(){
   if (fxPanelAutoCloseEl && (fxPanelAutoCloseEl.classList.contains('peek') || fxPanelAutoCloseEl.classList.contains('show'))) {
+    if (fxPanelImeComposing || fxPanelAutoCloseEl.contains(document.activeElement)) return;
     toggleFxPanel(false);
   }
 });
@@ -43864,6 +44351,7 @@ function dismissSplash() {
     splashAnimating = false;
     document.body.classList.remove('splash-active');
     document.body.classList.remove('splash-revealing');
+    if (typeof applyCustomBackground === 'function') setTimeout(applyCustomBackground, 0);
     if (shouldPrimeHomeWallpaper && typeof activateHomeWallpaperPreview === 'function') activateHomeWallpaperPreview({ instant: true });
     if (typeof flushHomeWallpaperPrewarmAfterSplash === 'function') flushHomeWallpaperPrewarmAfterSplash();
     if (typeof scheduleSavedLocalMusicFolderRestore === 'function') scheduleSavedLocalMusicFolderRestore(420);
@@ -44053,98 +44541,45 @@ function desktopLyricFallbackItems(text) {
   });
 }
 function currentDesktopLyricSnapshot() {
-  var t = audio && isFinite(audio.currentTime) ? Number(audio.currentTime) : 0;
+  var rawT = audio && isFinite(audio.currentTime) ? Number(audio.currentTime) : 0;
+  var t = typeof getAdjustedLyricPlaybackTime === 'function' ? getAdjustedLyricPlaybackTime(rawT) : rawT;
   var lines = Array.isArray(lyricsLines) ? lyricsLines : [];
-  var rowMode = normalizeDesktopLyricsRows(fx && fx.desktopLyricsRows);
-
   if (playing && audio && lines.length) {
     var idx = -1;
     for (var i = 0; i < lines.length; i++) {
       if (lines[i].t <= t + 0.05) idx = i;
       else break;
     }
-
     if (idx >= 0) {
-      var curLine = lines[idx] || { t:t, text:'' };
+      var curLine = lines[idx] || { t: t, text: '' };
       var nextLine = lines[idx + 1];
-      var nextT = nextLine && nextLine.t > curLine.t
-        ? nextLine.t
-        : Math.min((audio && audio.duration) || t + 4, curLine.t + (curLine.duration || 4.8));
+      var nextT = nextLine && nextLine.t > curLine.t ? nextLine.t : Math.min((audio && audio.duration) || t + 4, curLine.t + (curLine.duration || 4.8));
       var span = Math.max(0.75, nextT - curLine.t);
-      var items = desktopLyricStageItems(lines, idx, rowMode);
-
-      if (!items.length) {
-        items = desktopLyricFallbackItems(currentLyricFallbackText());
-      }
-
-      var currentRows = items.filter(function(item){ return item.role === 'current'; });
-      var currentText = currentRows.map(function(item){ return item.text; }).join('\n');
-      var allText = items.map(function(item){ return item.text; }).join('\n');
-      var sharedStageProgress = stageLyrics && stageLyrics.current && stageLyrics.current.userData
-        ? Number(stageLyrics.current.userData.lastLyricProgress)
-        : NaN;
-
       return {
-        text: currentText || allText || currentLyricFallbackText(),
-        items: items,
-        stageKey: items.map(function(item){ return item.id + ':' + item.role; }).join('|'),
-        progress: isFinite(sharedStageProgress)
-          ? clampRange(sharedStageProgress, 0, 1)
-          : getLyricLineProgress(curLine, nextLine, t),
-        progressSpan: span,
-        progressScale: 1
+        text: normalizeDesktopLyricText(curLine.text || currentLyricFallbackText()),
+        progress: getLyricLineProgress(curLine, nextLine, t),
+        progressSpan: span
       };
     }
-
-    var introText = normalizeDesktopLyricText(currentLyricFallbackText(), 2);
+    var introText = normalizeDesktopLyricText(currentLyricFallbackText());
     if (introText) {
       var firstLine = lines[0];
-      var introEnd = firstLine && firstLine.t > 0
-        ? firstLine.t
-        : Math.min((audio && audio.duration) || 4.8, 4.8);
-      var introItems = desktopLyricFallbackItems(introText);
+      var introEnd = firstLine && firstLine.t > 0 ? firstLine.t : Math.min((audio && audio.duration) || 4.8, 4.8);
       return {
         text: introText,
-        items: introItems,
-        stageKey: introItems.map(function(item){ return item.id; }).join('|'),
-        progress: getLyricLineProgress({
-          t:0,
-          text:introText,
-          duration:Math.max(0.8, introEnd),
-          charCount:Math.max(1, introText.length),
-          fallback:true
-        }, null, t),
-        progressSpan: Math.max(0.8, introEnd),
-        progressScale: 1
+        progress: getLyricLineProgress({ t: 0, text: introText, duration: Math.max(0.8, introEnd), charCount: Math.max(1, introText.length), fallback: true }, null, t),
+        progressSpan: Math.max(0.8, introEnd)
       };
     }
   }
-
   if (stageLyrics && stageLyrics.currentText) {
-    var stageText = normalizeDesktopLyricText(stageLyrics.currentText, 2);
-    var stageItems = desktopLyricFallbackItems(stageText);
     return {
-      text: stageText,
-      items: stageItems,
-      stageKey: stageItems.map(function(item){ return item.id; }).join('|'),
-      progress: stageLyrics.current && stageLyrics.current.userData
-        ? clampRange(Number(stageLyrics.current.userData.lastLyricProgress) || 0, 0, 1)
-        : 0,
-      progressSpan: 4.8,
-      progressScale: 1
+      text: normalizeDesktopLyricText(stageLyrics.currentText),
+      progress: stageLyrics.current && stageLyrics.current.userData ? clampRange(Number(stageLyrics.current.userData.lastLyricProgress) || 0, 0, 1) : 0,
+      progressSpan: 4.8
     };
   }
-
-  var fallbackText = normalizeDesktopLyricText(currentDesktopSongMeta().title || 'Mineradio', 2);
-  var fallbackItems = desktopLyricFallbackItems(fallbackText);
-  return {
-    text: fallbackText,
-    items: fallbackItems,
-    stageKey: fallbackItems.map(function(item){ return item.id; }).join('|'),
-    progress: 0,
-    progressSpan: 4.8,
-    progressScale: 1
-  };
+  return { text: normalizeDesktopLyricText(currentDesktopSongMeta().title || 'Mineradio'), progress: 0, progressSpan: 4.8 };
 }
 function desktopOverlayColorValue(value, fallback) {
   var raw = String(value || '').trim();
@@ -44265,53 +44700,61 @@ function desktopLyricsBeatMapPayload(force) {
 function notifyDesktopLyricsBeatMapReady() {
   try {
     if (fx && fx.desktopLyrics) pushDesktopLyricsState(true);
-  } catch (e) {}
+  } catch (e) { }
 }
 function desktopLyricsPushInterval() {
   var fps = normalizeDesktopLyricsFps(fx && fx.desktopLyricsFps);
   if (!fps) return 8;
   return Math.max(8, Math.min(42, 1000 / fps));
 }
-function desktopLyricsPayload(forceBeatMap) {
+function desktopLyricsCurrentCustomFontId() {
+  if (typeof customLyricFontRecordForKey !== 'function') return '';
+  var font = customLyricFontRecordForKey(fx && fx.lyricFont);
+  return font ? font.id : '';
+}
+function desktopLyricsCustomFontPayload(includeDataUrl) {
+  if (typeof customLyricFontRecordForKey !== 'function') return null;
+  var font = customLyricFontRecordForKey(fx && fx.lyricFont);
+  if (!font) return null;
+  var payload = {
+    id: font.id,
+    family: font.family,
+    name: font.name
+  };
+  if (includeDataUrl !== false) payload.dataUrl = font.dataUrl;
+  return payload;
+}
+
+function desktopLyricsPayload(forceBeatMap, includeCustomFontData) {
   var meta = currentDesktopSongMeta();
   var lyric = currentDesktopLyricSnapshot();
   var beatPayload = desktopLyricsBeatMapPayload(!!forceBeatMap);
-  var timelinePayload = desktopLyricsTimelinePayload();
   var payload = {
     enabled: !!fx.desktopLyrics && !isDevelopmentLockedFx('desktopLyrics'),
     text: lyric.text,
-    items: Array.isArray(lyric.items) ? lyric.items : [],
-    stageKey: lyric.stageKey || '',
     progress: lyric.progress,
     progressSpan: lyric.progressSpan,
-    progressScale: clampRange(Number(lyric.progressScale) || 1, 0.05, 1),
     title: meta.title,
     artist: meta.artist,
     playing: !!playing,
-    size: clampRange(Number(fx.desktopLyricsSize) || fxDefaults.desktopLyricsSize, 0.5, 4),
+    size: clampRange(Number(fx.desktopLyricsSize) || fxDefaults.desktopLyricsSize, 0.72, 1.55),
     opacity: clampRange(fx.desktopLyricsOpacity == null ? fxDefaults.desktopLyricsOpacity : Number(fx.desktopLyricsOpacity), 0.28, 1),
-    x: clampRange(fx.desktopLyricsX == null ? fxDefaults.desktopLyricsX : Number(fx.desktopLyricsX), 0.02, 0.98),
     y: clampRange(fx.desktopLyricsY == null ? fxDefaults.desktopLyricsY : Number(fx.desktopLyricsY), 0.08, 0.92),
     clickThrough: isDevelopmentLockedFx('desktopLyricsClickThrough') ? true : fx.desktopLyricsClickThrough !== false,
-    lyricGlowParticles: fx.desktopLyricsGlow !== false && !!fx.lyricGlowParticles,
-    lyricGlowEnabled: fx.desktopLyricsGlow !== false,
-    lyricMotion: fx.lyricMotion !== false,
+    lyricGlowParticles: !!fx.lyricGlowParticles,
     cinema: fx.desktopLyricsCinema !== false,
     highlightFollow: fx.desktopLyricsHighlight === true,
     frameRate: normalizeDesktopLyricsFps(fx.desktopLyricsFps),
-    fontFamily: lyricFontStackForKey(activeDesktopLyricsFontKey()),
+    fontFamily: lyricFontStackForKey(fx.lyricFont),
+    customFont: desktopLyricsCustomFontPayload(includeCustomFontData),
     fontWeight: lyricFontWeightValue(),
     letterSpacing: clampRange(Number(fx.lyricLetterSpacing) || 0, -0.04, 0.18),
     lineHeight: lyricLineHeightFactor(),
-    rows: normalizeDesktopLyricsRows(fx.desktopLyricsRows),
-    align: normalizeDesktopLyricsAlign(fx.desktopLyricsAlign),
     lyricScale: clampRange(Number(fx.lyricScale) || 1, 0.35, 1.65),
     feather: lyricsHasNativeKaraoke ? 0.030 : 0.055,
     motion: desktopLyricsMotionPayload(),
     playback: desktopLyricsPlaybackPayload(),
     beatMapKey: beatPayload.beatMapKey,
-    timelineKey: timelinePayload.timelineKey,
-    timeline: timelinePayload.timeline,
     colors: desktopOverlayColors()
   };
   if (Object.prototype.hasOwnProperty.call(beatPayload, 'beatMap')) payload.beatMap = beatPayload.beatMap;
@@ -44359,25 +44802,30 @@ function pushDesktopLyricsState(force) {
   if (!api || typeof api.updateDesktopLyrics !== 'function') return;
   var now = performance.now();
   if (!force && now - desktopOverlayPushState.lyricsAt < desktopLyricsPushInterval()) return;
-  var payload = desktopLyricsPayload(!!force);
+  var currentCustomFontId = desktopLyricsCurrentCustomFontId();
+  var includeCustomFontData = !!currentCustomFontId && currentCustomFontId !== desktopOverlayPushState.lastLyricsCustomFontId;
+  var payload = desktopLyricsPayload(!!force, includeCustomFontData);
   var colors = payload.colors || {};
   var motion = payload.motion || {};
-  // 桌面歌词窗口已经拿到了完整时间轴，会自己按 audio 时间平滑推进。
-  // 这里的去重键不要包含每帧变化的 progress/beat/motion，否则主窗口最小化后仍会
-  // 高频 IPC + 透明窗口重绘，表现成频闪/不流畅。只在歌词内容、设置或颜色真正变化时推送。
-  var key = payload.enabled + '|' + payload.text + '|' + payload.stageKey + '|' + payload.timelineKey + '|' + payload.rows + '|' + payload.align + '|' + payload.playing + '|' + payload.size + '|' + payload.opacity + '|' + payload.y + '|' + payload.clickThrough + '|' + payload.cinema + '|' + payload.lyricMotion + '|' + payload.highlightFollow + '|' + payload.frameRate + '|' + payload.fontFamily + '|' + payload.fontWeight + '|' + payload.letterSpacing + '|' + payload.lineHeight + '|' + payload.lyricScale + '|' + payload.feather + '|' + payload.beatMapKey + '|' + colors.primary + '|' + colors.secondary + '|' + colors.highlight + '|' + colors.glow;
+  var payloadCustomFontId = payload.customFont ? payload.customFont.id : '';
+  var key = payload.enabled + '|' + payload.text + '|' + Math.round(payload.progress * 1000) + '|' + Math.round((payload.progressSpan || 0) * 100) + '|' + payload.playing + '|' + payload.size + '|' + payload.opacity + '|' + payload.y + '|' + payload.clickThrough + '|' + payload.cinema + '|' + payload.highlightFollow + '|' + payload.frameRate + '|' + payload.fontFamily + '|' + payloadCustomFontId + '|' + payload.fontWeight + '|' + payload.letterSpacing + '|' + payload.lineHeight + '|' + payload.lyricScale + '|' + payload.feather + '|' + payload.beatMapKey + '|' + colors.primary + '|' + colors.secondary + '|' + colors.highlight + '|' + colors.glow + '|' + motion.lyricGlow + '|' + motion.lyricGlowBeat + '|' + Math.round((motion.lyricGlowStrength || 0) * 100) + '|' + Math.round((motion.highBloom || 0) * 100) + '|' + Math.round((motion.beatGlow || 0) * 100) + '|' + Math.round((motion.beatPulse || 0) * 100) + '|' + Math.round((motion.bass || 0) * 100);
   if (!force && key === desktopOverlayPushState.lastLyricsKey && now - desktopOverlayPushState.lyricsAt < 900) return;
   desktopOverlayPushState.lyricsAt = now;
   desktopOverlayPushState.lastLyricsKey = key;
-  api.updateDesktopLyrics(payload).catch(function(e){ console.warn('desktop lyrics update failed:', e); });
+  desktopOverlayPushState.lastLyricsCustomFontId = payloadCustomFontId;
+  api.updateDesktopLyrics(payload).catch(function (e) { console.warn('desktop lyrics update failed:', e); });
 }
 function applyDesktopLyricsState(force) {
   var api = getDesktopWindowApi();
   if (!api) return;
   normalizeDevelopmentLockedFxState();
-  var payload = desktopLyricsPayload(true);
+  var payload = desktopLyricsPayload(true, true);
+  var payloadCustomFontId = payload.customFont ? payload.customFont.id : '';
   if (typeof api.setDesktopLyricsEnabled === 'function') {
-    api.setDesktopLyricsEnabled(!!payload.enabled, payload).catch(function(e){ console.warn('desktop lyrics state failed:', e); });
+    desktopOverlayPushState.lastLyricsCustomFontId = payloadCustomFontId;
+    api.setDesktopLyricsEnabled(!!payload.enabled, payload).catch(function (e) { console.warn('desktop lyrics state failed:', e); });
+  } else {
+    desktopOverlayPushState.lastLyricsCustomFontId = '';
   }
   pushDesktopLyricsState(!!force);
 }
