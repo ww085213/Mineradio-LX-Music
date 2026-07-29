@@ -6,6 +6,7 @@ const { pathToFileURL } = require('url');
 const crypto = require('crypto');
 const { execFile, spawn } = require('child_process');
 const appMemory = require('./app-memory');
+const { createDirectLocalProxy } = require('./direct-local-proxy');
 
 let mainWindow = null;
 let mainWindowDesktopEmbedded = false;
@@ -16,6 +17,7 @@ let mainWindowDesktopEmbeddingUncertain = false;
 let mainWindowPreDesktopBounds = null;
 let mainWindowPreDesktopState = null;
 let localServer = null;
+let directLocalProxy = null;
 let mainServerPort = 0;
 let desktopLyricsWindow = null;
 let desktopLyricsState = {};
@@ -2091,11 +2093,12 @@ function desktopLyricsDefaultBounds(payload = desktopLyricsState) {
     ? screen.getDisplayMatching(desktopLyricsUserBounds)
     : screen.getPrimaryDisplay();
   const bounds = display.bounds;
+  const xRatio = clampNumber(payload.x, 0.02, 0.98, 0.5);
   const yRatio = clampNumber(payload.y, 0.08, 0.92, 0.76);
   const width = Math.round(Math.min(Math.max(880, bounds.width * 0.72), bounds.width - 96));
   const height = Math.round(Math.min(Math.max(340, bounds.height * 0.38), 560, bounds.height - 96));
   return {
-    x: Math.round(bounds.x + (bounds.width - width) / 2),
+    x: Math.round(bounds.x + (bounds.width - width) * xRatio),
     y: Math.round(bounds.y + bounds.height * yRatio - height / 2),
     width,
     height,
@@ -2279,18 +2282,23 @@ function sendDesktopLyricsState() {
 }
 
 function createDesktopLyricsWindow(payload = {}) {
+  const previousX = desktopLyricsState.x;
   const previousY = desktopLyricsState.y;
   const previousOpacity = desktopLyricsState.opacity;
   desktopLyricsState = { ...desktopLyricsState, ...payload, enabled: true };
+  const hasX = Object.prototype.hasOwnProperty.call(payload || {}, 'x');
   const hasY = Object.prototype.hasOwnProperty.call(payload || {}, 'y');
+  const nextX = clampNumber(desktopLyricsState.x, 0.02, 0.98, 0.5);
   const nextY = clampNumber(desktopLyricsState.y, 0.08, 0.92, 0.76);
+  const xChanged = hasX && Number.isFinite(Number(previousX)) && Math.abs(nextX - clampNumber(previousX, 0.02, 0.98, 0.5)) > 0.001;
   const yChanged = hasY && Number.isFinite(Number(previousY)) && Math.abs(nextY - clampNumber(previousY, 0.08, 0.92, 0.76)) > 0.001;
   const opacityChanged = Object.prototype.hasOwnProperty.call(payload || {}, 'opacity')
     && Math.abs(clampNumber(desktopLyricsState.opacity, 0.28, 1, 0.92) - clampNumber(previousOpacity, 0.28, 1, 0.92)) > 0.001;
-  if (yChanged) desktopLyricsUserBounds = null;
+  const positionChanged = xChanged || yChanged;
+  if (positionChanged) desktopLyricsUserBounds = null;
   if (desktopLyricsWindow && !desktopLyricsWindow.isDestroyed()) {
-    if (yChanged) {
-      positionDesktopLyricsWindow(desktopLyricsState, { force: yChanged });
+    if (positionChanged) {
+      positionDesktopLyricsWindow(desktopLyricsState, { force: true });
     } else if (opacityChanged && typeof desktopLyricsWindow.setOpacity === 'function') {
       desktopLyricsWindow.setOpacity(clampNumber(desktopLyricsState.opacity, 0.28, 1, 0.92));
     }
@@ -2328,7 +2336,7 @@ function createDesktopLyricsWindow(payload = {}) {
   }
   startDesktopLyricsMousePoller();
   applyDesktopLyricsMouseBehavior();
-  positionDesktopLyricsWindow(desktopLyricsState, { force: yChanged || !desktopLyricsUserBounds });
+  positionDesktopLyricsWindow(desktopLyricsState, { force: positionChanged || !desktopLyricsUserBounds });
   desktopLyricsWindow.once('ready-to-show', () => {
     if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return;
     desktopLyricsWindow.showInactive();
@@ -2995,6 +3003,25 @@ ipcMain.handle('mineradio-export-json-file', async (event, payload = {}) => {
     return { ok: true, filePath: result.filePath };
   } catch (e) {
     return { ok: false, error: e.message || 'EXPORT_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-export-text-file', async (event, payload = {}) => {
+  try {
+    const owner = getSenderWindow(event);
+    const requestedName = String(payload.defaultName || 'mineradio-export.txt').replace(/[\\/:*?"<>|]+/g, '-');
+    const extension = String(payload.extension || 'txt').replace(/[^a-z0-9]/gi, '').toLowerCase() || 'txt';
+    const defaultName = requestedName.toLowerCase().endsWith(`.${extension}`) ? requestedName : `${requestedName}.${extension}`;
+    const result = await dialog.showSaveDialog(owner, {
+      title: String(payload.title || '导出 Mineradio 文件'),
+      defaultPath: defaultName,
+      filters: [{ name: String(payload.filterName || extension.toUpperCase()), extensions: [extension] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+    fs.writeFileSync(result.filePath, String(payload.text || ''), 'utf8');
+    return { ok: true, filePath: result.filePath };
+  } catch (e) {
+    return { ok: false, error: e.message || 'EXPORT_TEXT_FAILED' };
   }
 });
 
@@ -3979,6 +4006,18 @@ if (!gotSingleInstanceLock) {
 
   app.whenReady().then(async () => {
     applySavedDesktopShellSettings();
+    try {
+      directLocalProxy = await createDirectLocalProxy();
+      await session.defaultSession.setProxy({
+        mode: 'fixed_servers',
+        proxyRules: `http://127.0.0.1:${directLocalProxy.port}`,
+        proxyBypassRules: 'localhost,127.0.0.1,<local>',
+      });
+      console.info(`[DirectLocalRoute] ${directLocalProxy.localAddress} via proxy port ${directLocalProxy.port}`);
+    } catch (error) {
+      directLocalProxy = null;
+      console.warn('[DirectLocalRoute] unavailable, using the system route:', error.message);
+    }
     session.defaultSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => {
       if (permission !== 'media' && permission !== 'speaker-selection') return false;
       return /^http:\/\/127\.0\.0\.1:\d+\/?$/.test(String(requestingOrigin || ''));
@@ -4070,5 +4109,6 @@ if (!gotSingleInstanceLock) {
     unregisterMineradioGlobalHotkeys();
     closeOverlayWindows();
     if (localServer && localServer.close) localServer.close();
+    if (directLocalProxy && directLocalProxy.close) directLocalProxy.close().catch(() => {});
   });
 }

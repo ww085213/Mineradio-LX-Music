@@ -7,6 +7,8 @@ const http = require('http');
 const fs   = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
+const QRCode = require('qrcode');
 const tls = require('tls');
 const { once } = require('events');
 const { Readable } = require('stream');
@@ -21,12 +23,19 @@ try {
   electronNet = require('electron').net;
 } catch (_err) {}
 if (electronNet && typeof electronNet.fetch === 'function') {
-  lxSearch.setFetchImplementation(electronNet.fetch.bind(electronNet));
-  platformPlaylistImport.setFetchImplementation(electronNet.fetch.bind(electronNet));
+  const electronFetch = electronNet.fetch.bind(electronNet);
+  globalThis.fetch = electronFetch;
+  lxSearch.setFetchImplementation(electronFetch);
+  platformPlaylistImport.setFetchImplementation(electronFetch);
 }
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
+const REMOTE_PORT = Number(process.env.MINERADIO_REMOTE_PORT || 3001);
+const REMOTE_TOKEN = crypto.randomBytes(12).toString('hex');
+let remotePlaybackState = { title:'Mineradio', artist:'', cover:'', playing:false, volume:1, progress:0, duration:0, updatedAt:0 };
+let remoteCommandSeq = 0;
+const remoteCommands = [];
 const LOCAL_FILE_TOKEN = process.env.MINERADIO_LOCAL_FILE_TOKEN || '';
 const UPDATE_WORK_DIR = process.env.MINERADIO_UPDATE_DIR || path.join(__dirname, 'updates');
 const UPDATE_DOWNLOAD_DIR = process.env.MINERADIO_UPDATE_DOWNLOAD_DIR || path.join(UPDATE_WORK_DIR, 'downloads');
@@ -85,6 +94,8 @@ const MIME = {
   '.json': 'application/json',
   '.png':  'image/png',
   '.jpg':  'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
   '.ico':  'image/x-icon',
   '.svg':  'image/svg+xml',
 };
@@ -612,6 +623,7 @@ function readLxPlaylists() {
         songmid: meta.songId == null ? row.id : meta.songId,
         albumName: decodeLxText(meta.albumName),
         picUrl: meta.picUrl || '',
+        cover: meta.picUrl || meta.cover || meta.img || '',
         albumId: meta.albumId == null ? '' : meta.albumId,
         types: Array.isArray(meta.qualitys) ? meta.qualitys : [],
         hash: meta.hash || '',
@@ -2351,9 +2363,66 @@ async function getDailyHotSongs(limit, requestedSource, forceRefresh) {
 // ====================================================================
 //  HTTP Server
 // ====================================================================
+function remoteLanAddresses() {
+  const rows = [];
+  const nets = os.networkInterfaces();
+  Object.keys(nets).forEach(name => {
+    (nets[name] || []).forEach(entry => {
+      if (!entry || entry.family !== 'IPv4' || entry.internal) return;
+      const address = String(entry.address || '');
+      if (!address || address.startsWith('169.254.')) return;
+      rows.push({ name, address, url:`http://${address}:${REMOTE_PORT}/?token=${REMOTE_TOKEN}` });
+    });
+  });
+  rows.sort((a,b) => {
+    const score = row => /wlan|wi-?fi|无线/i.test(row.name) ? 0 : (/ethernet|以太网/i.test(row.name) ? 1 : 2);
+    return score(a) - score(b);
+  });
+  return rows;
+}
+
+function remoteControllerHtml() {
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Mineradio 遥控器</title><style>
+  *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% 0,#17365c 0,#090d17 42%,#03050a 100%);color:#fff;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;display:grid;place-items:center;padding:22px}.card{width:min(430px,100%);border:1px solid #ffffff25;border-radius:30px;background:#09101ddd;box-shadow:0 28px 90px #000a,0 0 50px #36d9ff1d;padding:24px;backdrop-filter:blur(18px)}.brand{font-size:11px;letter-spacing:4px;color:#6de7ff}.cover{width:170px;height:170px;border-radius:26px;margin:22px auto 18px;display:block;object-fit:cover;background:linear-gradient(135deg,#263e66,#101725);box-shadow:0 18px 55px #0008,0 0 35px #6ae9ff28}.title{text-align:center;font-size:23px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.artist{text-align:center;color:#a9b4c7;margin:6px 0 22px}.progress{height:6px;border-radius:9px;background:#ffffff18;overflow:hidden}.progress i{display:block;height:100%;width:0;background:linear-gradient(90deg,#6cecff,#a98bff,#ff78b7);box-shadow:0 0 15px #68eaff}.time{display:flex;justify-content:space-between;color:#8290a7;font-size:12px;margin-top:8px}.controls{display:flex;align-items:center;justify-content:center;gap:18px;margin:22px 0}.controls button,.minor button,.choice button{border:1px solid #ffffff22;background:#ffffff0d;color:#fff;border-radius:18px;height:58px;min-width:64px;font-size:24px;box-shadow:inset 0 1px #ffffff1f}.controls .play{width:78px;height:78px;border-radius:50%;background:linear-gradient(135deg,#5ceaff,#936cff 60%,#ff66ae);color:#06101a;font-size:31px}.volume{width:100%;accent-color:#76e8ff}.minor{display:flex;gap:10px;margin-top:18px}.minor button{height:44px;flex:1;font-size:14px}.section{margin-top:18px}.section-title{display:flex;justify-content:space-between;color:#91a1b9;font-size:12px;margin-bottom:9px}.choice{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.choice.timer{grid-template-columns:repeat(5,1fr)}.choice button{height:38px;min-width:0;border-radius:12px;font-size:12px;padding:0 4px}.choice button.active{color:#06101a;background:linear-gradient(135deg,#62ecff,#a78aff);border-color:transparent;box-shadow:0 0 18px #61eaff44}.status{text-align:center;color:#69edbb;font-size:12px;margin-top:18px}</style></head><body><main class="card"><div class="brand">MINERADIO // REMOTE</div><img id="cover" class="cover"><div id="title" class="title">等待播放器</div><div id="artist" class="artist">请保持电脑与手机在同一网络</div><div class="progress" id="seek"><i></i></div><div class="time"><span id="cur">0:00</span><span id="dur">0:00</span></div><div class="controls"><button onclick="cmd('previous')">◀</button><button class="play" id="play" onclick="cmd('toggle-play')">▶</button><button onclick="cmd('next')">▶</button></div><input id="volume" class="volume" type="range" min="0" max="1" step="0.01"><div class="minor"><button onclick="cmd('mute')">静音</button></div><div class="section"><div class="section-title"><span>播放顺序</span><span id="mode-label">顺序</span></div><div class="choice" id="mode-choice"><button data-mode="single" onclick="cmd('mode-set','single')">单曲</button><button data-mode="loop" onclick="cmd('mode-set','loop')">顺序</button><button data-mode="shuffle" onclick="cmd('mode-set','shuffle')">随机</button></div></div><div class="section"><div class="section-title"><span>定时关闭</span><span id="sleep-label">未开启</span></div><div class="choice timer" id="sleep-choice"><button data-sleep="15" onclick="cmd('sleep-timer',15)">15分</button><button data-sleep="30" onclick="cmd('sleep-timer',30)">30分</button><button data-sleep="60" onclick="cmd('sleep-timer',60)">60分</button><button data-sleep="90" onclick="cmd('sleep-timer',90)">90分</button><button data-sleep="0" onclick="cmd('sleep-timer',0)">取消</button></div></div><div class="status" id="status">已连接</div></main><script>
+  const token=new URLSearchParams(location.search).get('token')||'';let state={};const $=id=>document.getElementById(id),fmt=n=>{n=Math.max(0,Number(n)||0);return Math.floor(n/60)+':'+String(Math.floor(n%60)).padStart(2,'0')};async function cmd(command,value){try{await fetch('/api/command?token='+encodeURIComponent(token),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({command,value})});$('status').textContent='指令已发送';setTimeout(pull,180);}catch(e){$('status').textContent='连接失败';}}async function pull(){try{const r=await fetch('/api/state?token='+encodeURIComponent(token),{cache:'no-store'});if(!r.ok)throw 0;state=await r.json();$('title').textContent=state.title||'Mineradio';$('artist').textContent=state.artist||'正在播放';$('cover').src=state.cover||'';$('play').textContent=state.playing?'Ⅱ':'▶';$('volume').value=state.volume==null?1:state.volume;const d=Number(state.duration)||0,c=Number(state.progress)||0;$('seek').firstElementChild.style.width=(d?Math.min(100,c/d*100):0)+'%';$('cur').textContent=fmt(c);$('dur').textContent=fmt(d);const mode=state.playMode||'loop',labels={single:'单曲',loop:'顺序',shuffle:'随机'};$('mode-label').textContent=labels[mode]||'顺序';document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));const remain=Math.max(0,Number(state.sleepRemaining)||0);$('sleep-label').textContent=remain?('剩余 '+Math.ceil(remain/60)+' 分钟'):'未开启';document.querySelectorAll('[data-sleep]').forEach(b=>b.classList.toggle('active',remain>0&&Number(b.dataset.sleep)===Number(state.sleepMinutes)));$('status').textContent='已连接 · '+new Date().toLocaleTimeString();}catch(e){$('status').textContent='等待电脑播放器…'}}$('volume').addEventListener('input',e=>cmd('volume-set',Number(e.target.value)));$('seek').addEventListener('click',e=>cmd('seek-ratio',e.offsetX/e.currentTarget.clientWidth));pull();setInterval(pull,900);
+  <\/script></body></html>`;
+}
+
+async function remoteServerHandler(req, res) {
+  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  if (url.searchParams.get('token') !== REMOTE_TOKEN) { res.writeHead(403, {'Content-Type':'text/plain; charset=utf-8'}); res.end('配对码无效'); return; }
+  if (url.pathname === '/' && req.method === 'GET') { const html=remoteControllerHtml(); res.writeHead(200, {'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); res.end(html); return; }
+  if (url.pathname === '/api/state' && req.method === 'GET') { sendJSON(res, remotePlaybackState); return; }
+  if (url.pathname === '/api/command' && req.method === 'POST') {
+    try { const body=await readRequestBody(req); const command=String(body.command||'').slice(0,40); if(!command)throw new Error('COMMAND_REQUIRED'); const item={seq:++remoteCommandSeq,command,value:body.value,at:Date.now()}; remoteCommands.push(item); if(remoteCommands.length>80)remoteCommands.splice(0,remoteCommands.length-80); sendJSON(res,{ok:true,seq:item.seq}); }
+    catch(e){sendJSON(res,{ok:false,error:e.message||'BAD_REQUEST'},400);} return;
+  }
+  res.writeHead(404); res.end('Not found');
+}
+
+const remoteServer = http.createServer(remoteServerHandler);
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost:' + PORT);
   const pn = url.pathname;
+
+  if (pn === '/api/remote/info' && req.method === 'GET') {
+    try {
+      const entries = await Promise.all(remoteLanAddresses().map(async entry => ({ ...entry, qr:await QRCode.toDataURL(entry.url,{width:280,margin:1,errorCorrectionLevel:'M'}) })));
+      sendJSON(res, { ok:true, port:REMOTE_PORT, entries });
+    } catch (err) { sendJSON(res, { ok:false, error:err.message || 'REMOTE_INFO_FAILED' }, 500); }
+    return;
+  }
+
+  if (pn === '/api/remote/state' && req.method === 'POST') {
+    try { const body=await readRequestBody(req); remotePlaybackState={...remotePlaybackState,...body,updatedAt:Date.now()}; sendJSON(res,{ok:true}); }
+    catch(err){sendJSON(res,{ok:false,error:err.message||'REMOTE_STATE_FAILED'},400);} return;
+  }
+
+  if (pn === '/api/remote/commands' && req.method === 'GET') {
+    const after=Math.max(0,Number(url.searchParams.get('after'))||0);
+    sendJSON(res,{ok:true,latest:remoteCommandSeq,commands:remoteCommands.filter(item=>item.seq>after)}); return;
+  }
   applySecurityHeaders(res);
   if (pn.startsWith('/api/') && !isTrustedLocalApiRequest(req)) {
     sendJSON(res, { ok: false, error: 'CROSS_ORIGIN_REQUEST_BLOCKED' }, 403);
@@ -3250,6 +3319,11 @@ server.listen(PORT, HOST, () => {
   console.log('======================================================');
   console.log(' 粒子音乐可视化 v2  →  http://localhost:' + PORT);
   console.log('======================================================');
+});
+
+remoteServer.on('error', err => console.warn('[RemoteControl]', err.message));
+remoteServer.listen(REMOTE_PORT, '0.0.0.0', () => {
+  console.log(' Mineradio Remote -> http://0.0.0.0:' + REMOTE_PORT);
 });
 
 module.exports = server;

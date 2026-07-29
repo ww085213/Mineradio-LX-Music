@@ -250,6 +250,7 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   setLxPlaybackLinked: (linked) => ipcRenderer.invoke('mineradio-lx-set-linked', !!linked),
   configureGlobalHotkeys: (bindings) => ipcRenderer.invoke('mineradio-hotkeys-configure-global', bindings || []),
   exportJsonFile: (payload) => ipcRenderer.invoke('mineradio-export-json-file', payload || {}),
+  exportTextFile: (payload) => ipcRenderer.invoke('mineradio-export-text-file', payload || {}),
   importJsonFile: () => ipcRenderer.invoke('mineradio-import-json-file'),
   backupUiState: (patch) => ipcRenderer.invoke('mineradio-ui-state-write', patch || {}),
   reportStartupReady: (payload) => {

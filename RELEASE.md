@@ -1,15 +1,16 @@
-# Mineradio 1.5.6.2 发布流程
+# Mineradio 1.5.7 发布流程
 
 ## 发布前检查
 
-- npm 包版本保持有效 SemVer `1.5.6`；应用显示版本、安装包文件名和 Release 标签使用 `1.5.6.2`。
-- `npm run verify:release` 通过，主进程、preload 和页面脚本可以解析。
-- 从原版、旧版和其他二创版本覆盖安装后均能进入首页，不会卡在启动页。
-- 覆盖安装保留 `%APPDATA%\Mineradio` 中的歌单、设置和用户数据。
-- 本地歌单删除不会删除硬盘音乐文件，也不会清空当前播放队列。
-- 安装包包含 FFmpeg、RePKG 与第三方许可说明。
-- 安装程序、主程序、卸载程序和快捷方式使用同一套 MR 图标。
-- 安装包未进行 Authenticode 代码签名；Release 必须提供 SHA-256 校验文件并提醒 SmartScreen 可能显示“未知发布者”。
+- `package.json`、应用显示版本、安装包名、更新清单与 Git 标签均为 `1.5.7`。
+- `npm run verify:release` 通过，主进程、preload、代理服务及页面内联脚本均可解析。
+- 音效、歌手专辑、实时频谱高度、主页透明模式、桌面歌词左右调节、音乐星球和局域网遥控均进入打包资源。
+- 从原版、旧版及其他二创版本覆盖安装后可进入首页，并保留 `%APPDATA%\Mineradio` 用户数据。
+- 安装/卸载路径经过专属目录与标记校验，不会误删非 Mineradio 目录。
+- 安装包包含 FFmpeg、RePKG 和相应第三方许可说明。
+- 安装包内的 `qrcode` 运行时依赖可直接加载并生成二维码；全新用户数据目录启动后主页面和局域网遥控接口均返回 HTTP 200。
+- 干净环境启动不会生成 `startup-crash.log`。
+- 未使用 Authenticode 代码签名；Release 必须提供 SHA-256 校验文件并提示 SmartScreen 风险。
 
 ## Windows 构建
 
@@ -20,14 +21,14 @@ npm run build:win
 
 构建产物：
 
-- `dist/Mineradio.Setup.1.5.6.2.exe`
-- `dist/Mineradio.Setup.1.5.6.2.exe.blockmap`
+- `dist/Mineradio.Setup.1.5.7.exe`
+- `dist/Mineradio.Setup.1.5.7.exe.blockmap`
 - `dist/latest.yml`
-- `dist/Mineradio.Setup.1.5.6.2.SHA256.txt`
+- `dist/Mineradio.Setup.1.5.7.SHA256.txt`
 
 ## GitHub Release
 
-- 标签：`v1.5.6.2`
-- 标题：`Mineradio 1.5.6.2`
-- 上传完整安装包、blockmap、资源补丁、资源覆盖包和 `SHA256SUMS.txt`。
-- 发布后核对 README 下载链接、Release 资产列表和安装包 SHA-256。
+- 标签：`v1.5.7`
+- 标题：`Mineradio 1.5.7`
+- 上传安装包、blockmap、`latest.yml` 与 SHA-256 校验文件。
+- 发布后核对 README 下载链接、Release 资源列表、安装包哈希和在线更新清单。
