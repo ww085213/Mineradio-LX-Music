@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { createRequire } = require('module');
 
 function findNewestRceditInCache(cacheRoot) {
   if (!cacheRoot || !fs.existsSync(cacheRoot)) return null;
@@ -49,9 +50,30 @@ module.exports = async function afterPack(context) {
   const exePath = path.join(context.appOutDir, `${appName}.exe`);
   const iconPath = path.join(context.packager.info.buildResourcesDir, 'icon.ico');
   const rceditPath = resolveRcedit(context.packager.projectDir);
+  const packagedAppDir = path.join(context.appOutDir, 'resources', 'app');
 
   if (!fs.existsSync(exePath)) throw new Error(`Mineradio executable was not found: ${exePath}`);
   if (!fs.existsSync(iconPath)) throw new Error(`Mineradio icon was not found: ${iconPath}`);
+  if (!fs.existsSync(path.join(packagedAppDir, 'server.js'))) {
+    throw new Error(`Mineradio packaged server was not found: ${packagedAppDir}`);
+  }
+
+  // Resolve and exercise production dependencies from the packaged app itself.
+  // This prevents a successful installer build whose first launch immediately
+  // fails because a module existed in the development tree but was not shipped.
+  const packagedRequire = createRequire(path.join(packagedAppDir, 'server.js'));
+  let QRCode;
+  try {
+    packagedRequire.resolve('qrcode');
+    QRCode = packagedRequire('qrcode');
+  } catch (error) {
+    throw new Error(`Packaged runtime dependency qrcode is unavailable: ${error.message}`);
+  }
+  const qrSvg = await QRCode.toString('Mineradio packaged runtime check', { type: 'svg' });
+  if (!/^<svg[\s>]/.test(String(qrSvg || ''))) {
+    throw new Error('Packaged qrcode runtime check returned invalid SVG output.');
+  }
+  console.log('  • verified packaged runtime dependencies  qrcode=ready');
 
   const packageMetadata = JSON.parse(fs.readFileSync(path.join(context.packager.projectDir, 'package.json'), 'utf8'));
   const version = String(
@@ -59,6 +81,7 @@ module.exports = async function afterPack(context) {
       || packageMetadata && packageMetadata.build && packageMetadata.build.buildVersion
       || context.packager.appInfo.version
   );
+  const windowsVersion = /^\d+\.\d+\.\d+$/.test(version) ? `${version}.0` : version;
   console.log(`  • injecting Mineradio resources  rcedit=${rceditPath}`);
   execFileSync(rceditPath, [
     exePath,
@@ -67,7 +90,7 @@ module.exports = async function afterPack(context) {
     '--set-version-string', 'ProductName', productName,
     '--set-version-string', 'CompanyName', companyName,
     '--set-version-string', 'OriginalFilename', `${appName}.exe`,
-    '--set-file-version', version,
-    '--set-product-version', version
+    '--set-file-version', windowsVersion,
+    '--set-product-version', windowsVersion
   ], { stdio: 'inherit' });
 };

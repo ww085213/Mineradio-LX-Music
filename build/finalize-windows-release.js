@@ -9,7 +9,7 @@ const artifactName = `Mineradio.Setup.${releaseVersion}.exe`;
 const artifactPath = path.join(root, 'dist', artifactName);
 const latestPath = path.join(root, 'dist', 'latest.yml');
 
-if (!releaseVersion || !/^\d+\.\d+\.\d+\.\d+$/.test(releaseVersion)) {
+if (!releaseVersion || !/^\d+\.\d+\.\d+(?:\.\d+)?$/.test(releaseVersion)) {
   throw new Error(`无效的 Mineradio 发布版本: ${releaseVersion || '(empty)'}`);
 }
 if (!fs.existsSync(artifactPath) || !fs.existsSync(latestPath)) {

@@ -38,20 +38,30 @@ function checkPortableExecutable(relativePath, minimumBytes) {
 
 const packageJson = JSON.parse(read('package.json'));
 const releaseVersion = packageJson.mineradio && packageJson.mineradio.releaseVersion;
-if (packageJson.version !== '1.5.6') fail(`npm package version 应保持有效 SemVer 1.5.6，实际为 ${packageJson.version}`);
-if (packageJson.build.buildVersion !== '1.5.6.1') fail('Windows buildVersion 未同步为 1.5.6.1');
-if (releaseVersion !== '1.5.6.1') fail('应用内 releaseVersion 未同步为 1.5.6.1');
+if (packageJson.version !== '1.5.7') fail(`npm package version 未同步为 1.5.7，实际为 ${packageJson.version}`);
+if (packageJson.build.buildVersion !== '1.5.7') fail('Windows buildVersion 未同步为 1.5.7');
+if (releaseVersion !== '1.5.7') fail('应用内 releaseVersion 未同步为 1.5.7');
 if (!packageJson.build.files.includes('bin/**/*')) fail('安装包未声明包含 bin/**/*');
 if (!packageJson.build.files.includes('LICENSE')) fail('安装包未声明包含 GPL-3.0 LICENSE');
 if (!packageJson.build.files.includes('!public/**/*.map')) fail('正式安装包未排除前端源码映射文件');
 if (!packageJson.build.files.includes('!build/finalize-windows-release.js')) fail('正式安装包未排除仅用于发布机的收尾脚本');
-if (packageJson.build.nsis.artifactName !== 'Mineradio.Setup.1.5.6.1.${ext}') fail('安装包文件名版本不正确');
-if (!packageJson.scripts['build:win'].includes('build/finalize-windows-release.js')) fail('Windows 构建未固定 latest.yml 的四段发布版本');
+if (packageJson.build.nsis.artifactName !== 'Mineradio.Setup.1.5.7.${ext}') fail('安装包文件名版本不正确');
+if (!packageJson.scripts['build:win'].includes('build/finalize-windows-release.js')) fail('Windows 构建未固定 latest.yml 的发布版本');
+if (packageJson.dependencies.qrcode !== '1.5.4') fail('局域网遥控二维码运行时依赖 qrcode@1.5.4 未固定');
+try {
+  const QRCode = require(path.join(root, 'node_modules', 'qrcode'));
+  if (!QRCode || typeof QRCode.toDataURL !== 'function') fail('qrcode 运行时接口不可用');
+} catch (error) {
+  fail(`qrcode 运行时依赖无法加载: ${error.message}`);
+}
 
 const mainSource = read('desktop/main.js');
 const indexSource = read('public/index.html');
 const installerSource = read('build/installer.nsh');
 const converterSource = read('wallpaper-converter.js');
+const serverSource = read('server.js');
+const preloadSource = read('desktop/preload.js');
+const proxySource = read('desktop/direct-local-proxy.js');
 
 requireText('desktop/main.js', mainSource, "writeStartupDiagnostic('app-when-ready'");
 requireText('desktop/main.js', mainSource, 'setIgnoreMouseEvents(true)');
@@ -75,20 +85,28 @@ requireText('public/index.html', indexSource, 'mineradio-performance-ultra-defau
 requireText('public/index.html', indexSource, `Mineradio v${releaseVersion}`);
 requireText('public/index.html', indexSource, `currentVersion: '${releaseVersion}'`);
 if (indexSource.includes('1.5.5.1')) fail('public/index.html 仍包含上一版 1.5.5.1 的界面或更新兜底版本');
-requireText('build/installer.nsh', installerSource, 'MINERADIO_LEGACY_UNINSTALL_KEY');
-requireText('build/installer.nsh', installerSource, '9733721a-009e-52bc-b705-49059cd80258');
-requireText('build/installer.nsh', installerSource, 'MineradioDisableUnsafePreviousUninstallers');
-requireText('build/installer.nsh', installerSource, 'Call MineradioNormalizeInstallDir');
-requireText('build/installer.nsh', installerSource, 'WriteRegStr SHELL_CONTEXT "${MINERADIO_INSTALL_KEY}" "InstallLocation" "$INSTDIR"');
-requireText('build/installer.nsh', installerSource, 'it is an explicit user choice and must never be replaced');
-const directoryShowBody = (installerSource.match(/Function MineradioDirectoryShow([\s\S]*?)FunctionEnd/) || [])[1] || '';
-if (!directoryShowBody) fail('build/installer.nsh 缺少 MineradioDirectoryShow');
-if (directoryShowBody.includes('MineradioUsePreferredInstallDir')) fail('自定义目录页仍会用旧注册表路径覆盖用户选择');
+requireText('build/installer.nsh', installerSource, 'MINERADIO_INSTALL_MARKER');
+requireText('build/installer.nsh', installerSource, '!macro customRemoveFiles');
+requireText('build/installer.nsh', installerSource, 'MineradioDisableUnsafeOldUninstallers');
+requireText('build/installer.nsh', installerSource, 'MineradioExistingInstallPathCanBeAdopted');
+requireText('build/installer.nsh', installerSource, 'MineradioValidateInstallDir');
+requireText('build/installer.nsh', installerSource, 'un.MineradioValidateUninstallDir');
+requireText('public/index.html', indexSource, 'function renderOnlineArtistOverview()');
+requireText('public/index.html', indexSource, 'function createSoundFieldChain(ctx)');
+requireText('public/index.html', indexSource, 'id="fx-player-spectrum-height"');
+requireText('public/index.html', indexSource, 'id="t-homeAlwaysTransparent"');
+requireText('public/index.html', indexSource, 'id="fx-desktoplyricsx"');
+requireText('server.js', serverSource, "pn === '/api/remote/info'");
+requireText('desktop/preload.js', preloadSource, 'exportTextFile:');
+requireText('desktop/main.js', mainSource, "require('./direct-local-proxy')");
+requireText('desktop/direct-local-proxy.js', proxySource, 'createDirectLocalProxy');
 requireText('wallpaper-converter.js', converterSource, "path.join(this.appDir, 'bin', 'ffmpeg.exe')");
 requireText('wallpaper-converter.js', converterSource, "path.join(this.appDir, 'bin', 'repkg', 'RePKG.exe')");
 
 for (const relativePath of [
   'desktop/main.js',
+  'desktop/preload.js',
+  'desktop/direct-local-proxy.js',
   'server.js',
   'wallpaper-converter.js',
   'dj-analyzer.js',
@@ -124,6 +142,7 @@ for (const notice of [
   'build/prepare-windows-tools.ps1',
   'build/finalize-windows-release.js',
   'LICENSE',
+  'public/assets/music-planet-bg.webp',
 ]) read(notice);
 
 if (failures.length) {
