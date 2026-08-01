@@ -1,0 +1,35 @@
+/* Original Mineradio feature pack: Sonic presets, lyric motion, fades and memory controls. */
+.original-feature-fold{margin-top:12px}
+.original-feature-fold .fx-fold-title small{color:rgba(157,232,255,.56)}
+.original-feature-note{margin:8px 0 12px;font-size:10px;line-height:1.55;color:rgba(255,255,255,.38)}
+.original-feature-pane{display:none}
+.original-feature-pane.active{display:block}
+.sonic-audio-toggle-grid{margin-bottom:8px}
+.sonic-audio-monitor{margin:7px 0 11px;padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(2,6,12,.34)}
+.sonic-audio-monitor-head{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px}
+.sonic-audio-meter{height:5px;overflow:hidden;border-radius:999px;background:rgba(255,255,255,.08)}
+.sonic-audio-meter span{display:block;width:100%;height:100%;transform:scaleX(0);transform-origin:left center;background:linear-gradient(90deg,#57f3ff,#b8ff72,#ffd463);box-shadow:0 0 10px rgba(87,243,255,.55)}
+.sonic-audio-monitor-head small{font-size:9px;color:rgba(255,255,255,.46);font-variant-numeric:tabular-nums}
+.sonic-audio-monitor-panel{height:0;overflow:hidden;opacity:0;transition:height .2s,opacity .2s}
+.sonic-audio-monitor-panel.open{height:108px;margin-top:8px;opacity:1}
+.sonic-audio-monitor-panel canvas{display:block;width:100%;height:108px;border-radius:8px}
+.lyric-motion-style-seg{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr))!important}
+.lyric-display-mode-seg,.lyric-texture-quality-seg,.sonic-workshop-theme-seg{grid-template-columns:repeat(5,minmax(0,1fr))!important}
+.lyric-translation-mode-seg{grid-template-columns:repeat(4,minmax(0,1fr))!important}
+.lyric-texture-quality-seg button{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px!important}
+.lyric-texture-quality-seg button span{font-size:12px;font-weight:850}.lyric-texture-quality-seg button small{font-size:8px;opacity:.48}
+.lyric-glitch-controls{display:none;margin:8px 0 4px;padding:9px;border:1px solid rgba(255,105,142,.14);border-radius:12px;background:linear-gradient(135deg,rgba(255,65,112,.05),rgba(80,220,255,.04))}
+.lyric-glitch-controls.active{display:block}
+.lyric-glitch-bind{width:100%;margin-bottom:7px}
+.memory-status-chip{margin:8px 0 6px;padding:9px 11px;border:1px solid rgba(255,255,255,.09);border-radius:10px;background:rgba(255,255,255,.035);font-size:10px;line-height:1.45;color:rgba(237,247,255,.72);font-variant-numeric:tabular-nums}
+.memory-status-sub{margin-bottom:8px}
+.memory-mask-seg{grid-template-columns:repeat(4,minmax(0,1fr))!important}
+.memory-action-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:9px}.memory-action-row button{min-width:0}
+.volume-popover.original-fade-popover{width:232px;height:auto;min-height:42px;padding:10px 12px;display:block}
+.volume-main-row{display:flex;align-items:center;gap:9px}
+.fade-control-row{display:grid;grid-template-columns:30px 1fr 40px;align-items:center;gap:7px;margin-top:8px}
+.fade-control-row label,.fade-control-row span{font-size:9.5px;color:rgba(255,255,255,.50)}
+.fade-control-row span{text-align:right;font-variant-numeric:tabular-nums}.fade-control-row input{width:100%;accent-color:var(--fc-accent);cursor:pointer}
+.playback-gapless-toggle{width:100%;min-height:34px;margin-top:10px;border:1px solid rgba(255,255,255,.09);border-radius:9px;background:rgba(255,255,255,.045);color:rgba(255,255,255,.62);font:700 10.5px inherit;cursor:pointer;transition:.18s}
+.playback-gapless-toggle.on{color:#eafffb;border-color:rgba(110,240,225,.32);background:rgba(76,210,195,.12);box-shadow:inset 0 0 18px rgba(91,235,222,.06)}
+@media (max-width:620px){.lyric-motion-style-seg,.sonic-workshop-theme-seg{grid-template-columns:repeat(3,minmax(0,1fr))!important}.memory-action-row{grid-template-columns:1fr}.volume-popover.original-fade-popover{width:auto}}

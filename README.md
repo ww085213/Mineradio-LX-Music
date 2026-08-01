@@ -1,24 +1,23 @@
 # Mineradio - LX Music / MR
 
-## 最新版本：1.5.7
+## 最新版本：1.5.7.1
 
-[下载 Windows 安装包](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.7/Mineradio.Setup.1.5.7.exe) / [查看 v1.5.7 Release](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.5.7)
+[下载 Windows 安装包](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.7.1/Mineradio.Setup.1.5.7.1.exe) / [查看 v1.5.7.1 Release](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.5.7.1)
 
 支持 Windows 10/11 x64。安装向导可选择安装目录和是否创建桌面快捷方式；原版、旧版及其他二创版本可直接覆盖升级。安装程序只更新程序文件，会保留 `%APPDATA%\Mineradio` 中的歌单、设置和用户数据。升级前建议先退出正在运行的 Mineradio。
 
-1.5.7 主要更新：
+1.5.7.1 主要更新：
 
-- 音效实验室升级：加入可保存的自定义均衡器与声场、空间音频、人声/伴奏分离、智能母带和智能 DJ 等效果，并支持配置导入导出。
-- 歌手详情升级：在线匹配歌手后可浏览完整专辑卡片、查看专辑歌曲、一键播放整张专辑或收藏整张专辑。
-- 底部实时频谱加入高度调节；主页可在“始终全透明”和经典的“平时较不透明、鼠标移入后透明”之间切换。
-- 桌面歌词新增左右位置调节，并保留高度、大小和透明度调节。
-- 加入音乐星球地图、局域网多设备遥控等入口，相关服务与背景资源已一并打入安装包。
-- 修复全新安装后因二维码运行时依赖未打包而无法启动的问题，并增加打包后依赖自检。
-- 保留 1.5.6.3 的启动恢复、视频壁纸降级、桌面歌词点击穿透、安全歌单删除、后台降频和安全覆盖安装修复。
+- 修复 Spotify（小绿）公开歌单导入：支持完整分页、去重、系统代理及本地缓存；成功导入一次后，临时无法访问 Spotify 时仍可从缓存恢复歌单。
+- 桌面融合改为稳定的 WorkerW 双状态切换：锁定后完整 Mineradio 固定在桌面，真实桌面图标保持可见、可点击；再次按可配置全局快捷键即可恢复播放器操作。
+- 修复与 Wallpaper Engine 同时运行时的覆盖、图标消失、鼠标失效和频闪问题，不再复制桌面图标，也不会在锁定态隐藏 Mineradio 画面。
+- 修复低性能电脑或慢速网络环境下启动恢复误清空配置的问题，保留歌单、壁纸、播放设置、界面设置和用户音源。
+- 延续 1.5.7 的音效实验室、歌手专辑、实时频谱、桌面歌词、音乐星球、局域网遥控和可视化升级。
+- 安装包继续支持从原版、旧版及其他二创版本安全覆盖升级，并校验二维码、FFmpeg、RePKG、平台导入及关键桌面运行时。
 
-[查看 Mineradio 1.5.7 完整更新说明](RELEASE_NOTES_1.5.7.md)
+[查看 Mineradio 1.5.7.1 完整更新说明](RELEASE_NOTES_1.5.7.1.md)
 
-安装包 SHA-256：`8d86ddb89dc5068e4e1e01e43ba600dedb1f26fab4f71c53ae5b6709f1ccd76a`
+安装包 SHA-256：`451eb3e1dc0c76c480778f43b0d54781a21d6491c05498d4e8290b56ffd1b4d5`
 
 > 当前 Windows 安装包未使用 Authenticode 代码签名证书，Windows SmartScreen 可能提示“未知发布者”。请只从本仓库 Release 下载，并核对上方 SHA-256。
 
@@ -77,10 +76,10 @@ npm run build:win
 
 `build:win` 会下载并校验固定版本的 FFmpeg 与 RePKG，运行发布校验，然后生成：
 
-- `dist/Mineradio.Setup.1.5.7.exe`
-- `dist/Mineradio.Setup.1.5.7.exe.blockmap`
+- `dist/Mineradio.Setup.1.5.7.1.exe`
+- `dist/Mineradio.Setup.1.5.7.1.exe.blockmap`
 - `dist/latest.yml`
-- `dist/Mineradio.Setup.1.5.7.SHA256.txt`
+- `dist/Mineradio.Setup.1.5.7.1.SHA256.txt`
 
 macOS DMG 需在 macOS 环境执行 `npm run build:mac`。
 

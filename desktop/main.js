@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, screen, globalShortcut, dialog, Tray, Menu, nativeImage, desktopCapturer, session } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, globalShortcut, dialog, Tray, Menu, nativeImage, desktopCapturer, session, protocol, clipboard } = require('electron');
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
@@ -6,11 +6,21 @@ const { pathToFileURL } = require('url');
 const crypto = require('crypto');
 const { execFile, spawn } = require('child_process');
 const appMemory = require('./app-memory');
+const systemMemory = require('./system-memory');
 const { createDirectLocalProxy } = require('./direct-local-proxy');
+const {
+  WallpaperEngineLibrary,
+  registerWallpaperEngineScheme,
+} = require('./wallpaper-engine-library');
+const { WallpaperEngineRuntime } = require('./wallpaper-engine-runtime');
+const { FullDesktopModeRuntime } = require('./full-desktop-mode-runtime');
+
+registerWallpaperEngineScheme(protocol);
 
 let mainWindow = null;
 let mainWindowDesktopEmbedded = false;
 let mainWindowDesktopInteractive = false;
+let fullDesktopModeRuntime = null;
 // A native SetParent/style command can fail after it has already changed part
 // of the HWND state. While uncertain, never trust the JS flag to skip detach.
 let mainWindowDesktopEmbeddingUncertain = false;
@@ -50,6 +60,20 @@ let appMemoryTrimTimer = null;
 let appMemoryTrimInFlight = false;
 let lastAppMemoryTrimAt = 0;
 let lastAppMemoryTrimReason = '';
+let memoryAutoTimer = null;
+let memoryAutoState = {
+  appTrimEnabled: true,
+  backgroundTrimEnabled: true,
+  enabled: false,
+  mask: systemMemory.MEMORY_MASK_DEFAULT,
+  intervalMin: 30,
+  thresholdPercent: 78,
+  autoElevate: false,
+  lastRunAt: 0,
+  lastReason: '',
+  lastResult: null,
+  lastError: '',
+};
 let tray = null;
 let trayRightClickGuardUntil = 0;
 let trayPlaybackState = { title: '', artist: '', playing: false, volume: 80 };
@@ -130,6 +154,7 @@ async function trimAppMemoryNow(reason = 'renderer') {
 
 function scheduleAppMemoryTrim(reason, delay = 2200) {
   if (process.platform !== 'win32') return;
+  if (memoryAutoState.appTrimEnabled === false || memoryAutoState.backgroundTrimEnabled === false) return;
   if (Date.now() - lastAppMemoryTrimAt < 120000) return;
   if (appMemoryTrimTimer) clearTimeout(appMemoryTrimTimer);
   appMemoryTrimTimer = setTimeout(() => {
@@ -138,6 +163,66 @@ function scheduleAppMemoryTrim(reason, delay = 2200) {
     if (!mainWindow.isMinimized() && mainWindow.isVisible()) return;
     trimAppMemoryNow(reason).catch(() => {});
   }, Math.max(1200, Number(delay) || 2200));
+}
+
+function normalizeMemoryAutoState(payload = {}) {
+  const systemEnabled = systemMemory.SYSTEM_PURGE_AVAILABLE === true && systemMemory.SYSTEM_PURGE_ENABLED === true;
+  return {
+    appTrimEnabled: payload.appTrimEnabled !== false,
+    backgroundTrimEnabled: payload.backgroundTrimEnabled !== false,
+    enabled: systemEnabled && payload.enabled === true,
+    mask: systemMemory.normalizeMask(payload.mask != null ? payload.mask : memoryAutoState.mask),
+    intervalMin: Math.max(5, Math.min(180, Math.round(Number(payload.intervalMin != null ? payload.intervalMin : memoryAutoState.intervalMin) || 30))),
+    thresholdPercent: Math.max(0, Math.min(100, Math.round(Number(payload.thresholdPercent != null ? payload.thresholdPercent : memoryAutoState.thresholdPercent) || 0))),
+    autoElevate: payload.autoElevate === true,
+    lastRunAt: memoryAutoState.lastRunAt || 0,
+    lastReason: memoryAutoState.lastReason || '',
+    lastResult: memoryAutoState.lastResult || null,
+    lastError: '',
+  };
+}
+
+function stopMemoryAutoTimer() {
+  if (memoryAutoTimer) clearInterval(memoryAutoTimer);
+  memoryAutoTimer = null;
+}
+
+function syncMemoryAutoTimer() {
+  stopMemoryAutoTimer();
+  if (!memoryAutoState.enabled) return;
+  memoryAutoTimer = setInterval(() => {
+    runMemoryAutoTick('timer').catch(() => {});
+  }, Math.max(5, memoryAutoState.intervalMin) * 60000);
+}
+
+async function runMemoryAutoTick(reason = 'auto') {
+  if (!memoryAutoState.enabled) return { ok:false, skipped:true, reason:'disabled', state:memoryAutoState };
+  if (isMainWindowForegroundVisible()) {
+    memoryAutoState.lastRunAt = Date.now();
+    memoryAutoState.lastReason = reason + ':foreground-visible';
+    memoryAutoState.lastResult = { ok:true, skipped:true, reason:'foreground-visible' };
+    return { ok:true, skipped:true, reason:'foreground-visible', state:memoryAutoState };
+  }
+  const snapshot = await systemMemory.getMemorySnapshotExtended();
+  const threshold = Number(memoryAutoState.thresholdPercent) || 0;
+  if (threshold > 0 && snapshot && snapshot.usedPercent < threshold) {
+    memoryAutoState.lastRunAt = Date.now();
+    memoryAutoState.lastReason = reason + ':below-threshold';
+    memoryAutoState.lastResult = { ok:true, skipped:true, usedPercent:snapshot.usedPercent, thresholdPercent:threshold };
+    return { ok:true, skipped:true, snapshot, state:memoryAutoState };
+  }
+  memoryAutoState.lastRunAt = Date.now();
+  memoryAutoState.lastReason = reason;
+  try {
+    const result = await systemMemory.purgeSystemMemorySmart(memoryAutoState.mask, { autoElevate:memoryAutoState.autoElevate === true });
+    memoryAutoState.lastResult = result;
+    memoryAutoState.lastError = '';
+    return { ok:true, result, snapshot:await systemMemory.getMemorySnapshotExtended(), state:memoryAutoState };
+  } catch (error) {
+    memoryAutoState.lastError = error.message || 'MEMORY_AUTO_FAILED';
+    memoryAutoState.lastResult = { ok:false, error:memoryAutoState.lastError };
+    return { ok:false, error:memoryAutoState.lastError, snapshot:systemMemory.getMemorySnapshot(), state:memoryAutoState };
+  }
 }
 
 const WINDOWED_ASPECT = 16 / 9;
@@ -179,6 +264,14 @@ const DESKTOP_UI_STATE_KEYS = new Set([
   'mineradio-wallpaper-scene-recordings-v1',
   'mineradio-wallpaper-record-fps-v1',
   'mineradio-wallpaper-record-fps-v2',
+  'mineradio-wallpaper-engine-selection-v1',
+  'mineradio-wallpaper-engine-hidden-v1',
+  'mineradio-wallpaper-engine-favorites-v1',
+  'mineradio-original-feature-pack-v2',
+  'mineradio-audio-fade-v1',
+  'mineradio-player-spectrum-v1',
+  'mineradio-player-spectrum-height-v1',
+  'mineradio-home-always-transparent-v1',
   'mineradio-user-capsule-auto-hide-v1',
   'mineradio-fx-fab-auto-hide-v1',
   'mineradio-controls-auto-hide-v1',
@@ -192,6 +285,8 @@ const DESKTOP_UI_STATE_KEYS = new Set([
   'mineradio-local-library-folders-v2',
   'mineradio-hidden-wallpapers-v1',
   'mineradio-favorite-wallpapers-v1',
+  'mineradio-wallpaper-engine-hidden-v1',
+  'mineradio-wallpaper-engine-favorites-v1',
   'mineradio-last-visual-preset-v1',
   'mineradio-local-user-playlists-v1',
   'mineradio-playlist-custom-covers-v1',
@@ -216,6 +311,9 @@ const JSON_OBJECT_UI_STATE_KEYS = new Set([
   'mineradio-playback-tuning-v1',
   'mineradio-playlist-panel-position-v1',
   'mineradio-wallpaper-scene-recordings-v1',
+  'mineradio-wallpaper-engine-selection-v1',
+  'mineradio-original-feature-pack-v2',
+  'mineradio-audio-fade-v1',
   'mineradio-free-camera-v1',
   'mineradio-playlist-custom-covers-v1',
   'mineradio-lx-playlist-song-order-v1',
@@ -227,6 +325,8 @@ const FLAG_UI_STATE_KEYS = new Set([
   'mineradio-playlist-panel-pinned-v1',
   'mineradio-playlist-panel-pinned-v2',
   'mineradio-home-more-playlists-expanded-v1',
+  'mineradio-player-spectrum-v1',
+  'mineradio-home-always-transparent-v1',
   'mineradio-user-capsule-auto-hide-v1',
   'mineradio-fx-fab-auto-hide-v1',
   'mineradio-controls-auto-hide-v1',
@@ -242,6 +342,7 @@ const NUMBER_UI_STATE_KEYS = new Set([
   'apex-player-volume',
   'mineradio-wallpaper-record-fps-v1',
   'mineradio-wallpaper-record-fps-v2',
+  'mineradio-player-spectrum-height-v1',
   'mineradio-last-visual-preset-v1',
 ]);
 const LARGE_UI_STATE_KEYS = new Set([
@@ -332,7 +433,7 @@ function sanitizeDesktopUiStateValue(key, value, options = {}) {
     if (!Number.isFinite(number)) return null;
     if (key === 'apex-player-volume' && (number < 0 || number > 1)) return null;
     if (/wallpaper-record-fps/.test(key) && (number < 15 || number > 120)) return null;
-    if (key === 'mineradio-last-visual-preset-v1' && (number < 0 || number > 12)) return null;
+    if (key === 'mineradio-last-visual-preset-v1' && (number < 0 || number > 14)) return null;
     return text;
   }
   if (key === 'mineradio-playback-quality-v1') {
@@ -554,25 +655,6 @@ async function backupChromiumLocalStorageForRecovery(stableDir, reason) {
   return { ok: true, backupDir, hadStorage: true };
 }
 
-async function backupAndClearChromiumLocalStorage(reason, control = {}) {
-  try { await session.defaultSession.flushStorageData(); } catch (_flushError) {}
-  let backup;
-  try {
-    backup = await backupChromiumLocalStorageForRecovery(app.getPath('userData'), reason);
-  } catch (error) {
-    writeStartupDiagnostic('startup-storage-backup-failed', error);
-    return { ok: false, error: 'STARTUP_STORAGE_BACKUP_FAILED' };
-  }
-  if (control.cancelled) return { ...backup, ok: false, cancelled: true };
-  try {
-    await session.defaultSession.clearStorageData({ storages: ['localstorage'] });
-    return { ...backup, ok: true };
-  } catch (error) {
-    writeStartupDiagnostic('startup-storage-clear-failed', error);
-    return { ...backup, ok: false, error: 'STARTUP_STORAGE_CLEAR_FAILED' };
-  }
-}
-
 function readProfileCompat(stableDir) {
   try {
     return JSON.parse(fs.readFileSync(path.join(stableDir, PROFILE_COMPAT_FILE), 'utf8')) || {};
@@ -692,6 +774,232 @@ const stableUserDataPath = explicitUserDataPath
 app.setPath('userData', stableUserDataPath);
 app.setName(APP_NAME);
 if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID);
+
+const WALLPAPER_ENGINE_NATIVE_TEMP_PATH = path.join(stableUserDataPath, 'wallpaper-engine-native');
+fs.mkdirSync(WALLPAPER_ENGINE_NATIVE_TEMP_PATH, { recursive: true });
+const FULL_DESKTOP_NATIVE_TEMP_PATH = path.join(stableUserDataPath, 'full-desktop-native');
+fs.mkdirSync(FULL_DESKTOP_NATIVE_TEMP_PATH, { recursive: true });
+const wallpaperEngineNativeLibrary = new WallpaperEngineLibrary({ userDataPath: stableUserDataPath });
+const wallpaperEngineNativeRuntime = new WallpaperEngineRuntime({
+  library: wallpaperEngineNativeLibrary,
+  desktopCapturer,
+  hostElevationProbe: systemMemory.probeProcessElevation,
+  nativeTempPath: WALLPAPER_ENGINE_NATIVE_TEMP_PATH,
+});
+let wallpaperEngineNativeOperation = 0;
+let wallpaperEngineNativeGrant = null;
+let desktopFusionOverlayState = {
+  enabled: false,
+  softwareInteractionLocked: false,
+  pointerRoute: { overSoftwareUi: false, overDesktopControls: false },
+  ignoreMouseEvents: false,
+  restoreSnapshot: null,
+  displayBounds: null,
+};
+let lastDesktopFusionDiagnosticKey = '';
+
+function publishFullDesktopModeStatus(status, reason = '') {
+  const next = status && typeof status === 'object'
+    ? { ...status, reason: String(status.reason || reason || '') }
+    : {
+        ok: true,
+        supported: process.platform === 'win32',
+        enabled: false,
+        active: false,
+        interactive: false,
+        softwareInteractionLocked: false,
+        desktopIconsVisible: true,
+        reason: String(reason || ''),
+      };
+  mainWindowDesktopEmbedded = next.enabled === true || next.active === true;
+  mainWindowDesktopInteractive = mainWindowDesktopEmbedded && next.interactive === true;
+  mainWindowDesktopEmbeddingUncertain = next.nativeStateKnown === false;
+  const diagnosticKey = [
+    next.enabled === true ? '1' : '0',
+    next.interactive === true ? '1' : '0',
+    next.softwareInteractionLocked === true ? '1' : '0',
+    String(next.phase || ''),
+    String(next.parentClassName || ''),
+    String(next.lastError || ''),
+  ].join('|');
+  if (diagnosticKey !== lastDesktopFusionDiagnosticKey) {
+    lastDesktopFusionDiagnosticKey = diagnosticKey;
+    writeDesktopFusionDiagnostic('state', String(next.reason || reason || ''), JSON.stringify({
+      enabled:next.enabled === true,
+      interactive:next.interactive === true,
+      softwareInteractionLocked:next.softwareInteractionLocked === true,
+      phase:String(next.phase || ''),
+      parentClassName:String(next.parentClassName || ''),
+      coexisting:next.coexisting === true,
+      nativeStateKnown:next.nativeStateKnown !== false,
+      lastError:String(next.lastError || ''),
+    }));
+  }
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+    try { mainWindow.webContents.send('mineradio-wallpaper-mode-state', next); } catch (_error) {}
+    try { sendWindowState(mainWindow); } catch (_error) {}
+  }
+  try { refreshTrayMenu(); } catch (_error) {}
+  return next;
+}
+
+function getFullDesktopModeRuntime() {
+  if (fullDesktopModeRuntime) return fullDesktopModeRuntime;
+  fullDesktopModeRuntime = new FullDesktopModeRuntime({
+    screen,
+    nativeTempPath: FULL_DESKTOP_NATIVE_TEMP_PATH,
+    onStatus: (status) => publishFullDesktopModeStatus(status),
+    requestReconcile: (reason) => {
+      setTimeout(() => {
+        if (!fullDesktopModeRuntime || !fullDesktopModeRuntime.isEnabled()) return;
+        fullDesktopModeRuntime.reconcile(reason || 'desktop-host-changed').catch(() => {});
+      }, 0);
+      return { ok: true, queued: true };
+    },
+  });
+  return fullDesktopModeRuntime;
+}
+
+function getDesktopFusionOverlayStatus(reason = '') {
+  const enabled = desktopFusionOverlayState.enabled === true
+    && !!(mainWindow && !mainWindow.isDestroyed());
+  const interactive = enabled && mainWindowDesktopInteractive === true;
+  return {
+    ok: true,
+    supported: process.platform === 'win32',
+    enabled,
+    active: enabled,
+    embedded: enabled && !interactive,
+    coexisting: false,
+    interactive,
+    nativeStateKnown: true,
+    busy: false,
+    attaching: false,
+    phase: enabled ? (interactive ? 'software-control' : 'desktop-control') : 'disabled',
+    generation: 1,
+    parentClassName: enabled ? (interactive ? 'TOPLEVEL' : 'WorkerW') : '',
+    bounds: desktopFusionOverlayState.displayBounds,
+    softwareInteractionLocked: enabled && !interactive,
+    desktopIconsVisible: true,
+    ignoreMouseEvents: enabled && !interactive,
+    pointerRoute: { ...desktopFusionOverlayState.pointerRoute },
+    iconRevealRects: [],
+    iconShapeActive: false,
+    iconCount: 0,
+    iconShapeRectCount: 0,
+    iconLayerMode: enabled ? 'workerw-toggle' : '',
+    lastError: '',
+    reason: String(reason || ''),
+  };
+}
+
+function applyDesktopFusionOverlayPointerRoute(reason = 'desktop-pointer-route') {
+  desktopFusionOverlayState.ignoreMouseEvents = desktopFusionOverlayState.enabled === true
+    && mainWindowDesktopInteractive !== true;
+  return getDesktopFusionOverlayStatus(reason);
+}
+
+async function setDesktopFusionOverlayLocked(locked, reason = 'desktop-software-lock') {
+  if (!desktopFusionOverlayState.enabled || !mainWindow || mainWindow.isDestroyed()) {
+    return {
+      ok: false,
+      enabled: false,
+      interactive: false,
+      error: 'DESKTOP_MODE_INACTIVE',
+      status: getDesktopFusionOverlayStatus(reason),
+    };
+  }
+  const desired = locked === true;
+  const changed = await setMainWindowDesktopInteractive(!desired);
+  if (!changed || changed.ok !== true) {
+    return {
+      ...(changed || {}),
+      ok: false,
+      enabled: true,
+      interactive: mainWindowDesktopInteractive === true,
+      locked: mainWindowDesktopInteractive !== true,
+      softwareInteractionLocked: mainWindowDesktopInteractive !== true,
+      status: getDesktopFusionOverlayStatus(reason + '-failed'),
+    };
+  }
+  desktopFusionOverlayState.softwareInteractionLocked = desired;
+  desktopFusionOverlayState.pointerRoute = {
+    overSoftwareUi: false,
+    overDesktopControls: desktopFusionOverlayState.pointerRoute.overDesktopControls === true,
+  };
+  const status = applyDesktopFusionOverlayPointerRoute(reason);
+  publishFullDesktopModeStatus(status);
+  return {
+    ok: true,
+    enabled: true,
+    interactive: mainWindowDesktopInteractive === true,
+    locked: desired,
+    softwareInteractionLocked: desired,
+    ignoreMouseEvents: desktopFusionOverlayState.ignoreMouseEvents,
+    status,
+  };
+}
+
+async function enableDesktopFusionOverlay(payload = {}) {
+  if (process.platform !== 'win32' || !mainWindow || mainWindow.isDestroyed()) {
+    return { ok: false, enabled: false, interactive: false, error: 'MAIN_WINDOW_UNAVAILABLE' };
+  }
+  if (fullDesktopModeRuntime && fullDesktopModeRuntime.isEnabled()) {
+    await fullDesktopModeRuntime.disable('workerw-toggle-migration').catch(() => {});
+  }
+  const win = mainWindow;
+  if (!desktopFusionOverlayState.enabled) desktopFusionOverlayState.restoreSnapshot = capturePreDesktopWindowState(win);
+  const embedded = await setMainWindowDesktopEmbedded(true, { force:true });
+  if (!embedded || embedded.ok !== true) {
+    desktopFusionOverlayState.enabled = false;
+    return { ...(embedded || {}), ok:false, enabled:false, interactive:false };
+  }
+  desktopFusionOverlayState.enabled = true;
+  const interactive = await setMainWindowDesktopInteractive(true);
+  if (!interactive || interactive.ok !== true) {
+    await setMainWindowDesktopEmbedded(false, { force:true }).catch(() => {});
+    desktopFusionOverlayState.enabled = false;
+    return { ...(interactive || {}), ok:false, enabled:false, interactive:false };
+  }
+  desktopFusionOverlayState.softwareInteractionLocked = false;
+  desktopFusionOverlayState.pointerRoute = { overSoftwareUi: false, overDesktopControls: false };
+  desktopFusionOverlayState.ignoreMouseEvents = false;
+  desktopFusionOverlayState.displayBounds = screen.getDisplayMatching(
+    desktopFusionOverlayState.restoreSnapshot && desktopFusionOverlayState.restoreSnapshot.bounds || win.getBounds(),
+  ).bounds;
+  wallpaperState = { ...wallpaperState, ...(payload || {}), enabled: true };
+  closeWallpaperWindow();
+  const status = publishFullDesktopModeStatus(getDesktopFusionOverlayStatus('wallpaper-mode-ready'));
+  return { ok: true, enabled: true, interactive: true, status };
+}
+
+async function disableDesktopFusionOverlay(reason = 'wallpaper-mode-disabled') {
+  const win = mainWindow;
+  closeWallpaperWindow();
+  if (!desktopFusionOverlayState.enabled) {
+    const status = publishFullDesktopModeStatus(getDesktopFusionOverlayStatus(reason));
+    return { ok: true, enabled: false, interactive: false, status };
+  }
+  const detached = await setMainWindowDesktopEmbedded(false, { force:true });
+  if (!detached || detached.ok !== true) {
+    return { ...(detached || {}), ok:false, enabled:true, status:getDesktopFusionOverlayStatus(reason + '-failed') };
+  }
+  desktopFusionOverlayState.enabled = false;
+  desktopFusionOverlayState.softwareInteractionLocked = false;
+  desktopFusionOverlayState.pointerRoute = { overSoftwareUi: false, overDesktopControls: false };
+  desktopFusionOverlayState.ignoreMouseEvents = false;
+  desktopFusionOverlayState.displayBounds = null;
+  desktopFusionOverlayState.restoreSnapshot = null;
+  wallpaperState = { ...wallpaperState, enabled: false };
+  const status = publishFullDesktopModeStatus(getDesktopFusionOverlayStatus(reason));
+  setTimeout(() => {
+    if (!desktopFusionOverlayState.enabled) {
+      mainWindowPreDesktopState = null;
+      mainWindowPreDesktopBounds = null;
+    }
+  }, 1200);
+  return { ok: true, enabled: false, interactive: false, status };
+}
 
 function writeStartupDiagnostic(stage, error) {
   const logPath = path.join(app.getPath('userData'), 'startup-crash.log');
@@ -1002,6 +1310,7 @@ async function prepareLocalAudioForPlayback(filePath) {
 
 function findFfmpegExecutable() {
   const candidates = [
+    path.join(__dirname, '..', 'bin', 'ffmpeg.exe'),
     path.join(process.resourcesPath || '', 'ffmpeg.exe'),
     path.join(process.resourcesPath || '', 'bin', 'ffmpeg.exe'),
     path.join(path.dirname(process.execPath), 'ffmpeg.exe'),
@@ -1697,7 +2006,9 @@ function refreshTrayMenu() {
     { label: '显示 Mineradio', click: focusMainWindow },
     { label: '隐藏到托盘', click: hideMainWindowToTray },
     {
-      label: mainWindowDesktopInteractive ? '返回桌面图标' : '操作 Mineradio',
+      label: desktopFusionOverlayState.softwareInteractionLocked
+        ? '操作 Mineradio'
+        : '返回桌面图标',
       visible: mainWindowDesktopEmbedded,
       click: () => toggleMainWindowDesktopInteraction(),
     },
@@ -2372,6 +2683,61 @@ function nativeWindowHandleDecimal(win) {
   return String(handle.readUInt32LE(0));
 }
 
+function wallpaperEngineNativePhysicalBounds(win, fallback = {}) {
+  const content = win && !win.isDestroyed()
+    ? win.getContentBounds()
+    : {
+      x: Number(fallback.x) || 0,
+      y: Number(fallback.y) || 0,
+      width: Number(fallback.width) || 1280,
+      height: Number(fallback.height) || 720,
+    };
+  const display = screen.getDisplayMatching(content);
+  const scale = Math.max(1, Number(display && display.scaleFactor) || 1);
+  let physical = null;
+  if (win && !win.isDestroyed() && typeof screen.dipToScreenRect === 'function') {
+    try { physical = screen.dipToScreenRect(win, content); } catch (_error) {}
+  }
+  if (!physical || Number(physical.width) <= 0 || Number(physical.height) <= 0) {
+    const dipOrigin = { x: Number(content.x) || 0, y: Number(content.y) || 0 };
+    const dipEnd = {
+      x: dipOrigin.x + Math.max(1, Number(content.width) || Number(fallback.width) || 1280),
+      y: dipOrigin.y + Math.max(1, Number(content.height) || Number(fallback.height) || 720),
+    };
+    const physicalOrigin = typeof screen.dipToScreenPoint === 'function'
+      ? screen.dipToScreenPoint(dipOrigin)
+      : { x: Math.round(dipOrigin.x * scale), y: Math.round(dipOrigin.y * scale) };
+    const physicalEnd = typeof screen.dipToScreenPoint === 'function'
+      ? screen.dipToScreenPoint(dipEnd)
+      : { x: Math.round(dipEnd.x * scale), y: Math.round(dipEnd.y * scale) };
+    physical = {
+      x: Number(physicalOrigin.x) || 0,
+      y: Number(physicalOrigin.y) || 0,
+      width: Math.max(1, Math.abs(Math.round(Number(physicalEnd.x) - Number(physicalOrigin.x)))),
+      height: Math.max(1, Math.abs(Math.round(Number(physicalEnd.y) - Number(physicalOrigin.y)))),
+    };
+  }
+  const displayFps = Math.max(24, Math.min(240, Math.round(Number(display && display.displayFrequency) || 60)));
+  const requestedFps = Number(fallback.fps);
+  return {
+    x: Math.round(Number(physical.x) || 0),
+    y: Math.round(Number(physical.y) || 0),
+    width: Math.max(640, Math.min(7680, Math.round(Number(physical.width) || 1920))),
+    height: Math.max(360, Math.min(4320, Math.round(Number(physical.height) || 1080))),
+    fps: Number.isFinite(requestedFps) && requestedFps > 0
+      ? Math.max(24, Math.min(displayFps, 240, Math.round(requestedFps)))
+      : displayFps,
+  };
+}
+
+function clearWallpaperEngineNativeGrant(sessionId = '') {
+  const expected = String(sessionId || '');
+  if (expected && (!wallpaperEngineNativeGrant || wallpaperEngineNativeGrant.sessionId !== expected)) return false;
+  if (!wallpaperEngineNativeGrant) return false;
+  wallpaperEngineNativeGrant = null;
+  return true;
+}
+
 function applyMainWindowBorderlessCorners(win) {
   if (process.platform !== 'win32' || !win || win.isDestroyed()) return;
   const hwnd = nativeWindowHandleDecimal(win);
@@ -2708,8 +3074,21 @@ if (${next ? '$true' : '$false'}) {
 }
 
 function toggleMainWindowDesktopInteraction() {
-  if (!mainWindowDesktopEmbedded) return Promise.resolve({ ok: false, error: 'DESKTOP_MODE_INACTIVE' });
-  return setMainWindowDesktopInteractive(!mainWindowDesktopInteractive);
+  if (desktopFusionOverlayState.enabled) {
+    return setDesktopFusionOverlayLocked(
+      desktopFusionOverlayState.softwareInteractionLocked !== true,
+      'desktop-interaction-toggled',
+    );
+  }
+  const runtime = getFullDesktopModeRuntime();
+  const status = runtime.getStatus('desktop-interaction-toggle-requested');
+  if (!status.enabled || !status.interactive) {
+    return Promise.resolve({ ok: false, error: 'DESKTOP_MODE_INACTIVE', status });
+  }
+  return runtime.setSoftwareInteractionLocked(
+    status.softwareInteractionLocked !== true,
+    'desktop-interaction-toggled',
+  );
 }
 
 function refreshWallpaperDesktopPlacement() {
@@ -2743,6 +3122,11 @@ public static class MineradioShellMessage {
     try {
       win.hookWindowMessage(messageId, () => {
         setTimeout(() => refreshWallpaperDesktopPlacement(), 650);
+        setTimeout(() => {
+          if (fullDesktopModeRuntime && fullDesktopModeRuntime.isEnabled()) {
+            fullDesktopModeRuntime.reconcile('explorer-restarted').catch(() => {});
+          }
+        }, 900);
       });
     } catch (e) {
       console.warn('Explorer restart hook failed:', e && e.message || e);
@@ -2898,6 +3282,71 @@ ipcMain.handle('desktop-window-get-state', (event) => {
 });
 
 ipcMain.handle('desktop-window-toggle-desktop-interaction', () => toggleMainWindowDesktopInteraction());
+ipcMain.handle('mineradio-wallpaper-mode-status', () => {
+  return desktopFusionOverlayState.enabled
+    ? getDesktopFusionOverlayStatus('renderer-status-request')
+    : getFullDesktopModeRuntime().getStatus('renderer-status-request');
+});
+ipcMain.handle('mineradio-desktop-software-lock', (_event, locked) => {
+  if (desktopFusionOverlayState.enabled) {
+    return setDesktopFusionOverlayLocked(locked === true, 'renderer-software-lock');
+  }
+  return getFullDesktopModeRuntime().setSoftwareInteractionLocked(locked === true, 'renderer-software-lock');
+});
+ipcMain.handle('mineradio-desktop-icons-visible', (_event, visible) => {
+  if (desktopFusionOverlayState.enabled) {
+    return {
+      ok: visible !== false,
+      enabled: true,
+      interactive: true,
+      desktopIconsVisible: true,
+      status: getDesktopFusionOverlayStatus('renderer-icons-visible'),
+    };
+  }
+  return getFullDesktopModeRuntime().setDesktopIconsVisible(visible !== false, 'renderer-icons-visible');
+});
+ipcMain.handle('mineradio-desktop-pointer-route', (_event, route) => {
+  if (desktopFusionOverlayState.enabled) {
+    desktopFusionOverlayState.pointerRoute = {
+      overSoftwareUi: route && route.overSoftwareUi === true,
+      overDesktopControls: route && route.overDesktopControls === true,
+    };
+    const status = applyDesktopFusionOverlayPointerRoute('renderer-pointer-route');
+    return {
+      ok: true,
+      applied: true,
+      ignoreMouseEvents: desktopFusionOverlayState.ignoreMouseEvents,
+      pointerRoute: { ...desktopFusionOverlayState.pointerRoute },
+      status,
+    };
+  }
+  return getFullDesktopModeRuntime().updatePointerRoute(route || {}, 'renderer-pointer-route');
+});
+ipcMain.handle('mineradio-desktop-icon-shields', (_event, payload = {}) => {
+  if (desktopFusionOverlayState.enabled) {
+    return { ok: true, applied: false, status: getDesktopFusionOverlayStatus('icon-shields-safe-overlay') };
+  }
+  return getFullDesktopModeRuntime().updateIconShields(payload.rects || [], payload.viewport || {});
+});
+ipcMain.handle('mineradio-desktop-keyboard-focus', (_event, reason) => {
+  if (desktopFusionOverlayState.enabled) {
+    const active = !desktopFusionOverlayState.softwareInteractionLocked
+      && !!(mainWindow && !mainWindow.isDestroyed());
+    if (active) {
+      try { mainWindow.setFocusable(true); } catch (_error) {}
+      try { mainWindow.show(); } catch (_error) {}
+      try { mainWindow.focus(); } catch (_error) {}
+      try { mainWindow.webContents.focus(); } catch (_error) {}
+    }
+    return {
+      ok: active,
+      focused: active,
+      error: active ? '' : 'DESKTOP_SOFTWARE_LOCKED',
+      status: getDesktopFusionOverlayStatus(String(reason || 'renderer-keyboard-focus')),
+    };
+  }
+  return getFullDesktopModeRuntime().requestKeyboardFocus(String(reason || 'renderer-keyboard-focus'));
+});
 
 ipcMain.handle('desktop-window-close', (event) => {
   getSenderWindow(event)?.close();
@@ -3042,6 +3491,31 @@ ipcMain.handle('mineradio-import-json-file', async (event) => {
   }
 });
 
+ipcMain.handle('mineradio-clipboard-write-text', (event, value) => {
+  try {
+    const owner = getSenderWindow(event);
+    if (!mainWindow || owner !== mainWindow) return { ok: false, error: 'CLIPBOARD_SENDER_REJECTED' };
+    const text = String(value == null ? '' : value);
+    if (text.length > 16 * 1024 * 1024) return { ok: false, error: 'CLIPBOARD_TEXT_TOO_LARGE' };
+    clipboard.writeText(text);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error && error.message || 'CLIPBOARD_WRITE_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-clipboard-read-text', (event) => {
+  try {
+    const owner = getSenderWindow(event);
+    if (!mainWindow || owner !== mainWindow) return { ok: false, error: 'CLIPBOARD_SENDER_REJECTED' };
+    const text = String(clipboard.readText() || '');
+    if (text.length > 16 * 1024 * 1024) return { ok: false, error: 'CLIPBOARD_TEXT_TOO_LARGE' };
+    return { ok: true, text };
+  } catch (error) {
+    return { ok: false, error: error && error.message || 'CLIPBOARD_READ_FAILED' };
+  }
+});
+
 ipcMain.on('mineradio-ui-state-read-sync', (event) => {
   event.returnValue = readDesktopUiState().values || {};
 });
@@ -3100,6 +3574,178 @@ ipcMain.handle('mineradio-ui-state-write', async (_event, patch) => {
     return { ok: true, updatedAt: state.updatedAt };
   } catch (e) {
     return { ok: false, error: e.message || 'UI_STATE_WRITE_FAILED' };
+  }
+});
+
+ipcMain.on('mineradio-ui-state-write-sync', (event, patch) => {
+  try {
+    const state = writeDesktopUiStatePatch(patch || {});
+    event.returnValue = { ok: true, updatedAt: state.updatedAt };
+  } catch (error) {
+    event.returnValue = { ok: false, error: error.message || 'UI_STATE_WRITE_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-wallpaper-engine-list', async (_event, payload = {}) => {
+  try {
+    const snapshot = await wallpaperEngineNativeLibrary.list({ force: payload && payload.force === true });
+    const runtime = await wallpaperEngineNativeRuntime.probe(payload && payload.force === true);
+    return { ...snapshot, runtime };
+  } catch (error) {
+    return { ok: false, projects: [], count: 0, error: error.message || 'WALLPAPER_ENGINE_SCAN_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-wallpaper-engine-project-details', async (_event, id) => {
+  try {
+    return await wallpaperEngineNativeLibrary.getProjectDetails(String(id || ''));
+  } catch (error) {
+    return { ok: false, error: error.message || 'WALLPAPER_ENGINE_PROJECT_DETAILS_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-wallpaper-engine-open-project-details', async (_event, payload = {}) => {
+  try {
+    const details = await wallpaperEngineNativeLibrary.getProjectDetails(String(payload.id || ''));
+    const workshopId = String(details && details.workshopId || '');
+    if (!/^\d{5,32}$/.test(workshopId)) return { ok: false, error: 'WALLPAPER_ENGINE_WORKSHOP_DETAILS_UNAVAILABLE' };
+    if (payload.target !== 'workshop') {
+      try {
+        await wallpaperEngineNativeRuntime.revealWorkshop(workshopId);
+        return { ok: true, opened: 'wallpaper-engine', workshopId };
+      } catch (_error) {}
+    }
+    await shell.openExternal('steam://url/CommunityFilePage/' + workshopId);
+    return { ok: true, opened: 'steam-workshop', workshopId };
+  } catch (error) {
+    return { ok: false, error: error.message || 'WALLPAPER_ENGINE_OPEN_PROJECT_DETAILS_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-wallpaper-engine-choose-directory', async () => {
+  try {
+    const result = mainWindow && !mainWindow.isDestroyed()
+      ? await dialog.showOpenDialog(mainWindow, { title: '导入 Wallpaper Engine 项目目录', buttonLabel: '导入目录', properties: ['openDirectory'] })
+      : await dialog.showOpenDialog({ title: '导入 Wallpaper Engine 项目目录', buttonLabel: '导入目录', properties: ['openDirectory'] });
+    if (result.canceled || !result.filePaths || !result.filePaths[0]) return { ok: true, canceled: true };
+    const snapshot = await wallpaperEngineNativeLibrary.addManualRoot(result.filePaths[0]);
+    return { ...snapshot, runtime: await wallpaperEngineNativeRuntime.probe(false), canceled: false };
+  } catch (error) {
+    return { ok: false, canceled: false, projects: [], count: 0, error: error.message || 'WALLPAPER_ENGINE_IMPORT_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-wallpaper-engine-choose-project-file', async () => {
+  try {
+    const options = {
+      title: '选择 Wallpaper Engine project.json 或场景包',
+      buttonLabel: '导入项目',
+      properties: ['openFile'],
+      filters: [{ name: 'Wallpaper Engine 项目', extensions: ['pkg', 'pak', 'json'] }],
+    };
+    const result = mainWindow && !mainWindow.isDestroyed()
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options);
+    if (result.canceled || !result.filePaths || !result.filePaths[0]) return { ok: true, canceled: true };
+    const snapshot = await wallpaperEngineNativeLibrary.addManualProjectFile(path.resolve(result.filePaths[0]));
+    return { ...snapshot, runtime: await wallpaperEngineNativeRuntime.probe(false), canceled: false };
+  } catch (error) {
+    return { ok: false, canceled: false, projects: [], count: 0, error: error.message || 'WALLPAPER_ENGINE_IMPORT_PROJECT_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-wallpaper-engine-remove-directory', async (_event, rootId) => {
+  try {
+    const snapshot = await wallpaperEngineNativeLibrary.removeManualRoot(String(rootId || ''));
+    return { ...snapshot, runtime: await wallpaperEngineNativeRuntime.probe(false) };
+  } catch (error) {
+    return { ok: false, projects: [], count: 0, error: error.message || 'WALLPAPER_ENGINE_REMOVE_ROOT_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-wallpaper-engine-runtime-status', async (_event, payload = {}) => {
+  try {
+    const probe = await wallpaperEngineNativeRuntime.probe(payload && payload.force === true);
+    return { ...probe, ...wallpaperEngineNativeRuntime.getStatus(), pending: wallpaperEngineNativeRuntime.pending != null };
+  } catch (error) {
+    return { ok: false, available: false, error: error.message || 'WALLPAPER_ENGINE_RUNTIME_PROBE_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-wallpaper-engine-start-scene', async (_event, payload = {}) => {
+  const operation = ++wallpaperEngineNativeOperation;
+  let sessionId = '';
+  try {
+    if (!mainWindow || mainWindow.isDestroyed()) return { ok: false, error: 'WALLPAPER_ENGINE_HOST_UNAVAILABLE' };
+    const elevated = await systemMemory.probeProcessElevation().catch(() => false);
+    if (elevated) return { ok: false, error: 'WALLPAPER_ENGINE_HOST_ELEVATED' };
+    const bounds = wallpaperEngineNativePhysicalBounds(mainWindow, payload);
+    const hostDisplay = screen.getDisplayMatching(mainWindow.getContentBounds());
+    const hostCornerRadius = mainWindow.isMaximized() || mainWindow.isFullScreen()
+      ? 0
+      : Math.max(0, Math.round(34 * Math.max(1, Number(hostDisplay && hostDisplay.scaleFactor) || 1)));
+    const started = await wallpaperEngineNativeRuntime.start(String(payload.id || ''), bounds);
+    sessionId = String(started && started.sessionId || '');
+    if (operation !== wallpaperEngineNativeOperation) {
+      await wallpaperEngineNativeRuntime.stop(sessionId).catch(() => {});
+      return { ok: false, error: 'WALLPAPER_ENGINE_START_SUPERSEDED', sessionId };
+    }
+    const embedded = await wallpaperEngineNativeRuntime.embedActiveWindow(sessionId, {
+      hostWindowId: nativeWindowHandleDecimal(mainWindow),
+      hostExecutable: process.execPath,
+      cornerRadius: hostCornerRadius,
+      desktopIconLayering: false,
+    });
+    wallpaperEngineNativeGrant = { sessionId, operation };
+    try { mainWindow.moveTop(); } catch (_error) {}
+    try { mainWindow.focus(); } catch (_error) {}
+    return { ...started, ...embedded, ok: true, capturePrepared: true, captureMode: 'dwm-thumbnail' };
+  } catch (error) {
+    if (sessionId) await wallpaperEngineNativeRuntime.stop(sessionId).catch(() => {});
+    return { ok: false, error: error.code || error.message || 'WALLPAPER_ENGINE_SCENE_START_FAILED', sessionId };
+  }
+});
+
+ipcMain.handle('mineradio-wallpaper-engine-capture-result', async (_event, payload = {}) => {
+  const sessionId = String(payload.sessionId || '');
+  if (!/^[a-f0-9]{24}$/i.test(sessionId)) return { ok: false, error: 'WALLPAPER_ENGINE_SESSION_INVALID' };
+  const matched = clearWallpaperEngineNativeGrant(sessionId);
+  let confirmed = false;
+  if (matched && payload.ok === true) {
+    confirmed = await wallpaperEngineNativeRuntime.confirmCaptureReady(sessionId).catch(() => false);
+  }
+  if (matched && !confirmed) await wallpaperEngineNativeRuntime.stop(sessionId).catch(() => {});
+  return {
+    ok: matched && confirmed,
+    accepted: matched,
+    captureReady: confirmed,
+    captureMode: confirmed ? 'dwm-thumbnail' : '',
+    error: matched && !confirmed ? 'WALLPAPER_ENGINE_DWM_SURFACE_FAILED' : '',
+  };
+});
+
+ipcMain.handle('mineradio-wallpaper-engine-activate-dwm-surface', async (_event, payload = {}) => {
+  try {
+    const result = await wallpaperEngineNativeRuntime.activateDwmSurface(String(payload.sessionId || ''));
+    return { ok: !!(result && result.dwmSurfaceActive), active: !!(result && result.dwmSurfaceActive), captureMode: 'dwm-thumbnail' };
+  } catch (error) {
+    return { ok: false, active: false, error: error.code || error.message || 'WALLPAPER_ENGINE_DWM_SURFACE_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-wallpaper-engine-stop-scene', async (_event, payload = {}) => {
+  try {
+    const sessionId = String(payload.sessionId || '');
+    const stopAll = payload.all === true || !sessionId;
+    if (stopAll) {
+      wallpaperEngineNativeOperation += 1;
+      clearWallpaperEngineNativeGrant();
+    } else {
+      clearWallpaperEngineNativeGrant(sessionId);
+    }
+    return await wallpaperEngineNativeRuntime.stop(stopAll ? '' : sessionId);
+  } catch (error) {
+    return { ok: false, error: error.code || error.message || 'WALLPAPER_ENGINE_SCENE_STOP_FAILED' };
   }
 });
 
@@ -3246,15 +3892,74 @@ ipcMain.handle('mineradio-restart-app', async () => {
   }
 });
 
-ipcMain.handle('mineradio-memory-get-snapshot', async () => ({
-  ok:true,
-  snapshot:appMemory.getMemorySnapshot(),
-  lastTrimAt:lastAppMemoryTrimAt,
-  lastTrimReason:lastAppMemoryTrimReason,
-}));
+ipcMain.handle('mineradio-memory-get-snapshot', async () => {
+  try {
+    return {
+      ok:true,
+      snapshot:await systemMemory.getMemorySnapshotExtended(),
+      elevated:await systemMemory.isProcessElevated(),
+      systemPurgeAvailable:systemMemory.SYSTEM_PURGE_AVAILABLE === true,
+      systemPurgeEnabled:systemMemory.SYSTEM_PURGE_ENABLED === true,
+      appMetrics:appMemory.getMemorySnapshot().process,
+      auto:memoryAutoState,
+      lastTrimAt:lastAppMemoryTrimAt,
+      lastTrimReason:lastAppMemoryTrimReason,
+    };
+  } catch (error) {
+    return { ok:false, error:error.message || 'MEMORY_SNAPSHOT_FAILED', snapshot:appMemory.getMemorySnapshot(), auto:memoryAutoState };
+  }
+});
+
+ipcMain.handle('mineradio-memory-configure-auto', async (_event, payload = {}) => {
+  memoryAutoState = normalizeMemoryAutoState(payload);
+  syncMemoryAutoTimer();
+  if (memoryAutoState.enabled && payload.runNow === true && !isMainWindowForegroundVisible()) await runMemoryAutoTick('configure');
+  return {
+    ok:true,
+    state:memoryAutoState,
+    systemPurgeAvailable:systemMemory.SYSTEM_PURGE_AVAILABLE === true,
+    systemPurgeEnabled:systemMemory.SYSTEM_PURGE_ENABLED === true,
+  };
+});
 
 ipcMain.handle('mineradio-memory-trim-app', async (_event, payload = {}) => {
   return trimAppMemoryNow(payload.reason || 'renderer');
+});
+
+ipcMain.handle('mineradio-memory-purge-system', async (_event, payload = {}) => {
+  const mask = systemMemory.normalizeMask(payload && payload.mask);
+  const autoElevate = payload && payload.autoElevate === true;
+  try {
+    if (isMainWindowForegroundVisible()) {
+      return {
+        ok:true,
+        result:{ ok:false, skipped:true, reason:'foreground-visible', message:'System memory purge is skipped while Mineradio is visible.' },
+        snapshot:systemMemory.getMemorySnapshot(),
+        elevated:false,
+        systemPurgeAvailable:systemMemory.SYSTEM_PURGE_AVAILABLE === true,
+        systemPurgeEnabled:systemMemory.SYSTEM_PURGE_ENABLED === true,
+      };
+    }
+    const elevatedBefore = await systemMemory.isProcessElevated();
+    const result = await systemMemory.purgeSystemMemorySmart(mask, { autoElevate, manual:true });
+    return {
+      ok:true,
+      result,
+      snapshot:await systemMemory.getMemorySnapshotExtended(),
+      elevated:elevatedBefore || await systemMemory.isProcessElevated(),
+      systemPurgeAvailable:systemMemory.SYSTEM_PURGE_AVAILABLE === true,
+      systemPurgeEnabled:systemMemory.SYSTEM_PURGE_ENABLED === true,
+    };
+  } catch (error) {
+    return {
+      ok:false,
+      error:error.message || 'MEMORY_PURGE_FAILED',
+      snapshot:systemMemory.getMemorySnapshot(),
+      elevated:false,
+      systemPurgeAvailable:systemMemory.SYSTEM_PURGE_AVAILABLE === true,
+      systemPurgeEnabled:systemMemory.SYSTEM_PURGE_ENABLED === true,
+    };
+  }
 });
 
 ipcMain.handle('mineradio-lx-open-scheme', async (_event, schemeUrl) => {
@@ -3393,12 +4098,20 @@ let wallpaperModeTransitionChain = Promise.resolve();
 async function rollbackWallpaperModeTransition(error, detail, extra = {}) {
   let rollback = null;
   try {
-    rollback = await setMainWindowDesktopEmbedded(false, { force: true });
+    if (fullDesktopModeRuntime && fullDesktopModeRuntime.isEnabled()) {
+      rollback = await fullDesktopModeRuntime.disable('wallpaper-mode-rollback');
+    }
+    if (desktopFusionOverlayState.enabled) {
+      const overlayRollback = await disableDesktopFusionOverlay('wallpaper-mode-overlay-rollback');
+      if (!rollback || rollback.ok === true) rollback = overlayRollback;
+    }
   } catch (rollbackError) {
     rollback = { ok: false, error: rollbackError && rollbackError.message || 'DESKTOP_ROLLBACK_FAILED' };
   }
   wallpaperState.enabled = false;
-  restoreMainWindowElectronInteraction(mainWindow, true);
+  const status = publishFullDesktopModeStatus(
+    rollback && rollback.status || getDesktopFusionOverlayStatus('wallpaper-mode-rollback'),
+  );
   return {
     ok: false,
     enabled: false,
@@ -3407,6 +4120,7 @@ async function rollbackWallpaperModeTransition(error, detail, extra = {}) {
     detail: detail || '',
     rolledBack: !!(rollback && rollback.ok),
     rollbackError: rollback && !rollback.ok ? rollback.error || '' : '',
+    status,
     ...extra,
   };
 }
@@ -3416,42 +4130,63 @@ async function applyWallpaperModeTransition(requestId, enabled, payload) {
   if (requestId !== wallpaperModeTransitionGeneration) {
     return { ok: false, enabled: false, interactive: false, stale: true };
   }
-  closeWallpaperWindow();
   wallpaperState = { ...wallpaperState, ...(payload || {}), enabled: false };
   try {
     if (!requested) {
-      const detached = await setMainWindowDesktopEmbedded(false, { force: true });
-      restoreMainWindowElectronInteraction(mainWindow, true);
+      let detached = null;
+      if (fullDesktopModeRuntime && fullDesktopModeRuntime.isEnabled()) {
+        detached = await fullDesktopModeRuntime.disable('wallpaper-mode-disabled');
+      }
+      if (desktopFusionOverlayState.enabled) {
+        const overlayDetached = await disableDesktopFusionOverlay('wallpaper-mode-overlay-disabled');
+        if (!detached || detached.ok === true) detached = overlayDetached;
+      }
+      if (!detached) {
+        detached = {
+          ok: true,
+          enabled: false,
+          interactive: false,
+          status: getFullDesktopModeRuntime().getStatus('wallpaper-mode-already-disabled'),
+        };
+      }
+      wallpaperState.enabled = false;
+      const status = publishFullDesktopModeStatus(
+        detached && detached.status || getDesktopFusionOverlayStatus('wallpaper-mode-disabled'),
+      );
       return {
         ...(detached || {}),
         ok: !!(detached && detached.ok),
         enabled: false,
         interactive: false,
+        status,
         stale: requestId !== wallpaperModeTransitionGeneration,
       };
     }
-    const embedded = await setMainWindowDesktopEmbedded(true);
-    if (!embedded || !embedded.ok) {
-      return rollbackWallpaperModeTransition(
-        embedded && embedded.error || 'DESKTOP_EMBED_FAILED',
-        embedded && embedded.detail || '',
-      );
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return rollbackWallpaperModeTransition('MAIN_WINDOW_UNAVAILABLE', '');
     }
-    if (requestId !== wallpaperModeTransitionGeneration) {
-      return rollbackWallpaperModeTransition('DESKTOP_REQUEST_SUPERSEDED', '', { stale: true });
-    }
-    const interactive = await setMainWindowDesktopInteractive(true);
-    if (!interactive || !interactive.ok || !interactive.interactive) {
+    // Keep Explorer's real icon ListView untouched. Desktop-control mode puts
+    // Mineradio in WorkerW; software-control mode temporarily detaches the same
+    // HWND as a full-display top-level window. The global hotkey switches only
+    // these two verified states, so no copied icon layer can flicker or eat input.
+    const enabledResult = await enableDesktopFusionOverlay(payload || {});
+    const enabledStatus = enabledResult && enabledResult.status || getDesktopFusionOverlayStatus('wallpaper-mode-ready');
+    if (!enabledResult || !enabledResult.ok || !enabledResult.interactive) {
+      const failure = enabledResult && enabledResult.error || enabledStatus.lastError || 'DESKTOP_INTERACTIVE_FAILED';
+      writeDesktopFusionDiagnostic('workerw-toggle-enable', failure, JSON.stringify(enabledStatus));
       return rollbackWallpaperModeTransition(
-        interactive && interactive.error || 'DESKTOP_INTERACTIVE_FAILED',
-        interactive && interactive.detail || '',
+        failure,
+        enabledResult && enabledResult.detail || '',
       );
     }
     if (requestId !== wallpaperModeTransitionGeneration) {
       return rollbackWallpaperModeTransition('DESKTOP_REQUEST_SUPERSEDED', '', { stale: true });
     }
     wallpaperState.enabled = true;
-    return { ...embedded, ok: true, enabled: true, interactive: true };
+    const status = publishFullDesktopModeStatus(
+      enabledStatus,
+    );
+    return { ...enabledResult, ok: true, enabled: true, interactive: true, status };
   } catch (error) {
     return rollbackWallpaperModeTransition(error && error.message || 'DESKTOP_EMBED_FAILED', '');
   }
@@ -3483,7 +4218,7 @@ function forceDisableWallpaperMode(reason) {
 ipcMain.handle('mineradio-wallpaper-update', async (_event, payload) => {
   try {
     wallpaperState = { ...wallpaperState, ...(payload || {}) };
-    return { ok: true };
+    return { ok: true, status: getFullDesktopModeRuntime().getStatus('wallpaper-state-updated') };
   } catch (e) {
     return { ok: false, error: e.message || 'DESKTOP_EMBED_UPDATE_FAILED' };
   }
@@ -3606,24 +4341,19 @@ async function runMainWindowStartupRecoveryStage(win, stage, reason) {
     } catch (error) {
       writeStartupDiagnostic('startup-blank-load-failed', error);
     }
-    let storageReset = null;
-    const storageResetControl = { cancelled: false };
-    try {
-      storageReset = await withStartupDeadline(
-        backupAndClearChromiumLocalStorage(reason || 'SECOND_STAGE_STARTUP_RECOVERY', storageResetControl),
-        12000,
-        'STARTUP_STORAGE_RESET_TIMEOUT',
-        () => { storageResetControl.cancelled = true; },
-      );
-    } catch (error) {
-      writeStartupDiagnostic('startup-storage-reset-timeout', error);
-    }
-    if (!storageReset || !storageReset.ok) {
-      writeStartupDiagnostic(
-        'startup-storage-reset-skipped',
-        storageReset && storageReset.error || 'Storage recovery unavailable; continuing safe load',
-      );
-    }
+    // Never clear the full renderer localStorage as part of automatic startup
+    // recovery. A slow GPU, font request, antivirus scan, or low-end machine can
+    // legitimately miss the startup deadline; treating that as profile
+    // corruption erased wallpaper choices, playlists, and every user setting.
+    //
+    // The safe-start preload already backs up and removes only the small set of
+    // startup-critical visual keys. Cache cleanup below is sufficient for
+    // disposable Chromium data and leaves durable user state intact.
+    try { await session.defaultSession.flushStorageData(); } catch (_flushError) {}
+    writeStartupDiagnostic(
+      'startup-storage-preserved',
+      reason || 'SECOND_STAGE_STARTUP_RECOVERY',
+    );
   }
   if (mainWindowStartupReady || win.isDestroyed() || win.webContents.isDestroyed()) return true;
   try {
@@ -4007,16 +4737,42 @@ if (!gotSingleInstanceLock) {
   app.whenReady().then(async () => {
     applySavedDesktopShellSettings();
     try {
-      directLocalProxy = await createDirectLocalProxy();
-      await session.defaultSession.setProxy({
-        mode: 'fixed_servers',
-        proxyRules: `http://127.0.0.1:${directLocalProxy.port}`,
-        proxyBypassRules: 'localhost,127.0.0.1,<local>',
-      });
-      console.info(`[DirectLocalRoute] ${directLocalProxy.localAddress} via proxy port ${directLocalProxy.port}`);
+      await wallpaperEngineNativeLibrary.installProtocol(protocol);
     } catch (error) {
+      console.warn('[Wallpaper Engine] local media protocol unavailable:', error && error.message || error);
+    }
+    // Recipient PCs must work with their ordinary Windows network settings.
+    // Binding every request to one adapter breaks playback, artwork and imports
+    // on multi-adapter, campus and corporate networks even when no VPN is used.
+    // Keep the legacy direct route as an explicit diagnostics-only opt-in.
+    if (process.env.MINERADIO_FORCE_DIRECT_ROUTE === '1') {
+      try {
+        directLocalProxy = await createDirectLocalProxy();
+        await session.defaultSession.setProxy({
+          mode: 'fixed_servers',
+          proxyRules: `http://127.0.0.1:${directLocalProxy.port}`,
+          proxyBypassRules: 'localhost,127.0.0.1,<local>',
+        });
+        console.info(`[DirectLocalRoute] diagnostics opt-in: ${directLocalProxy.localAddress} via proxy port ${directLocalProxy.port}`);
+      } catch (error) {
+        directLocalProxy = null;
+        await session.defaultSession.setProxy({ mode: 'system' }).catch(() => {});
+        console.warn('[DirectLocalRoute] unavailable, using the system route:', error.message);
+      }
+    } else {
       directLocalProxy = null;
-      console.warn('[DirectLocalRoute] unavailable, using the system route:', error.message);
+      await session.defaultSession.setProxy({ mode: 'system' }).catch(() => {});
+      console.info('[Network] using Windows system route (no VPN or private proxy required)');
+    }
+    // Playlist imports use an isolated session so Spotify cookies and cache do
+    // not leak into the renderer. Explicitly inherit the Windows system proxy;
+    // relying on Chromium's partition default made domestic-network behavior
+    // vary between clean installs and upgraded profiles.
+    try {
+      const spotifyNetworkSession = session.fromPartition('persist:mineradio-system-network');
+      await spotifyNetworkSession.setProxy({ mode:'system' });
+    } catch (error) {
+      console.warn('[Network] Spotify import session could not inherit the Windows system proxy:', error && error.message || error);
     }
     session.defaultSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => {
       if (permission !== 'media' && permission !== 'speaker-selection') return false;
@@ -4045,14 +4801,23 @@ if (!gotSingleInstanceLock) {
       positionDesktopLyricsWindow();
       positionWallpaperWindow();
       scheduleWindowStateSend(mainWindow);
+      if (fullDesktopModeRuntime && fullDesktopModeRuntime.isEnabled()) {
+        fullDesktopModeRuntime.reconcile('display-metrics-changed').catch(() => {});
+      }
     });
     screen.on('display-added', () => {
       refreshWallpaperDesktopPlacement();
       scheduleWindowStateSend(mainWindow);
+      if (fullDesktopModeRuntime && fullDesktopModeRuntime.isEnabled()) {
+        fullDesktopModeRuntime.reconcile('display-added').catch(() => {});
+      }
     });
     screen.on('display-removed', () => {
       refreshWallpaperDesktopPlacement();
       scheduleWindowStateSend(mainWindow);
+      if (fullDesktopModeRuntime && fullDesktopModeRuntime.isEnabled()) {
+        fullDesktopModeRuntime.reconcile('display-removed').catch(() => {});
+      }
     });
     registerBootstrapDesktopInteractionHotkey();
     createTray();
@@ -4108,6 +4873,10 @@ if (!gotSingleInstanceLock) {
     appQuitting = true;
     unregisterMineradioGlobalHotkeys();
     closeOverlayWindows();
+    if (fullDesktopModeRuntime) fullDesktopModeRuntime.dispose('app-before-quit').catch(() => {});
+    wallpaperEngineNativeOperation += 1;
+    clearWallpaperEngineNativeGrant();
+    wallpaperEngineNativeRuntime.stop().catch(() => {});
     if (localServer && localServer.close) localServer.close();
     if (directLocalProxy && directLocalProxy.close) directLocalProxy.close().catch(() => {});
   });

@@ -57,6 +57,29 @@ module.exports = async function afterPack(context) {
   if (!fs.existsSync(path.join(packagedAppDir, 'server.js'))) {
     throw new Error(`Mineradio packaged server was not found: ${packagedAppDir}`);
   }
+  const requiredPackagedFiles = [
+    'public/index.html',
+    'platform-playlist-import.js',
+    'lx-source-host.js',
+    'lx-search.js',
+    'spotify-api.js',
+    'desktop/main.js',
+    'desktop/preload.js',
+    'bin/ffmpeg.exe',
+    'bin/repkg/RePKG.exe',
+  ];
+  for (const relativePath of requiredPackagedFiles) {
+    const absolutePath = path.join(packagedAppDir, relativePath);
+    if (!fs.existsSync(absolutePath)) {
+      throw new Error(`Packaged Mineradio runtime file is unavailable: ${relativePath}`);
+    }
+  }
+  if (fs.statSync(path.join(packagedAppDir, 'bin', 'ffmpeg.exe')).size < 100 * 1024 * 1024) {
+    throw new Error('Packaged FFmpeg executable is incomplete.');
+  }
+  if (fs.statSync(path.join(packagedAppDir, 'bin', 'repkg', 'RePKG.exe')).size < 1024 * 1024) {
+    throw new Error('Packaged RePKG executable is incomplete.');
+  }
 
   // Resolve and exercise production dependencies from the packaged app itself.
   // This prevents a successful installer build whose first launch immediately
@@ -73,7 +96,23 @@ module.exports = async function afterPack(context) {
   if (!/^<svg[\s>]/.test(String(qrSvg || ''))) {
     throw new Error('Packaged qrcode runtime check returned invalid SVG output.');
   }
-  console.log('  • verified packaged runtime dependencies  qrcode=ready');
+  const qrPng = await QRCode.toDataURL('Mineradio packaged PNG runtime check', { type: 'image/png' });
+  if (!/^data:image\/png;base64,/i.test(String(qrPng || ''))) {
+    throw new Error('Packaged qrcode PNG runtime check returned invalid output.');
+  }
+  for (const moduleName of [
+    'mpg123-decoder',
+    '@wasm-audio-decoders/common',
+    '@eshaz/web-worker',
+    'simple-yenc',
+  ]) {
+    try {
+      packagedRequire.resolve(moduleName);
+    } catch (error) {
+      throw new Error(`Packaged runtime dependency ${moduleName} is unavailable: ${error.message}`);
+    }
+  }
+  console.log('  • verified packaged runtime dependencies and import tools');
 
   const packageMetadata = JSON.parse(fs.readFileSync(path.join(context.packager.projectDir, 'package.json'), 'utf8'));
   const version = String(

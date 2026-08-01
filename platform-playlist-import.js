@@ -3,6 +3,8 @@
 const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const lxSearch = require('./lx-search');
 let networkFetch = globalThis.fetch;
 function setFetchImplementation(fn) {
@@ -174,6 +176,57 @@ function uniqueBy(items, getKey) {
 function stableImportKey(parts, prefix) {
   const text = (parts || []).map(value => String(value || '').trim().toLowerCase()).filter(Boolean).join('|');
   return text ? `${prefix || 'row'}_${crypto.createHash('sha1').update(text).digest('hex').slice(0, 16)}` : '';
+}
+
+const SPOTIFY_PLAYLIST_CACHE_DIR = process.env.MINERADIO_SPOTIFY_PLAYLIST_CACHE_DIR || path.join(
+  process.env.APPDATA || process.env.LOCALAPPDATA || __dirname,
+  'Mineradio',
+  'spotify-playlist-cache',
+);
+
+function spotifyPlaylistCacheFile(id) {
+  const safeId = String(id || '').replace(/[^a-z0-9_-]+/ig, '').slice(0, 120);
+  return safeId ? path.join(SPOTIFY_PLAYLIST_CACHE_DIR, `${safeId}.json`) : '';
+}
+
+function normalizeSpotifyPlaylistCache(value) {
+  value = value && typeof value === 'object' ? value : null;
+  const songs = Array.isArray(value?.songs) ? value.songs.filter(song => song && song.name && song.singer).slice(0, 10000) : [];
+  if (!value || !songs.length) return null;
+  return {
+    name:String(value.name || '小绿歌单'),
+    cover:String(value.cover || ''),
+    songs,
+    totalTracks:Math.max(songs.length, Number(value.totalTracks) || 0),
+    previewTracks:songs.length,
+    partial:value.partial === true,
+    importLimitReason:String(value.importLimitReason || ''),
+    cacheFallback:true,
+  };
+}
+
+function readSpotifyPlaylistCache(id) {
+  const file = spotifyPlaylistCacheFile(id);
+  if (!file) return null;
+  try {
+    return normalizeSpotifyPlaylistCache(JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')));
+  } catch (_error) {
+    return null;
+  }
+}
+
+function writeSpotifyPlaylistCache(id, result) {
+  const file = spotifyPlaylistCacheFile(id);
+  const value = normalizeSpotifyPlaylistCache(result);
+  if (!file || !value) return;
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive:true });
+    const tempFile = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tempFile, JSON.stringify({ ...value, cacheFallback:false, cachedAt:Date.now() }), 'utf8');
+    fs.renameSync(tempFile, file);
+  } catch (error) {
+    console.warn('[SpotifyPlaylistCache] write skipped:', error && error.message || error);
+  }
 }
 
 function ensureImportSongId(song, prefix, index) {
@@ -1978,6 +2031,7 @@ async function importSpotify(id, input, context = {}) {
     (/^https?:\/\/open\.spotify\.com\//i.test(originalUrl) ? originalUrl : '') ||
     `https://open.spotify.com/track/${encodeURIComponent(id)}`;
   if (/\/playlist\//i.test(sourceUrl)) {
+    const cachedPlaylist = readSpotifyPlaylistCache(id);
     function parseSpotifyPage(html) {
       const match = String(html || '').match(/<script[^>]+id=["']initialState["'][^>]*>([\s\S]*?)<\/script>/i);
       if (!match) return null;
@@ -2026,26 +2080,28 @@ async function importSpotify(id, input, context = {}) {
     } catch (_error) {}
     let html = /^https?:\/\/open\.spotify\.com\/playlist\//i.test(String(context.resolvedUrl || '')) && context.html
       ? context.html
-      : await fetchText(publicPageUrl.href, { timeoutMs:8000 }).catch(error => {
+        : await fetchText(publicPageUrl.href, { timeoutMs:8000 }).catch(error => {
           if (embedFallback) return '';
+          if (cachedPlaylist) return '';
           if (/HTTP_404/i.test(String(error && error.message || ''))) throw new Error('小绿歌单未公开或仅自己可见；请在小绿中设为公开后重新复制链接');
-          throw new Error('小绿连接受限，未能读取公开歌单；请稍后重试或切换可访问 Spotify 的网络');
+          throw new Error('国内网络首次导入小绿歌单时仍需能访问 Spotify；请启用 Windows 系统代理后重试，成功一次后 Mineradio 可用本地缓存重新导入');
         });
     let entity = parseSpotifyPage(html);
     if (!entity) {
       if (embedFallback) {
-        embedFallback.songs = await matchReferenceSongsForPlayback(embedFallback.songs, 'spotifyMeta');
         embedFallback.totalTracks = embedFallback.songs.length;
         embedFallback.previewTracks = embedFallback.songs.length;
         embedFallback.partial = false;
+        writeSpotifyPlaylistCache(id, embedFallback);
         return embedFallback;
       }
+      if (cachedPlaylist) return cachedPlaylist;
       if (/Page not found|status["']?\s*:\s*404/i.test(html)) throw new Error('小绿歌单未公开或仅自己可见；请在小绿中设为公开后重新复制链接');
       throw new Error('小绿公开歌单页面没有返回曲目，请确认分享链接有效');
     }
     let wrappers = Array.isArray(entity?.content?.items) ? entity.content.items.slice() : [];
-    const totalTracks = Math.max(wrappers.length, Number(entity?.content?.totalCount) || 0);
-    const rows = uniqueBy(wrappers.map(wrapper => wrapper?.itemV2?.data || wrapper?.item?.data || wrapper?.track).filter(Boolean).map(track => {
+    let totalTracks = Math.max(wrappers.length, Number(entity?.content?.totalCount) || 0);
+    let rows = uniqueBy(wrappers.map(wrapper => wrapper?.itemV2?.data || wrapper?.item?.data || wrapper?.track).filter(Boolean).map(track => {
       const artists = (track?.artists?.items || track?.artists || []).map(item => item?.profile?.name || item?.name).filter(Boolean).join('、');
       const sources = track?.albumOfTrack?.coverArt?.sources || track?.album?.coverArt?.sources || [];
       const uri = String(track.uri || '');
@@ -2058,17 +2114,50 @@ async function importSpotify(id, input, context = {}) {
         source:'sp', needsCrossPlatformMatch:true,
       };
     }).filter(row => row.name && row.singer), row => `${row.spotifyId || row.name}|${row.singer}`);
+    // Spotify's normal public page currently exposes only its first batch
+    // (commonly 30 tracks), while the official embed state contains the
+    // remaining public track list. Keep the richer public-page rows first so
+    // their album artwork wins, then append every missing embed row.
+    if (embedFallback && Array.isArray(embedFallback.songs) && embedFallback.songs.length) {
+      const publicById = new Map();
+      const publicByText = new Map();
+      rows.forEach(row => {
+        const spotifyId = String(row.spotifyId || '').toLowerCase();
+        const textKey = `${platformMatchText(row.name)}|${platformMatchText(row.singer)}`;
+        if (spotifyId) publicById.set(spotifyId, row);
+        if (textKey !== '|') publicByText.set(textKey, row);
+      });
+      // The embed list is the canonical full ordering. The normal public page
+      // is used only to enrich matching entries with album and cover fields;
+      // concatenating both payloads creates duplicates because some public
+      // wrappers omit Spotify IDs or format multi-artist names differently.
+      rows = uniqueBy(embedFallback.songs.map(embedRow => {
+        const spotifyId = String(embedRow.spotifyId || '').toLowerCase();
+        const textKey = `${platformMatchText(embedRow.name)}|${platformMatchText(embedRow.singer)}`;
+        const publicRow = (spotifyId && publicById.get(spotifyId)) || publicByText.get(textKey);
+        return publicRow
+          ? Object.assign({}, embedRow, publicRow, { spotifyId:publicRow.spotifyId || embedRow.spotifyId || '' })
+          : embedRow;
+      }), row => String(row.spotifyId || '') ||
+        `${platformMatchText(row.name)}|${platformMatchText(row.singer)}`);
+      totalTracks = Math.max(totalTracks, embedFallback.songs.length);
+    }
     if (!rows.length) throw new Error('小绿歌单没有可导入的公开曲目');
     const cover = entity?.images?.items?.[0]?.sources?.[0]?.url || rows.find(row => row.picUrl)?.picUrl || '';
-    return {
+    const result = {
       name:entity.name || '小绿歌单',
       cover,
-      songs:await matchReferenceSongsForPlayback(rows, 'spotifyMeta'),
+      // Spotify rows already carry needsCrossPlatformMatch. Resolve only the
+      // selected song during playback instead of blocking playlist import on
+      // hundreds of cross-platform search requests.
+      songs:rows,
       totalTracks,
       previewTracks:rows.length,
       partial:totalTracks > rows.length,
       importLimitReason:totalTracks > rows.length ? 'SPOTIFY_PUBLIC_PREVIEW_LIMIT' : '',
     };
+    writeSpotifyPlaylistCache(id, result);
+    return result;
   }
   if (!/\/track\//i.test(sourceUrl)) {
     throw new Error('无法识别小绿分享链接，请粘贴公开歌单或单曲链接');

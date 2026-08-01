@@ -19,11 +19,32 @@ const lxSourceHost = require('./lx-source-host');
 const lxSearch = require('./lx-search');
 const platformPlaylistImport = require('./platform-playlist-import');
 let electronNet = null;
+let electronSession = null;
 try {
-  electronNet = require('electron').net;
+  const electron = require('electron');
+  electronNet = electron.net;
+  electronSession = electron.session;
 } catch (_err) {}
 if (electronNet && typeof electronNet.fetch === 'function') {
-  const electronFetch = electronNet.fetch.bind(electronNet);
+  const directElectronFetch = electronNet.fetch.bind(electronNet);
+  let systemNetworkSession = null;
+  try {
+    systemNetworkSession = electronSession && electronSession.fromPartition
+      ? electronSession.fromPartition('persist:mineradio-system-network')
+      : null;
+  } catch (_error) {}
+  const electronFetch = function mineradioRoutedElectronFetch(url, options) {
+    let hostname = '';
+    try { hostname = new URL(String(url || '')).hostname.toLowerCase(); } catch (_error) {}
+    const useSystemRoute = hostname === 'spotify.com'
+      || hostname.endsWith('.spotify.com')
+      || hostname === 'scdn.co'
+      || hostname.endsWith('.scdn.co');
+    if (useSystemRoute && systemNetworkSession && typeof systemNetworkSession.fetch === 'function') {
+      return systemNetworkSession.fetch(url, options);
+    }
+    return directElectronFetch(url, options);
+  };
   globalThis.fetch = electronFetch;
   lxSearch.setFetchImplementation(electronFetch);
   platformPlaylistImport.setFetchImplementation(electronFetch);
@@ -152,23 +173,25 @@ function localContentTypeForPath(filePath) {
 function applySecurityHeaders(res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
-  res.setHeader('X-Frame-Options', 'DENY');
+  // The Sonic Workshop preset is rendered by a same-origin local iframe.
+  // SAMEORIGIN keeps remote sites out while allowing that bundled visual.
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
   // Electron's explicit desktop-source capture is exposed through getUserMedia
   // and therefore needs the camera directive for this local origin only.
   res.setHeader('Permissions-Policy', 'camera=(self), geolocation=(), microphone=()');
   res.setHeader('Content-Security-Policy', [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' blob: https://cdn.jsdelivr.net https://unpkg.com",
+    "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net https://unpkg.com",
     "worker-src 'self' blob:",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "img-src 'self' data: blob: http: https:",
-    "media-src 'self' data: blob: http: https:",
+    "img-src 'self' data: blob: http: https: mineradio-wallpaper:",
+    "media-src 'self' data: blob: http: https: mineradio-wallpaper:",
     "connect-src 'self' http: https: ws: wss:",
     "font-src 'self' data: https://fonts.gstatic.com",
     "object-src 'none'",
     "base-uri 'none'",
-    "frame-ancestors 'none'",
+    "frame-ancestors 'self'",
     "form-action 'none'",
   ].join('; '));
 }
@@ -3080,17 +3103,34 @@ const server = http.createServer(async (req, res) => {
       if (!/^https?:$/.test(target.protocol) || /^(?:localhost|127\.|0\.0\.0\.0|::1$)/i.test(target.hostname)) {
         throw new Error('IMAGE_PROXY_URL_NOT_ALLOWED');
       }
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 8000);
       let response;
-      try {
-        const fetchImpl = electronNet && typeof electronNet.fetch === 'function'
-          ? electronNet.fetch.bind(electronNet)
-          : fetch;
-        response = await fetchImpl(target.href, { signal: controller.signal, redirect: 'follow' });
-      } finally {
-        clearTimeout(timer);
+      const fetchImpl = electronNet && typeof electronNet.fetch === 'function'
+        ? electronNet.fetch.bind(electronNet)
+        : fetch;
+      const referer = target.hostname.includes('qq.com')
+        ? 'https://y.qq.com/'
+        : (target.hostname.includes('music.163.com') || target.hostname.includes('126.net') ? 'https://music.163.com/' : undefined);
+      const headers = {
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/136 Safari/537.36',
+      };
+      if (referer) headers.Referer = referer;
+      let lastFetchError = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 12000);
+        try {
+          response = await fetchImpl(target.href, { signal: controller.signal, redirect: 'follow', headers });
+          if (response.ok || (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429)) break;
+          lastFetchError = new Error('IMAGE_PROXY_HTTP_' + response.status);
+        } catch (error) {
+          lastFetchError = error;
+        } finally {
+          clearTimeout(timer);
+        }
+        if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 320));
       }
+      if (!response && lastFetchError) throw lastFetchError;
       if (!response.ok) throw new Error('IMAGE_PROXY_HTTP_' + response.status);
       const contentType = response.headers.get('content-type') || 'application/octet-stream';
       if (!/^image\//i.test(contentType)) throw new Error('IMAGE_PROXY_NOT_IMAGE');
