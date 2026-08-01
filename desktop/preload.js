@@ -15,6 +15,14 @@ const PERSISTENT_UI_STATE_KEYS = [
   'mineradio-wallpaper-scene-recordings-v1',
   'mineradio-wallpaper-record-fps-v1',
   'mineradio-wallpaper-record-fps-v2',
+  'mineradio-wallpaper-engine-selection-v1',
+  'mineradio-wallpaper-engine-hidden-v1',
+  'mineradio-wallpaper-engine-favorites-v1',
+  'mineradio-original-feature-pack-v2',
+  'mineradio-audio-fade-v1',
+  'mineradio-player-spectrum-v1',
+  'mineradio-player-spectrum-height-v1',
+  'mineradio-home-always-transparent-v1',
   'mineradio-user-capsule-auto-hide-v1',
   'mineradio-fx-fab-auto-hide-v1',
   'mineradio-controls-auto-hide-v1',
@@ -28,6 +36,8 @@ const PERSISTENT_UI_STATE_KEYS = [
   'mineradio-local-library-folders-v2',
   'mineradio-hidden-wallpapers-v1',
   'mineradio-favorite-wallpapers-v1',
+  'mineradio-wallpaper-engine-hidden-v1',
+  'mineradio-wallpaper-engine-favorites-v1',
   'mineradio-last-visual-preset-v1',
   'mineradio-local-user-playlists-v1',
   'mineradio-playlist-custom-covers-v1',
@@ -53,6 +63,9 @@ const JSON_OBJECT_UI_STATE_KEYS = new Set([
   'mineradio-playback-tuning-v1',
   'mineradio-playlist-panel-position-v1',
   'mineradio-wallpaper-scene-recordings-v1',
+  'mineradio-wallpaper-engine-selection-v1',
+  'mineradio-original-feature-pack-v2',
+  'mineradio-audio-fade-v1',
   'mineradio-free-camera-v1',
   'mineradio-playlist-custom-covers-v1',
   'mineradio-lx-playlist-song-order-v1',
@@ -64,6 +77,8 @@ const FLAG_UI_STATE_KEYS = new Set([
   'mineradio-playlist-panel-pinned-v1',
   'mineradio-playlist-panel-pinned-v2',
   'mineradio-home-more-playlists-expanded-v1',
+  'mineradio-player-spectrum-v1',
+  'mineradio-home-always-transparent-v1',
   'mineradio-user-capsule-auto-hide-v1',
   'mineradio-fx-fab-auto-hide-v1',
   'mineradio-controls-auto-hide-v1',
@@ -79,6 +94,7 @@ const NUMBER_UI_STATE_KEYS = new Set([
   'apex-player-volume',
   'mineradio-wallpaper-record-fps-v1',
   'mineradio-wallpaper-record-fps-v2',
+  'mineradio-player-spectrum-height-v1',
   'mineradio-last-visual-preset-v1',
 ]);
 const LARGE_UI_STATE_KEYS = new Set([
@@ -108,7 +124,7 @@ function sanitizePersistentUiStateValue(key, value) {
     if (!Number.isFinite(number)) return null;
     if (key === 'apex-player-volume' && (number < 0 || number > 1)) return null;
     if (/wallpaper-record-fps/.test(key) && (number < 15 || number > 120)) return null;
-    if (key === 'mineradio-last-visual-preset-v1' && (number < 0 || number > 12)) return null;
+    if (key === 'mineradio-last-visual-preset-v1' && (number < 0 || number > 14)) return null;
     return value;
   }
   if (key === 'mineradio-playback-quality-v1') {
@@ -214,14 +230,34 @@ function restorePersistentUiState() {
   } catch (_e) {}
 }
 
+function suppressDesktopOnlyMobileNavigation() {
+  const apply = () => {
+    document.documentElement.classList.add('desktop-native-root');
+    ['mobile-back-btn', 'mobile-diy-btn'].forEach((id) => {
+      const element = document.getElementById(id);
+      if (!element) return;
+      element.hidden = true;
+      element.setAttribute('aria-hidden', 'true');
+      element.style.setProperty('display', 'none', 'important');
+      element.style.setProperty('visibility', 'hidden', 'important');
+      element.style.setProperty('pointer-events', 'none', 'important');
+    });
+  };
+  if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', apply, { once: true });
+  else apply();
+}
+
 applyProfileNativeStateRepair();
 applyStartupSafeReset();
 restorePersistentUiState();
+suppressDesktopOnlyMobileNavigation();
 
 contextBridge.exposeInMainWorld('desktopWindow', {
   isDesktop: true,
   getMemorySnapshot: () => ipcRenderer.invoke('mineradio-memory-get-snapshot'),
+  configureMemoryReduct: (payload) => ipcRenderer.invoke('mineradio-memory-configure-auto', payload || {}),
   trimAppMemory: (payload) => ipcRenderer.invoke('mineradio-memory-trim-app', payload || {}),
+  purgeSystemMemory: (payload) => ipcRenderer.invoke('mineradio-memory-purge-system', payload || {}),
   minimize: () => ipcRenderer.invoke('desktop-window-minimize'),
   toggleMaximize: () => ipcRenderer.invoke('desktop-window-toggle-maximize'),
   toggleFullscreen: () => ipcRenderer.invoke('desktop-window-toggle-fullscreen'),
@@ -252,7 +288,10 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   exportJsonFile: (payload) => ipcRenderer.invoke('mineradio-export-json-file', payload || {}),
   exportTextFile: (payload) => ipcRenderer.invoke('mineradio-export-text-file', payload || {}),
   importJsonFile: () => ipcRenderer.invoke('mineradio-import-json-file'),
+  copyText: (text) => ipcRenderer.invoke('mineradio-clipboard-write-text', String(text == null ? '' : text)),
+  readText: () => ipcRenderer.invoke('mineradio-clipboard-read-text'),
   backupUiState: (patch) => ipcRenderer.invoke('mineradio-ui-state-write', patch || {}),
+  backupUiStateSync: (patch) => ipcRenderer.sendSync('mineradio-ui-state-write-sync', patch || {}),
   reportStartupReady: (payload) => {
     rendererStartupReportedReady = true;
     ipcRenderer.send('mineradio-startup-ready', {
@@ -270,6 +309,20 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   prepareLocalAudio: (filePath) => ipcRenderer.invoke('mineradio-local-audio-prepare', filePath),
   prepareWallpaperCapture: (payload) => ipcRenderer.invoke('mineradio-wallpaper-capture-prepare', payload || {}),
   finishWallpaperCapture: () => ipcRenderer.invoke('mineradio-wallpaper-capture-finish'),
+  listWallpaperEngineProjects: (payload) => ipcRenderer.invoke('mineradio-wallpaper-engine-list', payload || {}),
+  getWallpaperEngineProjectDetails: (id) => ipcRenderer.invoke('mineradio-wallpaper-engine-project-details', String(id || '')),
+  openWallpaperEngineProjectDetails: (id, target) => ipcRenderer.invoke('mineradio-wallpaper-engine-open-project-details', {
+    id: String(id || ''),
+    target: target === 'workshop' ? 'workshop' : 'we',
+  }),
+  chooseWallpaperEngineDirectory: () => ipcRenderer.invoke('mineradio-wallpaper-engine-choose-directory'),
+  chooseWallpaperEngineProjectFile: () => ipcRenderer.invoke('mineradio-wallpaper-engine-choose-project-file'),
+  removeWallpaperEngineDirectory: (rootId) => ipcRenderer.invoke('mineradio-wallpaper-engine-remove-directory', String(rootId || '')),
+  getWallpaperEngineRuntimeStatus: (payload) => ipcRenderer.invoke('mineradio-wallpaper-engine-runtime-status', payload || {}),
+  startWallpaperEngineScene: (payload) => ipcRenderer.invoke('mineradio-wallpaper-engine-start-scene', payload || {}),
+  reportWallpaperEngineCaptureResult: (payload) => ipcRenderer.invoke('mineradio-wallpaper-engine-capture-result', payload || {}),
+  activateWallpaperEngineDwmSurface: (payload) => ipcRenderer.invoke('mineradio-wallpaper-engine-activate-dwm-surface', payload || {}),
+  stopWallpaperEngineScene: (payload) => ipcRenderer.invoke('mineradio-wallpaper-engine-stop-scene', payload || {}),
   transcodeLocalAudio: (filePath) => ipcRenderer.invoke('mineradio-local-audio-transcode', filePath),
   readLocalFileRange: (filePath, start, end) => ipcRenderer.invoke('mineradio-local-file-read-range', filePath, start, end),
   readLocalFileDataUrl: (filePath) => ipcRenderer.invoke('mineradio-local-file-read-data-url', filePath),
@@ -301,6 +354,18 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   },
   setWallpaperMode: (enabled, payload) => ipcRenderer.invoke('mineradio-wallpaper-set-enabled', !!enabled, payload || {}),
   updateWallpaperMode: (payload) => ipcRenderer.invoke('mineradio-wallpaper-update', payload || {}),
+  getWallpaperModeStatus: () => ipcRenderer.invoke('mineradio-wallpaper-mode-status'),
+  setDesktopSoftwareLocked: (locked) => ipcRenderer.invoke('mineradio-desktop-software-lock', !!locked),
+  setDesktopIconsVisible: (visible) => ipcRenderer.invoke('mineradio-desktop-icons-visible', visible !== false),
+  updateDesktopPointerRoute: (route) => ipcRenderer.invoke('mineradio-desktop-pointer-route', route || {}),
+  updateDesktopIconShields: (payload) => ipcRenderer.invoke('mineradio-desktop-icon-shields', payload || {}),
+  requestDesktopKeyboardFocus: (reason) => ipcRenderer.invoke('mineradio-desktop-keyboard-focus', String(reason || 'renderer-keyboard-focus')),
+  onWallpaperModeState: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload || {});
+    ipcRenderer.on('mineradio-wallpaper-mode-state', listener);
+    return () => ipcRenderer.removeListener('mineradio-wallpaper-mode-state', listener);
+  },
   onWallpaperCommand: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const listener = (_event, payload) => callback(payload || {});

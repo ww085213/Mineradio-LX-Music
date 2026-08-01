@@ -45,8 +45,21 @@
     stageMounted: false,
     stageReady: false,
     host: null,
-    lastFailToastAt: 0
+    lastFailToastAt: 0,
+    beatShakeDrive: 0
   };
+
+  function resetBeatShake(host) {
+    state.beatShakeDrive = 0;
+    if (!host) return;
+    var root = host.querySelector('.mineradio-lyric-viz-root');
+    if (!root) return;
+    root.style.translate = '';
+    root.style.rotate = '';
+    root.style.scale = '';
+    root.style.filter = '';
+    root.style.willChange = '';
+  }
 
   function safeClamp(v, min, max) {
     var n = Number(v);
@@ -361,6 +374,7 @@
       var active = isStageLyricLayerAllowed(fxRef);
       applyStageHostClasses(fxRef, active);
       if (!active) {
+        resetBeatShake(getHost());
         setStageReady(false);
         var inactiveApi = resolveLyricVizApi();
         var inactiveHost = getHost();
@@ -411,7 +425,10 @@
   }
 
   function tickLyricAnimation() {
-    if (!isStageLyricLayerAllowed() || !state.bundleLoaded || !state.stageMounted) return;
+    if (!isStageLyricLayerAllowed() || !state.bundleLoaded || !state.stageMounted) {
+      resetBeatShake(getHost());
+      return;
+    }
     var host = getHost();
     var api = resolveLyricVizApi();
     if (!host || !api) return;
@@ -426,6 +443,30 @@
       power: power,
       bands: { bass: bassVal, mid: midVal, treble: trebleVal }
     });
+    var fxRef = getFx() || {};
+    var shakeEnabled = fxRef.lyricBeatShakeEnabled !== false && !isPlaybackPaused();
+    var shakeIntensity = clampRangeLocal(
+      isFinite(Number(fxRef.lyricBeatShakeIntensity)) ? Number(fxRef.lyricBeatShakeIntensity) : 0.68,
+      0,
+      1.5
+    );
+    var rawShake = shakeEnabled
+      ? Math.min(1.5, Math.max(0, Number(global.lyricBeatImpact) || 0))
+      : 0;
+    state.beatShakeDrive += (rawShake - state.beatShakeDrive) * (rawShake > state.beatShakeDrive ? 0.72 : 0.20);
+    var root = host.querySelector('.mineradio-lyric-viz-root');
+    if (root) {
+      var shake = state.beatShakeDrive * shakeIntensity;
+      var phase = Math.max(0, Number(global.lyricBeatImpactPhase) || 0);
+      var clarity = clampRangeLocal(isFinite(Number(fxRef.lyricClarity)) ? Number(fxRef.lyricClarity) : 1.12, 0.45, 1.6);
+      root.style.translate = (Math.sin(phase) * 6.2 * shake).toFixed(2) + 'px ' +
+        ((-7.4 + Math.cos(phase * 1.16) * 3.2) * shake).toFixed(2) + 'px';
+      root.style.rotate = (Math.sin(phase * 0.92) * 0.38 * shake).toFixed(3) + 'deg';
+      root.style.scale = (1 + shake * 0.036).toFixed(4);
+      root.style.filter = 'contrast(' + (0.88 + clarity * 0.18).toFixed(3) + ') brightness(' +
+        (0.96 + clarity * 0.045).toFixed(3) + ')';
+      root.style.willChange = shake > 0.01 ? 'translate, rotate, scale, filter' : '';
+    }
   }
 
   function onLyricsChangedForAnimation() {
