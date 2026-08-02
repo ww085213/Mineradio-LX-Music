@@ -4,6 +4,8 @@
 
 [下载 Windows 安装包](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.7.1/Mineradio.Setup.1.5.7.1.exe) / [查看 v1.5.7.1 Release](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.5.7.1)
 
+[下载 Mineradio 独立清理工具](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.7.1/Mineradio.Cleanup.1.0.0.exe)（Windows 10/11，需要管理员确认）
+
 支持 Windows 10/11 x64。安装向导可选择安装目录和是否创建桌面快捷方式；原版、旧版及其他二创版本可直接覆盖升级。安装程序只更新程序文件，会保留 `%APPDATA%\Mineradio` 中的歌单、设置和用户数据。升级前建议先退出正在运行的 Mineradio。
 
 1.5.7.1 主要更新：
@@ -14,12 +16,23 @@
 - 修复低性能电脑或慢速网络环境下启动恢复误清空配置的问题，保留歌单、壁纸、播放设置、界面设置和用户音源。
 - 延续 1.5.7 的音效实验室、歌手专辑、实时频谱、桌面歌词、音乐星球、局域网遥控和可视化升级。
 - 安装包继续支持从原版、旧版及其他二创版本安全覆盖升级，并校验二维码、FFmpeg、RePKG、平台导入及关键桌面运行时。
+- 提供独立图形化清理工具：可以只移除程序并保留音源/歌单，也可以彻底清除用户数据，让下次安装进入首次安装状态。
 
 [查看 Mineradio 1.5.7.1 完整更新说明](RELEASE_NOTES_1.5.7.1.md)
 
 安装包 SHA-256：`451eb3e1dc0c76c480778f43b0d54781a21d6491c05498d4e8290b56ffd1b4d5`
 
 > 当前 Windows 安装包未使用 Authenticode 代码签名证书，Windows SmartScreen 可能提示“未知发布者”。请只从本仓库 Release 下载，并核对上方 SHA-256。
+
+## 彻底卸载或重新体验首次安装
+
+下载并运行 `Mineradio.Cleanup.1.0.0.exe`。工具会先扫描已验证的 Mineradio 安装目录，再让你选择清理范围：
+
+- 默认模式删除程序、快捷方式和安装注册信息，但保留音源、歌单与设置。
+- 勾选“彻底清除用户数据”后，会删除 `%APPDATA%\Mineradio`、`%LOCALAPPDATA%\Mineradio` 和旧版持久启动脚本；重新安装时即为首次安装状态。
+- 工具不会删除 LX Music 自己的数据，也不会删除 `Mineradio.Setup.*.exe`；若安装包位于清理目录内，会先移到“下载\Mineradio Installers”。
+
+清理工具 SHA-256：`0a9a91be67fda026f33c9e005e0f756bb379e8c11c1e172ddc8d82e8b1927072`
 
 Mineradio 是一款 Windows 桌面音乐播放器、歌单工具和音乐可视化应用。它可以独立播放本地音乐，也支持导入歌单、显示歌词、桌面歌词、壁纸和可视化效果。
 
@@ -72,6 +85,7 @@ npm start
 
 ```bash
 npm run build:win
+npm run build:cleanup
 ```
 
 `build:win` 会下载并校验固定版本的 FFmpeg 与 RePKG，运行发布校验，然后生成：
@@ -80,6 +94,8 @@ npm run build:win
 - `dist/Mineradio.Setup.1.5.7.1.exe.blockmap`
 - `dist/latest.yml`
 - `dist/Mineradio.Setup.1.5.7.1.SHA256.txt`
+- `dist/cleanup/Mineradio.Cleanup.1.0.0.exe`
+- `dist/cleanup/Mineradio.Cleanup.1.0.0.SHA256.txt`
 
 macOS DMG 需在 macOS 环境执行 `npm run build:mac`。
 

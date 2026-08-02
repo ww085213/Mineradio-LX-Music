@@ -11,6 +11,7 @@
     "start": "electron .",
     "prepare:windows-tools": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File build/prepare-windows-tools.ps1",
     "verify:release": "node build/verify-release.js",
+    "build:cleanup": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tools/mineradio-cleanup/build.ps1",
     "build:win": "npm run prepare:windows-tools && npm run verify:release && electron-builder --win nsis && node build/finalize-windows-release.js",
     "build:win:dir": "npm run prepare:windows-tools && npm run verify:release && electron-builder --win dir",
     "build:mac": "electron-builder --mac dmg zip --universal --publish never"
