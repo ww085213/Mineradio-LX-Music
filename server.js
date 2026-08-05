@@ -2788,6 +2788,26 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pn === '/api/song-cover-search') {
+    try {
+      const query = String(url.searchParams.get('q') || '').trim().slice(0, 160);
+      const limit = Math.max(1, Math.min(20, Number(url.searchParams.get('limit')) || 12));
+      if (!query) {
+        sendJSON(res, { ok: false, songs: [], error: 'QUERY_REQUIRED' }, 400);
+        return;
+      }
+      const target = `https://music.163.com/api/cloudsearch/pc?s=${encodeURIComponent(query)}&type=1&offset=0&limit=${limit}`;
+      const data = await dailyHotFetchJson(target, { timeoutMs: 10000 });
+      const songs = (data?.result?.songs || [])
+        .map(dailyHotSongFromNeteaseTrack)
+        .filter(song => song.name && song.picUrl);
+      sendJSON(res, { ok: true, songs });
+    } catch (err) {
+      sendJSON(res, { ok: false, songs: [], error: err.message || 'SONG_COVER_SEARCH_FAILED' }, 502);
+    }
+    return;
+  }
+
   if (pn === '/api/lx-source/search') {
     try {
       const result = await lxSearch.searchAll(url.searchParams.get('q'), {
@@ -3118,7 +3138,7 @@ const server = http.createServer(async (req, res) => {
       let lastFetchError = null;
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 12000);
+        const timer = setTimeout(() => controller.abort(), 6000);
         try {
           response = await fetchImpl(target.href, { signal: controller.signal, redirect: 'follow', headers });
           if (response.ok || (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429)) break;

@@ -24,27 +24,102 @@ function drawCanvasHeart(ctx, cx, cy, size, color) {
 }
 function requestPlaylistCover(url, cb) {
   if (!url) { if (cb) cb(null); return; }
-  var rec = playlistCoverCache[url];
+  var originalUrl = String(url);
+  url = normalizeRemoteCoverUrl(url);
+  var rec = playlistCoverCache[url] || playlistCoverCache[originalUrl];
   if (rec && rec.loaded) { if (cb) setTimeout(function () { cb(rec.img); }, 0); return; }
   if (rec && rec.loading) { if (cb) rec.waiters.push(cb); return; }
-  rec = playlistCoverCache[url] = { loaded: false, loading: true, waiters: cb ? [cb] : [], img: null, failed: false };
-  var img = new Image();
-  if (!isInlineCoverSrc(url)) img.crossOrigin = 'anonymous';
-  img.onload = function () {
-    rec.loaded = true; rec.loading = false; rec.img = img;
-    rec.waiters.splice(0).forEach(function (fn) { setTimeout(function () { fn(img); }, 0); });
-  };
-  img.onerror = function () {
-    rec.loading = false; rec.failed = true;
-    rec.waiters.splice(0).forEach(function (fn) { setTimeout(function () { fn(null); }, 0); });
-  };
-  var src = coverProxySrc(url);
-  if (!src) {
-    rec.loading = false; rec.failed = true;
-    rec.waiters.splice(0).forEach(function (fn) { setTimeout(function () { fn(null); }, 0); });
+  if (rec && rec.failed && Date.now() - (rec.failedAt || 0) < 15000) {
+    if (cb) setTimeout(function () { cb(null); }, 0);
     return;
   }
-  img.src = src;
+  rec = { loaded: false, loading: true, waiters: cb ? [cb] : [], img: null, failed: false, failedAt: 0 };
+  playlistCoverCache[url] = rec;
+  playlistCoverCache[originalUrl] = rec;
+  var candidates = isInlineCoverSrc(url) ? [url] : [coverProxySrc(url), url];
+  candidates = candidates.filter(function (src, index, all) { return src && all.indexOf(src) === index; });
+  var candidateIndex = 0;
+  function finish(img) {
+    rec.loading = false;
+    rec.loaded = !!img;
+    rec.failed = !img;
+    rec.failedAt = img ? 0 : Date.now();
+    rec.img = img || null;
+    rec.waiters.splice(0).forEach(function (fn) { setTimeout(function () { fn(img || null); }, 0); });
+  }
+  function tryNext() {
+    if (candidateIndex >= candidates.length) { finish(null); return; }
+    var img = new Image();
+    if (!isInlineCoverSrc(candidates[candidateIndex])) img.crossOrigin = 'anonymous';
+    img.onload = function () { finish(img); };
+    img.onerror = function () { candidateIndex++; tryNext(); };
+    img.src = candidates[candidateIndex];
+  }
+  tryNext();
+}
+
+var missingSongCoverRequests = Object.create(null);
+var missingSongCoverRetryAt = Object.create(null);
+var missingSongCoverSaveTimer = 0;
+function missingSongCoverKey(song) {
+  song = song || {};
+  return [normalizeLxSourceName(song.source || song.provider || song.type), song.songmid || song.id || song.hash || '', song.name || song.title || '', song.singer || song.artist || ''].join('|');
+}
+function missingSongCoverNorm(value) {
+  value = String(value || '');
+  try { value = value.normalize('NFKC'); } catch (_error) {}
+  return value.toLowerCase().replace(/[\s·・•_—–\-~,\uff0c.\u3002!\uff01?\uff1f:\uff1a;\uff1b'"\u201c\u201d\u2018\u2019`´/\\|()（）\[\]【】]+/g, '');
+}
+function pickMissingSongCover(result, title, singer) {
+  var wantedTitle = missingSongCoverNorm(title);
+  var wantedSinger = missingSongCoverNorm(singer);
+  var candidates = result && Array.isArray(result.songs) ? result.songs : [];
+  var best = null, bestScore = -1;
+  candidates.forEach(function (candidate) {
+    var candidateTitle = missingSongCoverNorm(candidate && (candidate.name || candidate.title));
+    var candidateSinger = missingSongCoverNorm(candidate && (candidate.singer || candidate.artist));
+    if (!candidateTitle || !(candidateTitle === wantedTitle || candidateTitle.indexOf(wantedTitle) >= 0 || wantedTitle.indexOf(candidateTitle) >= 0)) return;
+    var score = candidateTitle === wantedTitle ? 100 : 64;
+    if (wantedSinger && candidateSinger && (candidateSinger.indexOf(wantedSinger) >= 0 || wantedSinger.indexOf(candidateSinger) >= 0)) score += 36;
+    var cover = songCoverSrc(candidate, 160);
+    if (cover && score > bestScore) { best = { candidate: candidate, cover: cover }; bestScore = score; }
+  });
+  return best;
+}
+function requestMissingSongCover(song, cb) {
+  var sourceName = normalizeLxSourceName(song && (song.source || song.provider || song.type));
+  var title = String(song && (song.name || song.title) || '').trim();
+  if (!song || !title || !/^(tx|wy|kw|kg|mg)$/.test(sourceName)) { if (cb) cb(''); return; }
+  var key = missingSongCoverKey(song);
+  if (missingSongCoverRequests[key]) {
+    if (cb) missingSongCoverRequests[key].then(cb, function () { cb(''); });
+    return;
+  }
+  if (missingSongCoverRetryAt[key] && Date.now() < missingSongCoverRetryAt[key]) { if (cb) cb(''); return; }
+  var singer = String(song.singer || song.artist || song.author || '').trim();
+  var query = [title, singer].filter(Boolean).join(' ');
+  var promise = apiJson('/api/lx-source/search?q=' + encodeURIComponent(query) + '&limit=8&sources=' + sourceName, { timeoutMs: 8000 }).then(function (result) {
+    var best = pickMissingSongCover(result, title, singer);
+    if (best) return best;
+    return apiJson('/api/song-cover-search?q=' + encodeURIComponent(query) + '&limit=12', { timeoutMs: 10000 })
+      .then(function (fallbackResult) { return pickMissingSongCover(fallbackResult, title, singer); });
+  }).then(function (best) {
+    if (!best) throw new Error('COVER_NOT_FOUND');
+    song.picUrl = best.cover;
+    song.cover = best.cover;
+    if (best.candidate.albumName && !song.albumName) song.albumName = best.candidate.albumName;
+    if (missingSongCoverSaveTimer) clearTimeout(missingSongCoverSaveTimer);
+    missingSongCoverSaveTimer = setTimeout(function () {
+      missingSongCoverSaveTimer = 0;
+      try { if (typeof saveLocalUserPlaylists === 'function') saveLocalUserPlaylists(); } catch (_error) {}
+    }, 900);
+    return best.cover;
+  }).catch(function () {
+    missingSongCoverRetryAt[key] = Date.now() + 5 * 60 * 1000;
+    return '';
+  }).finally(function () { delete missingSongCoverRequests[key]; });
+  missingSongCoverRequests[key] = promise;
+  if (cb) promise.then(cb);
 }
 
 // ============================================================

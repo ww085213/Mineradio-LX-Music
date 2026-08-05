@@ -316,6 +316,25 @@ function makeContentListManager() {
     panelDrawAt = nowT;
   }
 
+  function drawSongCoverPlaceholder(ctx, x, y, size, song, isCenter) {
+    var title = String(song && (song.name || song.title) || '♪').trim() || '♪';
+    var hash = 0;
+    for (var i = 0; i < title.length; i++) hash = (hash * 31 + title.charCodeAt(i)) >>> 0;
+    var hue = hash % 360;
+    var gradient = ctx.createLinearGradient(x, y, x + size, y + size);
+    gradient.addColorStop(0, 'hsla(' + hue + ',72%,' + (isCenter ? '42%' : '34%') + ',.95)');
+    gradient.addColorStop(1, 'hsla(' + ((hue + 58) % 360) + ',68%,16%,.98)');
+    ctx.fillStyle = gradient;
+    ctx.fill();
+    ctx.font = '800 ' + Math.round(size * 0.40) + 'px "Microsoft YaHei", Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(255,255,255,.88)';
+    ctx.fillText(Array.from(title)[0] || '♪', x + size / 2, y + size / 2 + 1);
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
+  }
+
   function drawRow(row, song, isCenter) {
     var cv = row.canvas, ctx = cv.getContext('2d');
     var W = cv.width, H = cv.height;
@@ -355,10 +374,16 @@ function makeContentListManager() {
     var coverY = H / 2 - coverSize / 2;
     var songCover = songCoverSrc(song, 80);
     var hasSongCover = !!songCover;
+    if (!hasSongCover && actionReady && !song._mineradioCoverLookupPending) {
+      song._mineradioCoverLookupPending = true;
+      requestMissingSongCover(song, function (resolvedCover) {
+        delete song._mineradioCoverLookupPending;
+        if (resolvedCover && row && row.mesh && row.mesh.parent) drawRow(row, row.song, !!row.lastCenter);
+      });
+    }
     if (actionReady || hasSongCover) {
       makeRoundRect(ctx, coverX, coverY, coverSize, coverSize, 13);
-      ctx.fillStyle = isCenter ? canvasAccent(0.12) : 'rgba(255,255,255,0.07)';
-      ctx.fill();
+      drawSongCoverPlaceholder(ctx, coverX, coverY, coverSize, song, isCenter);
       if (hasSongCover) {
         var songCoverRec = playlistCoverCache[songCover];
         if (songCoverRec && songCoverRec.loaded && songCoverRec.img) {

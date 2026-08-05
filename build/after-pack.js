@@ -74,6 +74,16 @@ module.exports = async function afterPack(context) {
       throw new Error(`Packaged Mineradio runtime file is unavailable: ${relativePath}`);
     }
   }
+  for (const forbiddenPath of [
+    'Mineradio-Network-Split-Switch.ps1',
+    'Mineradio网络分流开关.cmd',
+    'resources/app/desktop-ui-state.json',
+  ]) {
+    const absolutePath = path.join(context.appOutDir, ...forbiddenPath.split('/'));
+    if (fs.existsSync(absolutePath)) {
+      throw new Error(`Private release file must not be packaged: ${forbiddenPath}`);
+    }
+  }
   if (fs.statSync(path.join(packagedAppDir, 'bin', 'ffmpeg.exe')).size < 100 * 1024 * 1024) {
     throw new Error('Packaged FFmpeg executable is incomplete.');
   }

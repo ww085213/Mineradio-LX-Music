@@ -32,11 +32,32 @@ function coverProxySrc(url, cacheBust) {
   if (!url) return '';
   if (isInlineCoverSrc(url)) return url;
   if (!isProxyableCoverUrl(url)) return '';
-  return '/api/cover?url=' + encodeURIComponent(url) + (cacheBust ? '&v=' + Date.now() : '');
+  if (window.MineradioMobile && window.MOBILE_API_ORIGIN) {
+    return window.MOBILE_API_ORIGIN + '/api/cover?url=' + encodeURIComponent(url) + (cacheBust ? '&v=' + Date.now() : '');
+  }
+  return '/api/image-proxy?url=' + encodeURIComponent(url) + (cacheBust ? '&v=' + Date.now() : '');
+}
+function normalizeRemoteCoverUrl(url) {
+  url = String(url || '').trim().replace(/&amp;/gi, '&');
+  if (url.indexOf('//') === 0) url = 'https:' + url;
+  if (/^http:\/\//i.test(url)) {
+    try {
+      var host = new URL(url).hostname.toLowerCase();
+      if (/(?:^|\.)(?:music\.126\.net|music\.163\.com|y\.gtimg\.cn|qq\.com|kugou\.com|kuwo\.cn|kwcdn\.kuwo\.cn)$/.test(host)) {
+        url = url.replace(/^http:/i, 'https:');
+      }
+    } catch (_error) { }
+  }
+  return url.replace(/ /g, '%20');
 }
 function coverUrlWithSize(url, size) {
+  url = normalizeRemoteCoverUrl(url);
   if (!url || isInlineCoverSrc(url) || !/^https?:\/\//i.test(url)) return url || '';
   if (!size) return url;
+  var host = '';
+  try { host = new URL(url).hostname.toLowerCase(); } catch (_error) { }
+  if (/\{w\}|\{h\}/i.test(url)) return url.replace(/\{w\}/gi, String(size)).replace(/\{h\}/gi, String(size));
+  if (!/(?:^|\.)(?:music\.126\.net|music\.163\.com|netease\.com)$/.test(host)) return url;
   var param = 'param=' + size + 'y' + size;
   if (/[?&]param=\d+y\d+/i.test(url)) return url.replace(/([?&])param=\d+y\d+/i, '$1' + param);
   return url + (url.indexOf('?') >= 0 ? '&' : '?') + param;
@@ -69,9 +90,10 @@ function hydrateCustomCover(song) {
     return song;
   }
   if (!song.cover) {
-    song.cover = song.picUrl || song.albumCover || song.coverUrl ||
-      song.albumpic || song.img || song.image ||
-      (song.album && (song.album.cover || song.album.picUrl || song.album.image)) || '';
+    song.cover = song.picUrl || song.albumCover || song.coverUrl || song.coverImgUrl ||
+      song.albumPic || song.albumPicUrl || song.albumpic || song.artwork || song.artworkUrl || song.img || song.image || song.pic ||
+      (song.meta && (song.meta.picUrl || song.meta.cover || song.meta.albumCover || song.meta.coverUrl || song.meta.img || song.meta.image)) ||
+      (song.album && (song.album.cover || song.album.picUrl || song.album.albumCover || song.album.coverUrl || song.album.image)) || '';
   }
   if (!song.picUrl && song.cover) song.picUrl = song.cover;
   return song;
@@ -80,9 +102,10 @@ function songCoverSrc(song, size) {
   var custom = getCustomCoverForSong(song);
   if (custom) return custom;
   if (!song) return '';
-  var source = song.cover || song.picUrl || song.albumCover || song.coverUrl ||
-    song.albumpic || song.img || song.image ||
-    (song.album && (song.album.cover || song.album.picUrl || song.album.image)) || '';
+  var source = song.cover || song.picUrl || song.albumCover || song.coverUrl || song.coverImgUrl ||
+    song.albumPic || song.albumPicUrl || song.albumpic || song.artwork || song.artworkUrl || song.img || song.image || song.pic ||
+    (song.meta && (song.meta.picUrl || song.meta.cover || song.meta.albumCover || song.meta.coverUrl || song.meta.img || song.meta.image)) ||
+    (song.album && (song.album.cover || song.album.picUrl || song.album.albumCover || song.album.coverUrl || song.album.image)) || '';
   return source ? coverUrlWithSize(source, size) : '';
 }
 function cssImageUrl(url) {
