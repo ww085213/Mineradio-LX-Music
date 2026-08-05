@@ -2025,6 +2025,10 @@ async function importMG(id, originalInput, context = {}) {
 }
 
 async function importSpotify(id, input, context = {}) {
+  const spotifyId = String(id || '').trim();
+  if (!/^[a-z0-9]{22}$/i.test(spotifyId)) {
+    throw new Error(`小绿分享链接不完整：Spotify ID 应为 22 位，当前为 ${spotifyId.length} 位；请重新复制完整的公开歌单或单曲链接`);
+  }
   const resolvedCandidate = String(context.resolvedUrl || '');
   const originalUrl = extractFirstUrl(context.originalInput || input);
   const sourceUrl = (/^https?:\/\/open\.spotify\.com\//i.test(resolvedCandidate) ? resolvedCandidate : '') ||
@@ -2083,6 +2087,7 @@ async function importSpotify(id, input, context = {}) {
         : await fetchText(publicPageUrl.href, { timeoutMs:8000 }).catch(error => {
           if (embedFallback) return '';
           if (cachedPlaylist) return '';
+          if (/HTTP_400/i.test(String(error && error.message || ''))) throw new Error('小绿歌单链接无效或不完整；请重新复制完整的公开歌单链接');
           if (/HTTP_404/i.test(String(error && error.message || ''))) throw new Error('小绿歌单未公开或仅自己可见；请在小绿中设为公开后重新复制链接');
           throw new Error('国内网络首次导入小绿歌单时仍需能访问 Spotify；请启用 Windows 系统代理后重试，成功一次后 Mineradio 可用本地缓存重新导入');
         });

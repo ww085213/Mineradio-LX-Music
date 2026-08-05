@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, shell, screen, globalShortcut, dialog, Tray
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
+const zlib = require('zlib');
 const { pathToFileURL } = require('url');
 const crypto = require('crypto');
 const { execFile, spawn } = require('child_process');
@@ -28,6 +29,9 @@ let mainWindowPreDesktopBounds = null;
 let mainWindowPreDesktopState = null;
 let localServer = null;
 let directLocalProxy = null;
+let networkSplitEnabled = true;
+let networkSplitApplyPromise = Promise.resolve();
+let networkSplitSettingsWatcherStarted = false;
 let mainServerPort = 0;
 let desktopLyricsWindow = null;
 let desktopLyricsState = {};
@@ -1782,6 +1786,57 @@ function writeDesktopShellSettings(patch) {
   return next;
 }
 
+function resolveNetworkSplitEnabled() {
+  if (process.env.MINERADIO_FORCE_DIRECT_ROUTE === '1') return true;
+  if (process.env.MINERADIO_FORCE_DIRECT_ROUTE === '0') return false;
+  const saved = readDesktopShellSettings();
+  return typeof saved.networkSplitEnabled === 'boolean' ? saved.networkSplitEnabled : true;
+}
+
+async function applyNetworkSplitMode(enabled, reason = 'runtime') {
+  const nextEnabled = enabled !== false;
+  if (nextEnabled) {
+    if (!directLocalProxy) directLocalProxy = await createDirectLocalProxy();
+    await session.defaultSession.setProxy({
+      mode: 'fixed_servers',
+      proxyRules: `http://127.0.0.1:${directLocalProxy.port}`,
+      proxyBypassRules: 'localhost,127.0.0.1,<local>',
+    });
+    networkSplitEnabled = true;
+    console.info(`[NetworkSplit] enabled (${reason}): ordinary traffic direct via ${directLocalProxy.localAddress}; Spotify keeps the system route`);
+  } else {
+    await session.defaultSession.setProxy({ mode: 'system' });
+    const previousProxy = directLocalProxy;
+    directLocalProxy = null;
+    networkSplitEnabled = false;
+    if (previousProxy) await previousProxy.close().catch(() => {});
+    console.info(`[NetworkSplit] disabled (${reason}): all traffic follows the Windows system route`);
+  }
+  return { ok: true, enabled: networkSplitEnabled };
+}
+
+function queueNetworkSplitMode(enabled, reason) {
+  networkSplitApplyPromise = networkSplitApplyPromise
+    .catch(() => {})
+    .then(() => applyNetworkSplitMode(enabled, reason))
+    .catch((error) => {
+      console.warn('[NetworkSplit] apply failed:', error && error.message || error);
+      return { ok: false, enabled: networkSplitEnabled, error: error && error.message || 'NETWORK_SPLIT_APPLY_FAILED' };
+    });
+  return networkSplitApplyPromise;
+}
+
+function startNetworkSplitSettingsWatcher() {
+  if (networkSplitSettingsWatcherStarted) return;
+  networkSplitSettingsWatcherStarted = true;
+  const file = path.join(app.getPath('userData'), DESKTOP_SHELL_SETTINGS_FILE);
+  fs.watchFile(file, { interval: 800, persistent: false }, () => {
+    const nextEnabled = resolveNetworkSplitEnabled();
+    if (nextEnabled === networkSplitEnabled) return;
+    queueNetworkSplitMode(nextEnabled, 'external-switch');
+  });
+}
+
 function desktopUiStatePath() {
   return path.join(app.getPath('userData'), DESKTOP_UI_STATE_FILE);
 }
@@ -3474,6 +3529,29 @@ ipcMain.handle('mineradio-export-text-file', async (event, payload = {}) => {
   }
 });
 
+ipcMain.handle('mineradio-export-lxmc-file', async (event, payload = {}) => {
+  try {
+    const owner = getSenderWindow(event);
+    const requestedName = String(payload.defaultName || 'Mineradio歌单.lxmc').replace(/[\\/:*?"<>|]+/g, '-');
+    const defaultName = requestedName.toLowerCase().endsWith('.lxmc') ? requestedName : `${requestedName}.lxmc`;
+    const jsonText = JSON.stringify(payload.data || {});
+    if (!jsonText || jsonText.length > 32 * 1024 * 1024) {
+      return { ok: false, error: 'LXMC_EXPORT_TOO_LARGE' };
+    }
+    const result = await dialog.showSaveDialog(owner, {
+      title: '导出 LX Music 歌单',
+      defaultPath: defaultName,
+      filters: [{ name: 'LX Music 歌单', extensions: ['lxmc'] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+    const compressed = zlib.gzipSync(Buffer.from(jsonText, 'utf8'), { level: 6 });
+    fs.writeFileSync(result.filePath, compressed);
+    return { ok: true, filePath: result.filePath, bytes: compressed.length };
+  } catch (e) {
+    return { ok: false, error: e.message || 'EXPORT_LXMC_FAILED' };
+  }
+});
+
 ipcMain.handle('mineradio-import-json-file', async (event) => {
   try {
     const owner = getSenderWindow(event);
@@ -4741,29 +4819,11 @@ if (!gotSingleInstanceLock) {
     } catch (error) {
       console.warn('[Wallpaper Engine] local media protocol unavailable:', error && error.message || error);
     }
-    // Recipient PCs must work with their ordinary Windows network settings.
-    // Binding every request to one adapter breaks playback, artwork and imports
-    // on multi-adapter, campus and corporate networks even when no VPN is used.
-    // Keep the legacy direct route as an explicit diagnostics-only opt-in.
-    if (process.env.MINERADIO_FORCE_DIRECT_ROUTE === '1') {
-      try {
-        directLocalProxy = await createDirectLocalProxy();
-        await session.defaultSession.setProxy({
-          mode: 'fixed_servers',
-          proxyRules: `http://127.0.0.1:${directLocalProxy.port}`,
-          proxyBypassRules: 'localhost,127.0.0.1,<local>',
-        });
-        console.info(`[DirectLocalRoute] diagnostics opt-in: ${directLocalProxy.localAddress} via proxy port ${directLocalProxy.port}`);
-      } catch (error) {
-        directLocalProxy = null;
-        await session.defaultSession.setProxy({ mode: 'system' }).catch(() => {});
-        console.warn('[DirectLocalRoute] unavailable, using the system route:', error.message);
-      }
-    } else {
-      directLocalProxy = null;
-      await session.defaultSession.setProxy({ mode: 'system' }).catch(() => {});
-      console.info('[Network] using Windows system route (no VPN or private proxy required)');
-    }
+    // Ordinary Mineradio traffic can bypass the VPN while Spotify keeps the
+    // isolated system-network session below. An external switch persists the
+    // choice and the file watcher applies changes without restarting the app.
+    await queueNetworkSplitMode(resolveNetworkSplitEnabled(), 'startup');
+    startNetworkSplitSettingsWatcher();
     // Playlist imports use an isolated session so Spotify cookies and cache do
     // not leak into the renderer. Explicitly inherit the Windows system proxy;
     // relying on Chromium's partition default made domestic-network behavior

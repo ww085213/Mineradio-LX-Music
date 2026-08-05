@@ -6099,7 +6099,7 @@ body:not(.home-always-transparent) #empty-home .home-feature-card:hover{backgrou
         <div>
           <div class="update-kicker">MINERADIO 二创版</div>
           <div id="update-modal-title" class="update-title">New release</div>
-          <div id="update-modal-version" class="update-version">Mineradio v1.5.7.1</div>
+          <div id="update-modal-version" class="update-version">Mineradio v1.5.7.2</div>
         </div>
       </div>
       <div class="update-hero">
@@ -6608,8 +6608,8 @@ var updatePreviewState = {
   installerPath: '',
   installerOpened: false,
   cached: false,
-  currentVersion: '1.5.7.1',
-  version: '1.5.7.1',
+  currentVersion: '1.5.7.2',
+  version: '1.5.7.2',
   configured: false,
   preview: true,
   updateAvailable: false,
@@ -20866,6 +20866,25 @@ function makeContentListManager() {
     panelDrawAt = nowT;
   }
 
+  function drawSongCoverPlaceholder(ctx, x, y, size, song, isCenter) {
+    var title = String(song && (song.name || song.title) || '♪').trim() || '♪';
+    var hash = 0;
+    for (var i = 0; i < title.length; i++) hash = (hash * 31 + title.charCodeAt(i)) >>> 0;
+    var hue = hash % 360;
+    var gradient = ctx.createLinearGradient(x, y, x + size, y + size);
+    gradient.addColorStop(0, 'hsla(' + hue + ',72%,' + (isCenter ? '42%' : '34%') + ',.95)');
+    gradient.addColorStop(1, 'hsla(' + ((hue + 58) % 360) + ',68%,16%,.98)');
+    ctx.fillStyle = gradient;
+    ctx.fill();
+    ctx.font = '800 ' + Math.round(size * 0.40) + 'px "Microsoft YaHei", Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(255,255,255,.88)';
+    ctx.fillText(Array.from(title)[0] || '♪', x + size / 2, y + size / 2 + 1);
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
+  }
+
   function drawRow(row, song, isCenter) {
     var cv = row.canvas, ctx = cv.getContext('2d');
     var W = cv.width, H = cv.height;
@@ -20905,10 +20924,16 @@ function makeContentListManager() {
     var coverY = H/2 - coverSize/2;
     var songCover = songCoverSrc(song, 80);
     var hasSongCover = !!songCover;
+    if (!hasSongCover && actionReady && !song._mineradioCoverLookupPending) {
+      song._mineradioCoverLookupPending = true;
+      requestMissingSongCover(song, function(resolvedCover){
+        delete song._mineradioCoverLookupPending;
+        if (resolvedCover && row && row.mesh && row.mesh.parent) drawRow(row, row.song, !!row.lastCenter);
+      });
+    }
     if (actionReady || hasSongCover) {
       makeRoundRect(ctx, coverX, coverY, coverSize, coverSize, 13);
-      ctx.fillStyle = isCenter ? canvasAccent(0.12) : 'rgba(255,255,255,0.07)';
-      ctx.fill();
+      drawSongCoverPlaceholder(ctx, coverX, coverY, coverSize, song, isCenter);
       if (hasSongCover) {
         var songCoverRec = playlistCoverCache[songCover];
         if (songCoverRec && songCoverRec.loaded && songCoverRec.img) {
@@ -21548,27 +21573,101 @@ function drawCanvasHeart(ctx, cx, cy, size, color) {
 }
 function requestPlaylistCover(url, cb) {
   if (!url) { if (cb) cb(null); return; }
-  var rec = playlistCoverCache[url];
+  var originalUrl = String(url);
+  url = normalizeRemoteCoverUrl(url);
+  var rec = playlistCoverCache[url] || playlistCoverCache[originalUrl];
   if (rec && rec.loaded) { if (cb) setTimeout(function(){ cb(rec.img); }, 0); return; }
   if (rec && rec.loading) { if (cb) rec.waiters.push(cb); return; }
-  rec = playlistCoverCache[url] = { loaded:false, loading:true, waiters: cb ? [cb] : [], img:null, failed:false };
-  var img = new Image();
-  if (!isInlineCoverSrc(url)) img.crossOrigin = 'anonymous';
-  img.onload = function(){
-    rec.loaded = true; rec.loading = false; rec.img = img;
-    rec.waiters.splice(0).forEach(function(fn){ setTimeout(function(){ fn(img); }, 0); });
-  };
-  img.onerror = function(){
-    rec.loading = false; rec.failed = true;
-    rec.waiters.splice(0).forEach(function(fn){ setTimeout(function(){ fn(null); }, 0); });
-  };
-  var src = coverProxySrc(url);
-  if (!src) {
-    rec.loading = false; rec.failed = true;
-    rec.waiters.splice(0).forEach(function(fn){ setTimeout(function(){ fn(null); }, 0); });
+  if (rec && rec.failed && Date.now() - (rec.failedAt || 0) < 15000) {
+    if (cb) setTimeout(function(){ cb(null); }, 0);
     return;
   }
-  img.src = src;
+  rec = { loaded:false, loading:true, waiters: cb ? [cb] : [], img:null, failed:false, failedAt:0 };
+  playlistCoverCache[url] = rec;
+  playlistCoverCache[originalUrl] = rec;
+  var candidates = isInlineCoverSrc(url) ? [url] : [coverProxySrc(url), url];
+  candidates = candidates.filter(function(src, index, all){ return src && all.indexOf(src) === index; });
+  var candidateIndex = 0;
+  function finish(img) {
+    rec.loading = false;
+    rec.loaded = !!img;
+    rec.failed = !img;
+    rec.failedAt = img ? 0 : Date.now();
+    rec.img = img || null;
+    rec.waiters.splice(0).forEach(function(fn){ setTimeout(function(){ fn(img || null); }, 0); });
+  }
+  function tryNext() {
+    if (candidateIndex >= candidates.length) { finish(null); return; }
+    var img = new Image();
+    if (!isInlineCoverSrc(candidates[candidateIndex])) img.crossOrigin = 'anonymous';
+    img.onload = function(){ finish(img); };
+    img.onerror = function(){ candidateIndex++; tryNext(); };
+    img.src = candidates[candidateIndex];
+  }
+  tryNext();
+}
+var missingSongCoverRequests = Object.create(null);
+var missingSongCoverRetryAt = Object.create(null);
+var missingSongCoverSaveTimer = 0;
+function missingSongCoverKey(song) {
+  song = song || {};
+  return [normalizeLxSourceName(song.source || song.provider || song.type), song.songmid || song.id || song.hash || '', song.name || song.title || '', song.singer || song.artist || ''].join('|');
+}
+function missingSongCoverNorm(value) {
+  value = String(value || '');
+  try { value = value.normalize('NFKC'); } catch (_error) {}
+  return value.toLowerCase().replace(/[\s·・•_—–\-~,，.。!！?？:：;；'"“”‘’`´/\\|()（）\[\]【】]+/g, '');
+}
+function pickMissingSongCover(result, title, singer) {
+  var wantedTitle = missingSongCoverNorm(title);
+  var wantedSinger = missingSongCoverNorm(singer);
+  var candidates = result && Array.isArray(result.songs) ? result.songs : [];
+  var best = null, bestScore = -1;
+  candidates.forEach(function(candidate){
+    var candidateTitle = missingSongCoverNorm(candidate && (candidate.name || candidate.title));
+    var candidateSinger = missingSongCoverNorm(candidate && (candidate.singer || candidate.artist));
+    if (!candidateTitle || !(candidateTitle === wantedTitle || candidateTitle.indexOf(wantedTitle) >= 0 || wantedTitle.indexOf(candidateTitle) >= 0)) return;
+    var score = candidateTitle === wantedTitle ? 100 : 64;
+    if (wantedSinger && candidateSinger && (candidateSinger.indexOf(wantedSinger) >= 0 || wantedSinger.indexOf(candidateSinger) >= 0)) score += 36;
+    var cover = songCoverSrc(candidate, 160);
+    if (cover && score > bestScore) { best = { candidate:candidate, cover:cover }; bestScore = score; }
+  });
+  return best;
+}
+function requestMissingSongCover(song, cb) {
+  var sourceName = normalizeLxSourceName(song && (song.source || song.provider || song.type));
+  var title = String(song && (song.name || song.title) || '').trim();
+  if (!song || !title || !/^(tx|wy|kw|kg|mg)$/.test(sourceName)) { if (cb) cb(''); return; }
+  var key = missingSongCoverKey(song);
+  if (missingSongCoverRequests[key]) {
+    if (cb) missingSongCoverRequests[key].then(cb, function(){ cb(''); });
+    return;
+  }
+  if (missingSongCoverRetryAt[key] && Date.now() < missingSongCoverRetryAt[key]) { if (cb) cb(''); return; }
+  var singer = String(song.singer || song.artist || song.author || '').trim();
+  var query = [title, singer].filter(Boolean).join(' ');
+  var promise = apiJson('/api/lx-source/search?q=' + encodeURIComponent(query) + '&limit=8&sources=' + sourceName, { timeoutMs:8000 }).then(function(result){
+    var best = pickMissingSongCover(result, title, singer);
+    if (best) return best;
+    return apiJson('/api/song-cover-search?q=' + encodeURIComponent(query) + '&limit=12', { timeoutMs:10000 })
+      .then(function(fallbackResult){ return pickMissingSongCover(fallbackResult, title, singer); });
+  }).then(function(best){
+    if (!best) throw new Error('COVER_NOT_FOUND');
+    song.picUrl = best.cover;
+    song.cover = best.cover;
+    if (best.candidate.albumName && !song.albumName) song.albumName = best.candidate.albumName;
+    if (missingSongCoverSaveTimer) clearTimeout(missingSongCoverSaveTimer);
+    missingSongCoverSaveTimer = setTimeout(function(){
+      missingSongCoverSaveTimer = 0;
+      try { if (typeof saveLocalUserPlaylists === 'function') saveLocalUserPlaylists(); } catch (_error) {}
+    }, 900);
+    return best.cover;
+  }).catch(function(){
+    missingSongCoverRetryAt[key] = Date.now() + 5 * 60 * 1000;
+    return '';
+  }).finally(function(){ delete missingSongCoverRequests[key]; });
+  missingSongCoverRequests[key] = promise;
+  if (cb) promise.then(cb);
 }
 
 // ============================================================
@@ -22044,8 +22143,21 @@ function coverProxySrc(url, cacheBust) {
   }
   return '/api/image-proxy?url=' + encodeURIComponent(url) + (cacheBust ? '&v=' + Date.now() : '');
 }
+function normalizeRemoteCoverUrl(url) {
+  url = String(url || '').trim().replace(/&amp;/gi, '&');
+  if (url.indexOf('//') === 0) url = 'https:' + url;
+  if (/^http:\/\//i.test(url)) {
+    try {
+      var host = new URL(url).hostname.toLowerCase();
+      if (/(?:^|\.)(?:music\.126\.net|music\.163\.com|y\.gtimg\.cn|qq\.com|kugou\.com|kuwo\.cn|kwcdn\.kuwo\.cn)$/.test(host)) {
+        url = url.replace(/^http:/i, 'https:');
+      }
+    } catch (_error) {}
+  }
+  return url.replace(/ /g, '%20');
+}
 function mobileRemoteCoverSrc(url) {
-  url = String(url || '');
+  url = normalizeRemoteCoverUrl(url);
   if (!url || isInlineCoverSrc(url)) return url;
   if (window.MineradioMobile && window.MOBILE_API_ORIGIN && /^https?:\/\//i.test(url)) {
     return window.MOBILE_API_ORIGIN + '/api/cover?url=' + encodeURIComponent(url);
@@ -22053,6 +22165,7 @@ function mobileRemoteCoverSrc(url) {
   return url;
 }
 function coverUrlWithSize(url, size) {
+  url = normalizeRemoteCoverUrl(url);
   if (!url || isInlineCoverSrc(url) || !/^https?:\/\//i.test(url)) return url || '';
   if (!size) return url;
   // NetEase supports the `param=WxH` transform. Appending it to every CDN can
@@ -22114,8 +22227,11 @@ function songCoverSrc(song, size) {
   // renderer previously looked at cover only and therefore showed an empty
   // placeholder even though artwork was already available on the song.
   var album = song.album && typeof song.album === 'object' ? song.album : null;
-  var cover = song.cover || song.picUrl || song.albumCover || song.coverUrl || song.albumpic || song.img || song.image ||
-    (album && (album.cover || album.picUrl || album.albumCover || album.image)) || '';
+  var meta = song.meta && typeof song.meta === 'object' ? song.meta : null;
+  var cover = song.cover || song.picUrl || song.albumCover || song.coverUrl || song.coverImgUrl ||
+    song.albumPic || song.albumPicUrl || song.albumpic || song.artwork || song.artworkUrl || song.img || song.image || song.pic ||
+    (meta && (meta.picUrl || meta.cover || meta.albumCover || meta.coverUrl || meta.img || meta.image)) ||
+    (album && (album.cover || album.picUrl || album.albumCover || album.coverUrl || album.coverImgUrl || album.artworkUrl || album.img || album.image)) || '';
   return cover ? coverUrlWithSize(cover, size) : '';
 }
 function cssImageUrl(url) {
@@ -25248,6 +25364,98 @@ function selectSecondaryLibraryCollection(index) {
 function selectedSecondaryLibraryEntry() {
   return secondaryLibraryEntries.find(function(entry){ return entry.key === secondaryLibrarySelectedKey; }) || secondaryLibraryEntries[0] || null;
 }
+function secondaryLibraryExportSongs(entry) {
+  if (!entry) return [];
+  if (entry.source && Array.isArray(entry.source.songs)) return playlistSongsWithinLimit(entry.source.songs);
+  return playlistSongsWithinLimit(entry.songs);
+}
+function secondaryLibraryEntryCanExport(entry) {
+  return secondaryLibraryExportSongs(entry).length > 0;
+}
+function lxmcExportInterval(song) {
+  var interval = String(song && song.interval || '').trim();
+  if (interval) return interval;
+  var seconds = normalizePlaybackDurationSeconds(song && (song.duration || song.durationMs || song.dt));
+  return seconds > 0 ? formatProgramTime(seconds) : '';
+}
+function lxmcExportSong(song) {
+  song = song || {};
+  var sourceName = normalizeLxSourceName(song.source || song.provider || song.channel || song.type);
+  if (!/^(tx|wy|kw|kg|mg)$/.test(sourceName)) return null;
+  var fallbackIdPattern = /^(?:tx|wy|kw|kg|mg|song|row)_[0-9a-f]{12,}$/i;
+  var rawId = song.songmid || song.id || song.mid || song.rid || song.hash || song.FileHash || song.copyrightId || '';
+  if (song.importFallbackId === true || fallbackIdPattern.test(String(rawId))) rawId = '';
+  var meta = Object.assign({}, song.meta || {});
+  meta.songId = meta.songId == null || meta.songId === '' ? rawId : meta.songId;
+  meta.albumName = normalizeImportedLxText(meta.albumName || song.albumName || (typeof song.album === 'string' ? song.album : ''));
+  meta.albumId = meta.albumId == null ? (song.albumId || '') : meta.albumId;
+  meta.picUrl = meta.picUrl || songCoverSrc(song, 500) || '';
+  meta.qualitys = Array.isArray(meta.qualitys) ? meta.qualitys : (Array.isArray(song.types) ? song.types.slice() : []);
+  ['hash','strMediaMid','albumMid','copyrightId','lrcUrl','trcUrl','mrcUrl'].forEach(function(key){
+    if (meta[key] == null || meta[key] === '') meta[key] = song[key] || (key === 'hash' ? song.FileHash || song.fileHash || '' : '');
+  });
+  return {
+    id:rawId,
+    name:normalizeImportedLxText(song.name || song.title || ''),
+    singer:normalizeImportedLxText(song.singer || song.artist || song.author || '未知歌手'),
+    source:sourceName,
+    interval:lxmcExportInterval(song),
+    meta:meta
+  };
+}
+function buildSecondaryLibraryLxmc(entry) {
+  var source = entry && entry.source || {};
+  var inputSongs = secondaryLibraryExportSongs(entry);
+  var list = inputSongs.map(lxmcExportSong).filter(function(song){ return song && song.name && song.source; });
+  return {
+    payload:{
+      type:'playListPart_v2',
+      data:{
+        id:String(source.id || entry.key || ('mineradio_' + Date.now())),
+        name:String(entry.name || source.name || 'Mineradio歌单'),
+        source:normalizeLxSourceName(source.source || source.provider || ''),
+        sourceListId:String(source.sourceListId || source.id || ''),
+        list:list
+      }
+    },
+    total:inputSongs.length,
+    exported:list.length
+  };
+}
+async function exportLxmcBlobInBrowser(payload, fileName) {
+  if (typeof CompressionStream !== 'function') throw new Error('当前环境不支持 Gzip 导出');
+  var stream = new Blob([JSON.stringify(payload)], { type:'application/json' }).stream().pipeThrough(new CompressionStream('gzip'));
+  var blob = await new Response(stream).blob();
+  var url = URL.createObjectURL(blob);
+  var anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+  return { ok:true };
+}
+async function exportSecondaryLibraryPlaylist() {
+  var entry = selectedSecondaryLibraryEntry();
+  if (!secondaryLibraryEntryCanExport(entry)) { showToast('这个歌单还没有可导出的歌曲'); return; }
+  var built = buildSecondaryLibraryLxmc(entry);
+  if (!built.exported) { showToast('歌单中没有 LX 支持的在线歌曲，本地文件不会写入 .lxmc'); return; }
+  var fileName = String(entry.name || 'Mineradio歌单').replace(/[\\/:*?"<>|]+/g, '-') + '.lxmc';
+  try {
+    var api = window.desktopWindow;
+    var result = api && typeof api.exportLxmcFile === 'function'
+      ? await api.exportLxmcFile({ defaultName:fileName, data:built.payload })
+      : await exportLxmcBlobInBrowser(built.payload, fileName);
+    if (!result || result.canceled) return;
+    if (!result.ok) throw new Error(result.error || 'LXMC_EXPORT_FAILED');
+    var skipped = built.total - built.exported;
+    showToast('已导出 ' + built.exported + ' 首为 .lxmc' + (skipped ? '，跳过 ' + skipped + ' 首本地或不兼容来源歌曲' : ''));
+  } catch (error) {
+    console.warn('[LXMCExport]', error);
+    showToast('导出 .lxmc 失败：' + String(error && error.message || error || '未知错误'));
+  }
+}
 function secondaryLibraryEntryCanReorder(entry) {
   return !!(entry && !entry.searchSongs && entry.source && Array.isArray(entry.source.songs) && (entry.kind === 'custom' || entry.kind === 'lx'));
 }
@@ -25437,6 +25645,7 @@ function renderSecondaryLibraryDetail() {
     (canCustomizeCover ? '<button class="secondary-action" type="button" onclick="chooseSecondaryPlaylistCover()" title="选择本地图片并裁剪为歌单封面">' + (entry.customCover ? '更换封面' : '自定义封面') + '</button>' : '') +
     (canCustomizeCover && entry.customCover ? '<button class="secondary-action" type="button" onclick="clearSecondaryPlaylistCover()" title="恢复歌单原封面">恢复封面</button>' : '') +
     (secondaryLibraryEntryCanSync(entry) ? '<button class="secondary-action" type="button" onclick="syncSecondaryLibraryPlaylist()" title="' + syncTitle + '"' + (syncBusy ? ' disabled' : '') + '>' + (syncBusy ? '同步中…' : syncLabel) + '</button>' : '') +
+    (secondaryLibraryEntryCanExport(entry) ? '<button class="secondary-action" type="button" onclick="exportSecondaryLibraryPlaylist()" title="导出为可由 LX Music 导入的歌单文件">导出 .lxmc</button>' : '') +
     '<button class="secondary-action" type="button" onclick="toggleSecondaryLibraryBatchMode()">' + (secondaryLibraryBatchMode ? '取消选择' : '批量选择') + '</button>' +
     (secondaryLibraryEntryCanDeletePlaylist(entry) ? '<button class="secondary-action danger" type="button" onclick="deleteSecondaryLibraryPlaylist()">' + deleteLabel + '</button>' : '') + '</div></div>' +
     batchBar + '<div class="library-track-list">' + (songs.length ? songs.map(function(song, index){
@@ -29570,8 +29779,38 @@ function lxSourceQualityCandidates(sourceName) {
   });
   return out.length ? out : preferred;
 }
-var lxResolvePromise = null;
-var lxResolveSongKey = '';
+var lxResolvedAudioCache = Object.create(null);
+var lxResolveInflight = Object.create(null);
+var lxAudioPrefetchTimer = 0;
+var LX_RESOLVED_AUDIO_CACHE_TTL_MS = 90 * 1000;
+function lxResolvedAudioCacheKey(song, quality) {
+  song = song || {};
+  var sourceName = normalizeLxSourceName(song.source || song.provider || song.type);
+  return [
+    sourceName,
+    song.songmid || song.id || song.hash || song.FileHash || song.copyrightId || '',
+    song.name || song.title || '',
+    song.singer || song.artist || '',
+    quality || ''
+  ].join('|');
+}
+function invalidateLxResolvedAudioCache(song) {
+  var prefix = lxResolvedAudioCacheKey(song, '').replace(/\|$/, '');
+  Object.keys(lxResolvedAudioCache).forEach(function(key){
+    if (key.indexOf(prefix) === 0) delete lxResolvedAudioCache[key];
+  });
+}
+function cachedLxResolvedAudio(song, quality, excludedResolvers) {
+  var key = lxResolvedAudioCacheKey(song, quality);
+  var record = lxResolvedAudioCache[key];
+  if (!record || record.expiresAt <= Date.now()) {
+    if (record) delete lxResolvedAudioCache[key];
+    return null;
+  }
+  var excluded = (excludedResolvers || []).map(function(value){ return String(value || '').trim().toLowerCase(); });
+  if (record.resolver && excluded.indexOf(String(record.resolver).trim().toLowerCase()) >= 0) return null;
+  return record;
+}
 function applyCrossPlatformSongMatch(song, candidate, sourceName) {
   song = song || {};
   candidate = candidate || {};
@@ -29669,11 +29908,21 @@ async function resolveImportedLxAudio(song, excludedResolvers, options) {
   var qualities = lxSourceQualityCandidates(sourceName);
   var quality = String(options.quality || qualities[0] || '320k');
   song._requestedLxQuality = quality;
-  var songKey = [sourceName, payload.songmid || payload.id || payload.hash || payload.copyrightId || '', payload.name || '', payload.singer || ''].join('|');
-  if (lxResolvePromise && lxResolveSongKey === songKey) return lxResolvePromise;
-  lxResolveSongKey = songKey;
-  lxResolvePromise = (async function(){
-    console.info('[LXSourceResolveRequest]', { source:sourceName, quality:quality, musicInfo:payload });
+  var songKey = lxResolvedAudioCacheKey(song, quality);
+  var cached = cachedLxResolvedAudio(song, quality, excludedResolvers);
+  if (cached) {
+    song._lastLxResolver = String(cached.resolver || '');
+    return cached.url;
+  }
+  if (lxResolveInflight[songKey] && !(excludedResolvers && excludedResolvers.length)) {
+    return lxResolveInflight[songKey].then(function(url){
+      var inflightRecord = lxResolvedAudioCache[songKey];
+      if (inflightRecord) song._lastLxResolver = String(inflightRecord.resolver || '');
+      return url;
+    });
+  }
+  var resolvePromise = (async function(){
+    if (!options.prefetch) console.info('[LXSourceResolveRequest]', { source:sourceName, quality:quality, musicInfo:payload });
     var result;
     try {
       result = await apiJson('/api/lx-source/resolve', {
@@ -29696,19 +29945,57 @@ async function resolveImportedLxAudio(song, excludedResolvers, options) {
       }
       throw e;
     }
-    console.info('[LXSourceResolveResponse]', result);
+    if (!options.prefetch) console.info('[LXSourceResolveResponse]', result);
     if (result && result.ok && (/^https?:\/\//i.test(String(result.url || '')) || /^\/api\/audio\?/i.test(String(result.proxyUrl || '')))) {
       song._lastLxResolver = String(result.resolver || '');
-      return String(result.proxyUrl || result.url);
+      var resolvedUrl = String(result.proxyUrl || result.url);
+      lxResolvedAudioCache[songKey] = {
+        url:resolvedUrl,
+        resolver:song._lastLxResolver,
+        expiresAt:Date.now() + LX_RESOLVED_AUDIO_CACHE_TTL_MS
+      };
+      var cacheKeys = Object.keys(lxResolvedAudioCache);
+      if (cacheKeys.length > 80) delete lxResolvedAudioCache[cacheKeys[0]];
+      return resolvedUrl;
     }
     throw new Error(String(result && (result.error || result.message) || '音源未返回播放地址'));
   })();
+  if (!(excludedResolvers && excludedResolvers.length)) lxResolveInflight[songKey] = resolvePromise;
   try {
-    return await lxResolvePromise;
+    return await resolvePromise;
   } finally {
-    lxResolvePromise = null;
-    lxResolveSongKey = '';
+    if (lxResolveInflight[songKey] === resolvePromise) delete lxResolveInflight[songKey];
   }
+}
+function nextImportedLxPrefetchSong(playlistIndex, songIndex) {
+  var list = Number.isFinite(Number(playlistIndex)) && Number(playlistIndex) >= 0
+    ? lxMirrorPlaylists[Number(playlistIndex)] : null;
+  if (list && Array.isArray(list.songs) && list.songs.length > 1) {
+    var currentIndex = Number.isFinite(Number(songIndex)) ? Number(songIndex) : 0;
+    return list.songs[(currentIndex + 1) % list.songs.length] || null;
+  }
+  if (Array.isArray(playQueue) && playQueue.length > 1 && currentIdx >= 0) {
+    return playQueue[(currentIdx + 1) % playQueue.length] || null;
+  }
+  return null;
+}
+function scheduleImportedLxAudioPrefetch(token, playlistIndex, songIndex) {
+  if (lxAudioPrefetchTimer) clearTimeout(lxAudioPrefetchTimer);
+  lxAudioPrefetchTimer = setTimeout(function(){
+    lxAudioPrefetchTimer = 0;
+    if (token !== trackSwitchToken || playMode === 'single') return;
+    var nextSong = nextImportedLxPrefetchSong(playlistIndex, songIndex);
+    var nextSource = normalizeLxSourceName(nextSong && (nextSong.source || nextSong.provider || nextSong.type));
+    if (!nextSong || !/^(tx|wy|kw|kg|mg)$/.test(nextSource)) return;
+    resolveImportedLxAudio(nextSong, [], {
+      prefetch:true,
+      allowCrossPlatformFallback:false,
+      maxResolvers:3,
+      timeoutMs:18000
+    }).catch(function(error){
+      console.debug('[LXAudioPrefetch]', nextSong && nextSong.name, error && (error.message || error));
+    });
+  }, 700);
 }
 function prepareImportedLxPlayerUi(song) {
   document.getElementById('hint').classList.add('hidden');
@@ -29897,12 +30184,11 @@ async function startImportedAudioUrl(audioUrl) {
       audio.load();
       audio.muted = false;
       audio.__mrGesturePrimed = false;
-      // Chromium may reject play() immediately while a freshly assigned
-      // proxied stream is still at HAVE_NOTHING.  Wait for decodable media
-      // data first; this also distinguishes a real audio response from an
-      // HTML/JSON error page before consuming another resolver retry.
-      await waitForImportedAudioUsable(audio, 12000);
-      var started = await attemptAudioPlay({ manual:true, silent:true });
+      // Start the media request immediately. Waiting for loadeddata before
+      // play() serialized buffering and added up to 12 seconds to every
+      // uncached switch; the play promise already waits for usable media and
+      // the track-switch retry handles Chromium's rare early rejection.
+      var started = await attemptAudioPlay({ manual:true, silent:true, playTimeoutMs:6500 });
       if (started) {
         return true;
       }
@@ -29916,6 +30202,7 @@ async function startImportedAudioUrl(audioUrl) {
 }
 async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opts) {
   opts = opts || {};
+  if (lxAudioPrefetchTimer) { clearTimeout(lxAudioPrefetchTimer); lxAudioPrefetchTimer = 0; }
   var runtimeRetry = Math.max(0, Number(opts.runtimeRetry) || 0);
   var runtimeResumeSeconds = Math.max(0, Number(opts.resumeSeconds) || 0);
   safePlaybackStep('listen-session-finalize-lx-imported', function(){ finalizeListenSession(false); });
@@ -30015,6 +30302,7 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
       break;
     } catch (e) {
       lastPlaybackError = e;
+      invalidateLxResolvedAudioCache(song);
       var failedResolver = String(song._lastLxResolver || '');
       if (failedResolver && excludedResolvers.indexOf(failedResolver) < 0) excludedResolvers.push(failedResolver);
       if (sourceAttempt < installedSourceCount - 1) {
@@ -30039,6 +30327,7 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
   if (lastPlaybackError) throw lastPlaybackError;
   loadBeatMapForEveryTrack(song, (audio && audio.src) || attemptedAudioUrls[attemptedAudioUrls.length - 1] || '', playbackToken)
     .catch(function(error){ console.warn('[EveryTrackBeatLoad]', song && (song.name || song.title), error); });
+  scheduleImportedLxAudioPrefetch(playbackToken, playlistIndex, songIndex);
   if (runtimeResumeSeconds > 0.35) scheduleAudioResumePosition(audio, runtimeResumeSeconds, trackSwitchToken);
   // A stream can fail minutes after canplay (expired CDN URL, proxy reset, or
   // decoder failure). Initial-load retries do not see that case, so re-enter
@@ -30064,7 +30353,7 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
   safePlaybackStep('listen-session-begin-lx-imported', function(){
     beginListenSession(song, { type:'lx-imported', playlistIndex:playlistIndex, songIndex:songIndex, playlistName:song && song.lxPlaylistName || '' });
   });
-  await importedLyricsPromise;
+  Promise.resolve(importedLyricsPromise).catch(function(error){ console.warn('[LXImportedLyricsAsync]', error); });
   safeRenderQueuePanel('lx-imported-play', { scrollCurrent:true });
   scheduleShelfRebuild('lx-imported-play', true);
   showToast('Mineradio 播放：' + (song.name || '落雪歌曲'));
@@ -32185,7 +32474,12 @@ async function playQueueAt(idx, opts) {
     return;
   }
   var selectedSource = normalizeLxSourceName(selectedQueueSong && (selectedQueueSong.source || selectedQueueSong.provider));
-  if (selectedQueueSong && /^(tx|wy|kw|mg|kg)$/.test(selectedSource)) {
+  // Reference-only platforms (Spotify/Apple Music/Qishui) do not expose a
+  // directly playable URL. They still belong to the online playback path,
+  // where resolveImportedLxAudio() matches the selected track to an installed
+  // playable source. Letting them fall through reaches the local-file guard
+  // below, which made imported playlists fail from generic queue surfaces.
+  if (selectedQueueSong && /^(tx|wy|kw|mg|kg|sp|am|qs)$/.test(selectedSource)) {
     currentIdx = idx;
     try {
       await playImportedLxInsideMineradio(selectedQueueSong, -1, -1, opts);
@@ -32287,6 +32581,29 @@ async function playQueueAt(idx, opts) {
     showToast(playbackFailureToastText(setupErr));
   }
 }
+function waitForMediaPlayPromise(playPromise, timeoutMs) {
+  timeoutMs = Math.max(1500, Number(timeoutMs) || 9000);
+  return new Promise(function(resolve, reject){
+    var settled = false;
+    var timer = setTimeout(function(){
+      if (settled) return;
+      settled = true;
+      try { if (audio) audio.pause(); } catch (_error) {}
+      reject(new Error('音频启动超时'));
+    }, timeoutMs);
+    Promise.resolve(playPromise).then(function(value){
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    }, function(error){
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+}
 async function attemptAudioPlay(opts) {
   opts = opts || {};
   try {
@@ -32296,10 +32613,10 @@ async function attemptAudioPlay(opts) {
       if (opts.manual) {
         var manualPlay = audio.play();
         await resumeAudioAnalysis();
-        await manualPlay;
+        await waitForMediaPlayPromise(manualPlay, opts.playTimeoutMs);
       } else {
         await resumeAudioAnalysis();
-        await audio.play();
+        await waitForMediaPlayPromise(audio.play(), opts.playTimeoutMs);
       }
       await resumeAudioAnalysis();
       switchPlaybackVisualToEmily();

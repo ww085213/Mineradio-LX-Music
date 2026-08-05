@@ -287,6 +287,7 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   configureGlobalHotkeys: (bindings) => ipcRenderer.invoke('mineradio-hotkeys-configure-global', bindings || []),
   exportJsonFile: (payload) => ipcRenderer.invoke('mineradio-export-json-file', payload || {}),
   exportTextFile: (payload) => ipcRenderer.invoke('mineradio-export-text-file', payload || {}),
+  exportLxmcFile: (payload) => ipcRenderer.invoke('mineradio-export-lxmc-file', payload || {}),
   importJsonFile: () => ipcRenderer.invoke('mineradio-import-json-file'),
   copyText: (text) => ipcRenderer.invoke('mineradio-clipboard-write-text', String(text == null ? '' : text)),
   readText: () => ipcRenderer.invoke('mineradio-clipboard-read-text'),

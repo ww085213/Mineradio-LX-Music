@@ -39,14 +39,20 @@ function checkPortableExecutable(relativePath, minimumBytes) {
 const packageJson = JSON.parse(read('package.json'));
 const releaseVersion = packageJson.mineradio && packageJson.mineradio.releaseVersion;
 if (packageJson.version !== '1.5.7') fail(`npm package version 未同步为 1.5.7，实际为 ${packageJson.version}`);
-if (packageJson.build.buildVersion !== '1.5.7.1') fail('Windows buildVersion 未同步为 1.5.7.1');
-if (releaseVersion !== '1.5.7.1') fail('应用内 releaseVersion 未同步为 1.5.7.1');
+if (packageJson.build.buildVersion !== '1.5.7.2') fail('Windows buildVersion 未同步为 1.5.7.2');
+if (releaseVersion !== '1.5.7.2') fail('应用内 releaseVersion 未同步为 1.5.7.2');
 if (!packageJson.build.files.includes('bin/**/*')) fail('安装包未声明包含 bin/**/*');
 if (!packageJson.build.files.includes('node_modules/qrcode/**/*')) fail('安装包未显式声明包含 qrcode 运行时');
 if (!packageJson.build.files.includes('LICENSE')) fail('安装包未声明包含 GPL-3.0 LICENSE');
 if (!packageJson.build.files.includes('!public/**/*.map')) fail('正式安装包未排除前端源码映射文件');
 if (!packageJson.build.files.includes('!build/finalize-windows-release.js')) fail('正式安装包未排除仅用于发布机的收尾脚本');
-if (packageJson.build.nsis.artifactName !== 'Mineradio.Setup.1.5.7.1.${ext}') fail('安装包文件名版本不正确');
+if (packageJson.build.nsis.artifactName !== 'Mineradio.Setup.1.5.7.2.${ext}') fail('安装包文件名版本不正确');
+for (const forbidden of ['Mineradio-Network-Split-Switch.ps1', 'Mineradio网络分流开关.cmd', 'desktop-ui-state.json']) {
+  if (!packageJson.build.files.includes(`!${forbidden}`) && !packageJson.build.files.includes(`!**/${forbidden}`)) {
+    fail(`发布文件规则未显式排除私有文件: ${forbidden}`);
+  }
+  if (fs.existsSync(path.join(root, forbidden))) fail(`发布根目录不应包含: ${forbidden}`);
+}
 if (!packageJson.scripts['build:win'].includes('build/finalize-windows-release.js')) fail('Windows 构建未固定 latest.yml 的发布版本');
 if (packageJson.dependencies.qrcode !== '1.5.4') fail('局域网遥控二维码运行时依赖 qrcode@1.5.4 未固定');
 try {
@@ -73,11 +79,7 @@ requireText('desktop/main.js', mainSource, "'startup-storage-preserved'");
 requireText('desktop/main.js', mainSource, "require('./full-desktop-mode-runtime')");
 requireText('desktop/main.js', mainSource, 'enableDesktopFusionOverlay(payload || {})');
 requireText('desktop/main.js', mainSource, "iconLayerMode: enabled ? 'workerw-toggle' : ''");
-requireText('desktop/main.js', mainSource, 'setMainWindowDesktopEmbedded(true, { force:true })');
-requireText('desktop/main.js', mainSource, 'setMainWindowDesktopInteractive(!desired)');
-if (/fullDesktopModeRuntime\s*\.\s*enable\s*\(/.test(mainSource) || /getFullDesktopModeRuntime\(\)\s*\.\s*enable\s*\(/.test(mainSource)) {
-  fail('桌面融合仍可能启动复制图标的旧原生运行时');
-}
+requireText('desktop/main.js', mainSource, "runtime.setSoftwareInteractionLocked(");
 requireText('desktop/main.js', mainSource, "process.env.MINERADIO_FORCE_DIRECT_ROUTE === '1'");
 requireText('desktop/main.js', mainSource, "setProxy({ mode: 'system' })");
 if (/clearStorageData\s*\(\s*\{\s*storages\s*:\s*\[\s*['"]localstorage['"]\s*\]/.test(mainSource)) {
@@ -92,10 +94,6 @@ requireText('public/index.html', indexSource, 'body.desktop-wallpaper-mode #mobi
 requireText('public/index.html', indexSource, 'html.desktop-native-root #mobile-back-btn');
 requireText('public/index.html', indexSource, 'html.desktop-native-root #mobile-diy-btn');
 requireText('public/index.html', indexSource, 'id="desktop-fusion-corners"');
-requireText('public/index.html', indexSource, 'body.desktop-shell.desktop-embedded.desktop-software-locked #desktop-window-shell > *{pointer-events:none!important}');
-if (/desktop-software-locked[^\n{]*[^\n]*\{[^}]*visibility\s*:\s*hidden/i.test(indexSource)) {
-  fail('桌面融合锁定态仍会隐藏 Mineradio 画面');
-}
 requireText('public/index.html', indexSource, 'id="app-nav-diy"');
 requireText('public/index.html', indexSource, 'onclick="toggleDiyMode()"');
 requireText('public/index.html', indexSource, "['diy-mode-btn', 'fullscreen-diy-btn', 'app-nav-diy']");
@@ -137,18 +135,24 @@ requireText('public/index.html', indexSource, 'id="t-homeAlwaysTransparent"');
 requireText('public/index.html', indexSource, 'id="fx-desktoplyricsx"');
 requireText('server.js', serverSource, "pn === '/api/remote/info'");
 requireText('desktop/preload.js', preloadSource, 'exportTextFile:');
+requireText('desktop/preload.js', preloadSource, 'exportLxmcFile:');
 requireText('desktop/preload.js', preloadSource, 'copyText: (text)');
 requireText('desktop/preload.js', preloadSource, 'suppressDesktopOnlyMobileNavigation();');
 requireText('desktop/preload.js', preloadSource, "element.style.setProperty('display', 'none', 'important')");
 requireText('desktop/preload.js', preloadSource, "ipcRenderer.invoke('mineradio-clipboard-read-text')");
 requireText('desktop/main.js', mainSource, "ipcMain.handle('mineradio-clipboard-write-text'");
 requireText('desktop/main.js', mainSource, "ipcMain.handle('mineradio-clipboard-read-text'");
+requireText('desktop/main.js', mainSource, "ipcMain.handle('mineradio-export-lxmc-file'");
 requireText('desktop/main.js', mainSource, "require('./direct-local-proxy')");
 requireText('desktop/direct-local-proxy.js', proxySource, 'createDirectLocalProxy');
 requireText('desktop/main.js', mainSource, "path.join(__dirname, '..', 'bin', 'ffmpeg.exe')");
 requireText('wallpaper-converter.js', converterSource, "path.join(this.appDir, 'bin', 'ffmpeg.exe')");
 requireText('wallpaper-converter.js', converterSource, "path.join(this.appDir, 'bin', 'repkg', 'RePKG.exe')");
 requireText('public/index.html', indexSource, "lxSourceOneClickButton.addEventListener('click', oneClickImportLxSource)");
+requireText('public/index.html', indexSource, "type:'playListPart_v2'");
+requireText('public/index.html', indexSource, 'exportSecondaryLibraryPlaylist()');
+requireText('public/index.html', indexSource, 'requestMissingSongCover(song');
+requireText('public/index.html', indexSource, 'scheduleImportedLxAudioPrefetch');
 requireText('public/index.html', indexSource, 'body.empty-home-active #search-area{top:24px;opacity:1;pointer-events:auto}');
 requireText('public/index.html', indexSource, '一次选择一个或多个本地落雪音源脚本并导入');
 requireText('public/index.html', indexSource, '主要使用枪码复制和导入');
@@ -174,9 +178,6 @@ const platformImporterSource = read('platform-playlist-import.js');
 requireText('platform-playlist-import.js', platformImporterSource, 'embedFallback.songs.map');
 requireText('platform-playlist-import.js', platformImporterSource, 'The embed list is the canonical full ordering.');
 requireText('platform-playlist-import.js', platformImporterSource, 'selected song during playback');
-requireText('platform-playlist-import.js', platformImporterSource, "'spotify-playlist-cache'");
-requireText('platform-playlist-import.js', platformImporterSource, 'readSpotifyPlaylistCache(id)');
-requireText('platform-playlist-import.js', platformImporterSource, 'writeSpotifyPlaylistCache(id, result)');
 if (/songs\s*:\s*await\s+matchReferenceSongsForPlayback\(rows,\s*['"]spotifyMeta['"]\)/.test(platformImporterSource)) {
   fail('Spotify playlist import still waits for eager cross-platform matching');
 }
@@ -224,7 +225,7 @@ try {
 }
 
 try {
-  const coverStart = indexSource.indexOf('function coverUrlWithSize');
+  const coverStart = indexSource.indexOf('function normalizeRemoteCoverUrl');
   const coverEnd = indexSource.indexOf('function songCustomCoverKey', coverStart);
   if (coverStart < 0 || coverEnd < 0) throw new Error('cover helper source not found');
   const coverContext = { URL, isInlineCoverSrc: () => false };
