@@ -3,7 +3,9 @@
 ## 最新版本：1.5.7.2
 
 [下载 Windows 安装包](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.7.2/Mineradio.Setup.1.5.7.2.exe) / [查看 v1.5.7.2 Release](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.5.7.2)
+
 备用下载：
+
 - [百度网盘下载](https://pan.baidu.com/s/1nUXfOeCM5Bc_ZPznheKeiA?pwd=qm21)（提取码：`qm21`）
 - [夸克网盘下载](https://pan.quark.cn/s/cefc42f0d25e)
 
