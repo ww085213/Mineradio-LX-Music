@@ -8,7 +8,7 @@ Set-StrictMode -Version Latest
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $binRoot = Join-Path $repoRoot 'bin'
 $repkgRoot = Join-Path $binRoot 'repkg'
-$cacheRoot = Join-Path ([IO.Path]::GetTempPath()) 'MineradioBuildTools\1.5.6.1'
+$cacheRoot = Join-Path ([IO.Path]::GetTempPath()) 'MineradioBuildTools\1.6.0'
 
 $ffmpegArchiveUrl = 'https://github.com/GyanD/codexffmpeg/releases/download/8.1.1/ffmpeg-8.1.1-full_build.zip'
 $ffmpegArchiveSha256 = '49B28C5F16ADDD40239A66949973458769B7056FB7752C30AC0D53389D09A552'
@@ -19,7 +19,14 @@ $repkgExeSha256 = 'B5E0D603BAD5BE7C6605C31B96DDFB8BC2391658F777872A56F283AB2038A
 
 function Get-Sha256([string]$Path) {
   if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return '' }
-  return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToUpperInvariant()
+  $stream = [IO.File]::OpenRead($Path)
+  $algorithm = [Security.Cryptography.SHA256]::Create()
+  try {
+    return ([BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace('-', '').ToUpperInvariant()
+  } finally {
+    $algorithm.Dispose()
+    $stream.Dispose()
+  }
 }
 
 function Assert-Hash([string]$Path, [string]$Expected, [string]$Label) {

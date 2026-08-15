@@ -5,10 +5,12 @@
   var FADE_STORE_KEY = 'mineradio-audio-fade-v1';
   var FADE_DEFAULT_MIGRATION_KEY = 'mineradio-original-fade-default-v2';
   var BEAT_SHAKE_DEFAULT_MIGRATION_KEY = 'mineradio-original-beat-shake-default-v2';
+  var CONTROL_GLASS_REFRACTION_STORE_KEY = 'mineradio-search-player-refraction-v1';
+  var controlGlassRefractionEnabled = false;
   var DEFAULTS = {
     sonicGroundAmplitude: 50, sonicGroundMotionSpeed: 50, sonicGroundDensity: 46,
     sonicGroundRange: 82, sonicGroundLower: 68, sonicGroundDepth: 62,
-    sonicGroundAutoRotate: 50, sonicGroundColorMode: 'cover', sonicAdaptiveSongColor: false,
+    sonicGroundAutoRotate: 50, sonicGroundColorMode: 'cover', sonicAdaptiveSongColor: true,
     sonicGroundBaseColor: '#05070c', sonicGroundCoolColor: '#0066ff',
     sonicGroundWarmColor: '#ff3c19', sonicGroundAccentColor: '#33e6ff',
     sonicGroundGlow: 20, sonicGroundSubBass: 90, sonicGroundBass: 92,
@@ -22,10 +24,11 @@
     sonicAudioThreshold: 32, sonicAudioPulseStrength: 62,
     sonicWorkshopInputGain: 82, sonicWorkshopAudioIntensity: 1.15,
     sonicWorkshopResponseRange: 1.30, sonicWorkshopPeakIntensity: 0.62,
+    sonicWorkshopAdaptiveSongColor: true,
     sonicWorkshopColorMode: 'cover', sonicWorkshopTheme: 'minimal-monochrome',
     sonicWorkshopCustomColor: '#d9dde3', sonicWorkshopBaseColorMode: 'cover',
     sonicWorkshopBaseColor: '#0b0c0e', sonicWorkshopWarmColorMode: 'cover',
-    sonicWorkshopWarmColor: '#d9dde3', sonicWorkshopCoolColorMode: 'custom',
+    sonicWorkshopWarmColor: '#d9dde3', sonicWorkshopCoolColorMode: 'cover',
     sonicWorkshopCoolColor: '#ffffff', sonicWorkshopRippleColorMode: 'cover',
     sonicWorkshopRippleColor: '#ffffff', sonicWorkshopPeakColorMode: 'cover',
     sonicWorkshopPeakColor: '#f2f5f8',
@@ -125,6 +128,16 @@
     fx.lyricMotionStyle = /^(off|float|smooth|glass|shine|glitch)$/.test(String(fx.lyricMotionStyle || '')) ? String(fx.lyricMotionStyle) : 'off';
     fx.lyricGlitchEnabled = fx.lyricMotionStyle === 'glitch';
     fx.albumGaplessEnabled = fx.albumGaplessEnabled !== false;
+    // The color modes are the source of truth for existing users. Older builds
+    // stored the Ajin switch without connecting it to the renderer.
+    fx.sonicAdaptiveSongColor = fx.sonicGroundColorMode !== 'custom';
+    if (saved.sonicWorkshopAdaptiveSongColor == null) {
+      fx.sonicWorkshopAdaptiveSongColor = fx.sonicWorkshopColorMode !== 'custom';
+    }
+    var workshopMode = fx.sonicWorkshopAdaptiveSongColor === true ? 'cover' : 'custom';
+    ['sonicWorkshopColorMode','sonicWorkshopBaseColorMode','sonicWorkshopWarmColorMode','sonicWorkshopCoolColorMode','sonicWorkshopRippleColorMode','sonicWorkshopPeakColorMode'].forEach(function (key) {
+      fx[key] = workshopMode;
+    });
   }
   function outputFor(input, value, digits) {
     if (!input) return;
@@ -136,6 +149,7 @@
     [
       ['t-sonicGroundFloatingEnabled','sonicGroundFloatingEnabled'],
       ['t-sonicAdaptiveSongColor','sonicAdaptiveSongColor'],
+      ['t-sonicWorkshopAdaptiveSongColor','sonicWorkshopAdaptiveSongColor'],
       ['t-sonicAudioMonitorEnabled','sonicAudioMonitorEnabled'],
       ['t-sonicAudioAutoTrack','sonicAudioAutoTrack'],
       ['t-lyricBeatShakeEnabled','lyricBeatShakeEnabled'],
@@ -221,7 +235,62 @@
   }
 
   window.refreshOriginalFeatureUi = refreshOriginalFeatureUi;
+  function setSonicGroundAdaptiveSongColor(enabled, silent) {
+    enabled = enabled === true;
+    if (enabled) {
+      fx.sonicGroundColorMode = 'cover';
+    } else {
+      var colors = typeof sonicGroundCoverPreviewColors === 'function' ? sonicGroundCoverPreviewColors() : null;
+      ['sonicGroundBaseColor','sonicGroundCoolColor','sonicGroundWarmColor','sonicGroundAccentColor'].forEach(function (key) {
+        if (colors && colors[key]) fx[key] = hex(colors[key], DEFAULTS[key]);
+      });
+      fx.sonicGroundColorMode = 'custom';
+    }
+    fx.sonicAdaptiveSongColor = enabled;
+    persist(); refreshToggles(); refreshColors();
+    if (typeof updateSonicGroundColorControls === 'function') updateSonicGroundColorControls();
+    if (typeof syncFxUniforms === 'function') syncFxUniforms();
+    if (typeof saveLyricLayout === 'function') saveLyricLayout({ user:true, reason:'sonicAdaptiveSongColor' });
+    if (!silent && typeof showToast === 'function') showToast(enabled ? '音域回响 · Ajin：已随歌曲变色' : '音域回响 · Ajin：已固定当前颜色');
+  }
+  function setSonicWorkshopAdaptiveSongColor(enabled, silent) {
+    enabled = enabled === true;
+    var controls = [
+      ['theme','sonicWorkshopColorMode','sonicWorkshopCustomColor'],
+      ['base','sonicWorkshopBaseColorMode','sonicWorkshopBaseColor'],
+      ['warm','sonicWorkshopWarmColorMode','sonicWorkshopWarmColor'],
+      ['cool','sonicWorkshopCoolColorMode','sonicWorkshopCoolColor'],
+      ['ripple','sonicWorkshopRippleColorMode','sonicWorkshopRippleColor'],
+      ['peak','sonicWorkshopPeakColorMode','sonicWorkshopPeakColor']
+    ];
+    if (!enabled) {
+      controls.forEach(function (item) {
+        var value = typeof sonicWorkshopRegionHex === 'function' ? sonicWorkshopRegionHex(item[0]) : fx[item[2]];
+        if (item[0] === 'theme' && typeof sonicWorkshopCoverHex === 'function') value = sonicWorkshopCoverHex('primary');
+        fx[item[2]] = hex(value, DEFAULTS[item[2]]);
+      });
+    }
+    controls.forEach(function (item) { fx[item[1]] = enabled ? 'cover' : 'custom'; });
+    fx.sonicWorkshopAdaptiveSongColor = enabled;
+    persist(); refreshToggles(); refreshColors();
+    if (typeof pushSonicWorkshopColorChange === 'function') pushSonicWorkshopColorChange('sonicWorkshopAdaptiveSongColor');
+    else {
+      if (window.MineradioSonicWorkshop && typeof MineradioSonicWorkshop.pushProperties === 'function') MineradioSonicWorkshop.pushProperties(true);
+      if (typeof syncFxUniforms === 'function') syncFxUniforms();
+    }
+    if (!silent && typeof showToast === 'function') showToast(enabled ? '音域回响 · Wallpaper Engine：已随歌曲变色' : '音域回响 · Wallpaper Engine：已固定当前颜色');
+  }
+  window.setSonicGroundAdaptiveSongColor = setSonicGroundAdaptiveSongColor;
+  window.setSonicWorkshopAdaptiveSongColor = setSonicWorkshopAdaptiveSongColor;
   window.toggleOriginalFeature = function (key) {
+    if (key === 'sonicAdaptiveSongColor') {
+      setSonicGroundAdaptiveSongColor(!fx.sonicAdaptiveSongColor);
+      return;
+    }
+    if (key === 'sonicWorkshopAdaptiveSongColor') {
+      setSonicWorkshopAdaptiveSongColor(!fx.sonicWorkshopAdaptiveSongColor);
+      return;
+    }
     fx[key] = !fx[key];
     persist(); refreshToggles();
     if (/^sonicAudio/.test(key) && typeof refreshSonicAudioMonitorUi === 'function') refreshSonicAudioMonitorUi();
@@ -270,12 +339,15 @@
   };
   window.resetSonicGroundColor = function (key) {
     if (!Object.prototype.hasOwnProperty.call(DEFAULTS, key)) return;
-    fx[key] = DEFAULTS[key]; fx.sonicGroundColorMode = 'custom'; persist(); refreshColors();
+    fx[key] = DEFAULTS[key]; fx.sonicGroundColorMode = 'custom'; fx.sonicAdaptiveSongColor = false; persist(); refreshColors(); refreshToggles();
   };
   window.setSonicWorkshopRegionColorMode = function (region, mode) {
     var map = { theme:'sonicWorkshopColorMode', base:'sonicWorkshopBaseColorMode', warm:'sonicWorkshopWarmColorMode', cool:'sonicWorkshopCoolColorMode', ripple:'sonicWorkshopRippleColorMode', peak:'sonicWorkshopPeakColorMode' };
     if (!map[region]) return;
-    fx[map[region]] = mode === 'custom' ? 'custom' : 'cover'; persist(); refreshColors();
+    fx[map[region]] = mode === 'custom' ? 'custom' : 'cover';
+    fx.sonicWorkshopAdaptiveSongColor = Object.keys(map).every(function (key) { return fx[map[key]] === 'cover'; });
+    persist(); refreshColors(); refreshToggles();
+    if (typeof pushSonicWorkshopColorChange === 'function') pushSonicWorkshopColorChange('sonicWorkshopRegionColors');
   };
   window.setSonicWorkshopTheme = function (name) {
     var palette = WORKSHOP_THEMES[name] || WORKSHOP_THEMES['minimal-monochrome'];
@@ -286,7 +358,9 @@
     fx.sonicWorkshopCoolColorMode = 'custom'; fx.sonicWorkshopCoolColor = palette[3];
     fx.sonicWorkshopRippleColorMode = 'custom'; fx.sonicWorkshopRippleColor = palette[4];
     fx.sonicWorkshopPeakColorMode = 'custom'; fx.sonicWorkshopPeakColor = palette[5];
-    persist(); refreshColors(); refreshSonicPane();
+    fx.sonicWorkshopAdaptiveSongColor = false;
+    persist(); refreshColors(); refreshToggles(); refreshSonicPane();
+    if (typeof pushSonicWorkshopColorChange === 'function') pushSonicWorkshopColorChange('sonicWorkshopRegionColors');
   };
 
   function bindSliders() {
@@ -309,8 +383,10 @@
       if (!input || input._originalFeatureBound) return;
       input._originalFeatureBound = true;
       input.addEventListener('input', function () {
+        if (/^sonic-ground-/.test(id)) fx.sonicAdaptiveSongColor = false;
+        if (/^sonic-workshop-/.test(id) && fx.sonicWorkshopAdaptiveSongColor === true) setSonicWorkshopAdaptiveSongColor(false, true);
         fx[field[0]] = hex(input.value, DEFAULTS[field[0]] || '#ffffff');
-        fx[field[1]] = 'custom'; persist(); refreshColors();
+        fx[field[1]] = 'custom'; persist(); refreshColors(); refreshToggles();
       });
     });
   }
@@ -418,7 +494,8 @@
     var duration = Math.max(180, Math.min(1200, Number(AUDIO_FADE_OUT_MS) || 420));
     if (isFinite(remaining) && remaining > 0) duration = Math.min(duration, Math.max(160, Math.round(remaining * 1000 + 45)));
     try {
-      incoming.muted = false; incoming.volume = 0;
+      incoming.muted = typeof voiceInputIsolationDepth !== 'undefined' && voiceInputIsolationDepth > 0;
+      incoming.volume = 0;
       var start = incoming.play();
       Promise.resolve(start).then(function () {
         if (pending !== gapless.preload || token !== trackSwitchToken) { clearOriginalGaplessPreload('mix-stale'); return; }
@@ -431,7 +508,9 @@
         function step(now) {
           if (pending !== gapless.preload || token !== trackSwitchToken) { clearOriginalGaplessPreload('mix-cancel'); return; }
           var t = clamp((now - started) / duration, 0, 1), theta = t * Math.PI * 0.5;
-          var outGain = target * Math.cos(theta), inGain = target * Math.sin(theta);
+          var voiceIsolated = typeof voiceInputIsolationDepth !== 'undefined' && voiceInputIsolationDepth > 0;
+          var outGain = voiceIsolated ? 0 : target * Math.cos(theta), inGain = voiceIsolated ? 0 : target * Math.sin(theta);
+          incoming.muted = voiceIsolated;
           if (gainNode && gainNode.gain) gainNode.gain.value = outGain; else if (outgoing) outgoing.volume = outGain;
           incoming.volume = inGain;
           if (t < 1) { gapless.frame = requestAnimationFrame(step); return; }
@@ -468,9 +547,10 @@
         source.connect(analyser); source.connect(beatAnalyser);
       } catch (error) { console.warn('[OriginalGapless] analyser handoff', error); }
     }
-    audioReady = true; audio.volume = gainNode ? 1 : clamp(targetVolume, 0, 1);
+    var voiceIsolated = typeof voiceInputIsolationDepth !== 'undefined' && voiceInputIsolationDepth > 0;
+    audioReady = true; audio.muted = voiceIsolated; audio.volume = gainNode ? 1 : (voiceIsolated ? 0 : clamp(targetVolume, 0, 1));
     if (gainNode && audioCtx && gainNode.gain) {
-      try { gainNode.gain.cancelScheduledValues(audioCtx.currentTime); gainNode.gain.setValueAtTime(clamp(targetVolume, 0, 1), audioCtx.currentTime); } catch (_e2) {}
+      try { gainNode.gain.cancelScheduledValues(audioCtx.currentTime); gainNode.gain.setValueAtTime(voiceIsolated ? 0 : clamp(targetVolume, 0, 1), audioCtx.currentTime); } catch (_e2) {}
     }
     if (outgoing && outgoing !== incoming) {
       try { outgoing.onended = null; outgoing.pause(); outgoing.removeAttribute('src'); outgoing.load(); } catch (_e3) {}
@@ -478,7 +558,52 @@
     return true;
   };
 
+  function applyControlGlassRefractionPreference() {
+    document.documentElement.classList.toggle('control-glass-refraction-off', !controlGlassRefractionEnabled);
+    var toggle = document.getElementById('t-controlGlassRefraction');
+    if (toggle) {
+      toggle.classList.toggle('on', controlGlassRefractionEnabled);
+      toggle.setAttribute('aria-pressed', controlGlassRefractionEnabled ? 'true' : 'false');
+      toggle.setAttribute('aria-checked', controlGlassRefractionEnabled ? 'true' : 'false');
+    }
+    if (controlGlassRefractionEnabled) {
+      try {
+        if (typeof applyControlGlassChromaticOffset === 'function') applyControlGlassChromaticOffset();
+        if (typeof updateControlGlassDisplacementMap === 'function') updateControlGlassDisplacementMap();
+        if (typeof updateSearchBoxGlassDisplacementMap === 'function') updateSearchBoxGlassDisplacementMap();
+      } catch (_error) {}
+    }
+  }
+
+  function ensureControlGlassRefractionToggle() {
+    var grid = document.getElementById('ui-motion-controls');
+    if (!grid) return null;
+    var toggle = document.getElementById('t-controlGlassRefraction');
+    if (!toggle) {
+      toggle = document.createElement('div');
+      toggle.className = 'fx-toggle';
+      toggle.id = 't-controlGlassRefraction';
+      toggle.title = '关闭后，搜索栏和播放条完全透明，不再产生模糊、扭曲和彩边';
+      toggle.innerHTML = '<span>搜索栏播放条折射</span><span class="dot"></span>';
+      toggle.addEventListener('click', function () {
+        controlGlassRefractionEnabled = !controlGlassRefractionEnabled;
+        try { localStorage.setItem(CONTROL_GLASS_REFRACTION_STORE_KEY, controlGlassRefractionEnabled ? '1' : '0'); } catch (_error) {}
+        applyControlGlassRefractionPreference();
+        if (typeof showToast === 'function') showToast(controlGlassRefractionEnabled ? '搜索栏与播放条折射已开启' : '已切换为纯透明玻璃');
+      });
+      grid.appendChild(toggle);
+    }
+    applyControlGlassRefractionPreference();
+    return toggle;
+  }
+  window.toggleControlGlassRefraction = function () {
+    var toggle = ensureControlGlassRefractionToggle();
+    if (toggle) toggle.click();
+  };
+
   function bindAll() {
+    try { controlGlassRefractionEnabled = localStorage.getItem(CONTROL_GLASS_REFRACTION_STORE_KEY) === '1'; } catch (_error) { controlGlassRefractionEnabled = false; }
+    ensureControlGlassRefractionToggle();
     mergeDefaults();
     ensureOriginalFadeDefaults();
     try {

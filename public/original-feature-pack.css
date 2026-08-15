@@ -33,3 +33,35 @@
 .playback-gapless-toggle{width:100%;min-height:34px;margin-top:10px;border:1px solid rgba(255,255,255,.09);border-radius:9px;background:rgba(255,255,255,.045);color:rgba(255,255,255,.62);font:700 10.5px inherit;cursor:pointer;transition:.18s}
 .playback-gapless-toggle.on{color:#eafffb;border-color:rgba(110,240,225,.32);background:rgba(76,210,195,.12);box-shadow:inset 0 0 18px rgba(91,235,222,.06)}
 @media (max-width:620px){.lyric-motion-style-seg,.sonic-workshop-theme-seg{grid-template-columns:repeat(3,minmax(0,1fr))!important}.memory-action-row{grid-template-columns:1fr}.volume-popover.original-fade-popover{width:auto}}
+
+/* Search/player glass mode: preserve translucent blur but remove the SVG
+   displacement and RGB refraction from these two large horizontal surfaces. */
+html.control-glass-refraction-off #search-box{
+  background:rgba(232,240,250,var(--liquid-glass-opacity))!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+  box-shadow:none!important;
+}
+html.control-glass-refraction-off #bottom-bar.visible,
+html.control-glass-refraction-off body.has-playing-strip #bottom-bar,
+html.control-glass-refraction-off body.player-strip-ready #bottom-bar.visible{
+  background:rgba(232,240,250,var(--liquid-glass-opacity))!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+  box-shadow:none!important;
+}
+
+/* The compact Now Flow strip is the player shown by the current desktop
+   layout. Keep it in the same preference as the full bottom control bar. */
+html.control-glass-refraction-off #now-flow,
+html.control-glass-refraction-off body.now-flow-only #now-flow{
+  background:rgba(232,240,250,var(--liquid-glass-opacity))!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+  box-shadow:none!important;
+}
+
+html.control-glass-refraction-off #now-flow::before{
+  content:none!important;
+  animation:none!important;
+}

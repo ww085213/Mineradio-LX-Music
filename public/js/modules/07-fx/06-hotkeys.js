@@ -97,6 +97,12 @@ function executeHotkeyAction(actionKey, source) {
   if (actionKey === 'volumeUp') return adjustVolumeByKeyboard(0.05);
   if (actionKey === 'volumeDown') return adjustVolumeByKeyboard(-0.05);
   if (actionKey === 'toggleFullscreen') return toggleFullscreen();
+  if (actionKey === 'toggleMusicAgent') {
+    var musicAgent = window.MineradioMusicAgentCommand;
+    if (musicAgent && typeof musicAgent.toggle === 'function') return musicAgent.toggle();
+    if (musicAgent && typeof musicAgent.open === 'function') return musicAgent.open();
+    return;
+  }
   if (actionKey === 'toggleDesktopInteraction') {
     var api = getDesktopWindowApi && getDesktopWindowApi();
     if (!api || typeof api.getState !== 'function') return;

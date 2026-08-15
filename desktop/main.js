@@ -8,7 +8,6 @@ const crypto = require('crypto');
 const { execFile, spawn } = require('child_process');
 const appMemory = require('./app-memory');
 const systemMemory = require('./system-memory');
-const { createDirectLocalProxy } = require('./direct-local-proxy');
 const {
   WallpaperEngineLibrary,
   registerWallpaperEngineScheme,
@@ -28,10 +27,6 @@ let mainWindowDesktopEmbeddingUncertain = false;
 let mainWindowPreDesktopBounds = null;
 let mainWindowPreDesktopState = null;
 let localServer = null;
-let directLocalProxy = null;
-let networkSplitEnabled = true;
-let networkSplitApplyPromise = Promise.resolve();
-let networkSplitSettingsWatcherStarted = false;
 let mainServerPort = 0;
 let desktopLyricsWindow = null;
 let desktopLyricsState = {};
@@ -1786,57 +1781,6 @@ function writeDesktopShellSettings(patch) {
   return next;
 }
 
-function resolveNetworkSplitEnabled() {
-  if (process.env.MINERADIO_FORCE_DIRECT_ROUTE === '1') return true;
-  if (process.env.MINERADIO_FORCE_DIRECT_ROUTE === '0') return false;
-  const saved = readDesktopShellSettings();
-  return typeof saved.networkSplitEnabled === 'boolean' ? saved.networkSplitEnabled : true;
-}
-
-async function applyNetworkSplitMode(enabled, reason = 'runtime') {
-  const nextEnabled = enabled !== false;
-  if (nextEnabled) {
-    if (!directLocalProxy) directLocalProxy = await createDirectLocalProxy();
-    await session.defaultSession.setProxy({
-      mode: 'fixed_servers',
-      proxyRules: `http://127.0.0.1:${directLocalProxy.port}`,
-      proxyBypassRules: 'localhost,127.0.0.1,<local>',
-    });
-    networkSplitEnabled = true;
-    console.info(`[NetworkSplit] enabled (${reason}): ordinary traffic direct via ${directLocalProxy.localAddress}; Spotify keeps the system route`);
-  } else {
-    await session.defaultSession.setProxy({ mode: 'system' });
-    const previousProxy = directLocalProxy;
-    directLocalProxy = null;
-    networkSplitEnabled = false;
-    if (previousProxy) await previousProxy.close().catch(() => {});
-    console.info(`[NetworkSplit] disabled (${reason}): all traffic follows the Windows system route`);
-  }
-  return { ok: true, enabled: networkSplitEnabled };
-}
-
-function queueNetworkSplitMode(enabled, reason) {
-  networkSplitApplyPromise = networkSplitApplyPromise
-    .catch(() => {})
-    .then(() => applyNetworkSplitMode(enabled, reason))
-    .catch((error) => {
-      console.warn('[NetworkSplit] apply failed:', error && error.message || error);
-      return { ok: false, enabled: networkSplitEnabled, error: error && error.message || 'NETWORK_SPLIT_APPLY_FAILED' };
-    });
-  return networkSplitApplyPromise;
-}
-
-function startNetworkSplitSettingsWatcher() {
-  if (networkSplitSettingsWatcherStarted) return;
-  networkSplitSettingsWatcherStarted = true;
-  const file = path.join(app.getPath('userData'), DESKTOP_SHELL_SETTINGS_FILE);
-  fs.watchFile(file, { interval: 800, persistent: false }, () => {
-    const nextEnabled = resolveNetworkSplitEnabled();
-    if (nextEnabled === networkSplitEnabled) return;
-    queueNetworkSplitMode(nextEnabled, 'external-switch');
-  });
-}
-
 function desktopUiStatePath() {
   return path.join(app.getPath('userData'), DESKTOP_UI_STATE_FILE);
 }
@@ -3400,7 +3344,35 @@ ipcMain.handle('mineradio-desktop-keyboard-focus', (_event, reason) => {
       status: getDesktopFusionOverlayStatus(String(reason || 'renderer-keyboard-focus')),
     };
   }
-  return getFullDesktopModeRuntime().requestKeyboardFocus(String(reason || 'renderer-keyboard-focus'));
+  const focusReason = String(reason || 'renderer-keyboard-focus');
+  const desktopRuntime = getFullDesktopModeRuntime();
+  const desktopResult = desktopRuntime.requestKeyboardFocus(focusReason);
+  if (desktopResult && (desktopResult.ok === true || desktopResult.error === 'DESKTOP_SOFTWARE_LOCKED')) {
+    return desktopResult;
+  }
+
+  // A native confirm dialog can leave an ordinary Electron window visible and
+  // mouse-clickable while its webContents no longer owns keyboard focus. The
+  // full-desktop runtime correctly rejects this state as inactive, so provide
+  // a normal-window fallback without changing mouse-through/desktop locks.
+  const senderWindow = getSenderWindow(_event);
+  const focusWindow = senderWindow && !senderWindow.isDestroyed() ? senderWindow : mainWindow;
+  const runtimeStatus = desktopResult && desktopResult.status || {};
+  const ordinaryWindow = !!(focusWindow && !focusWindow.isDestroyed())
+    && mainWindowDesktopEmbedded !== true
+    && runtimeStatus.enabled !== true;
+  if (!ordinaryWindow) return desktopResult;
+  try { focusWindow.setFocusable(true); } catch (_error) {}
+  try { focusWindow.show(); } catch (_error) {}
+  try { focusWindow.focus(); } catch (_error) {}
+  try { focusWindow.webContents.focus(); } catch (_error) {}
+  return {
+    ok: true,
+    focused: true,
+    fallback: 'ordinary-window',
+    error: '',
+    status: runtimeStatus,
+  };
 });
 
 ipcMain.handle('desktop-window-close', (event) => {
@@ -3778,6 +3750,37 @@ ipcMain.handle('mineradio-wallpaper-engine-start-scene', async (_event, payload 
     try { mainWindow.moveTop(); } catch (_error) {}
     try { mainWindow.focus(); } catch (_error) {}
     return { ...started, ...embedded, ok: true, capturePrepared: true, captureMode: 'dwm-thumbnail' };
+  } catch (error) {
+    if (sessionId) await wallpaperEngineNativeRuntime.stop(sessionId).catch(() => {});
+    return { ok: false, error: error.code || error.message || 'WALLPAPER_ENGINE_SCENE_START_FAILED', sessionId };
+  }
+});
+
+ipcMain.handle('mineradio-wallpaper-engine-start-recording-scene', async (_event, payload = {}) => {
+  const operation = ++wallpaperEngineNativeOperation;
+  let sessionId = '';
+  try {
+    if (!mainWindow || mainWindow.isDestroyed()) return { ok: false, error: 'WALLPAPER_ENGINE_HOST_UNAVAILABLE' };
+    const elevated = await systemMemory.probeProcessElevation().catch(() => false);
+    if (elevated) return { ok: false, error: 'WALLPAPER_ENGINE_HOST_ELEVATED' };
+    const bounds = wallpaperEngineNativePhysicalBounds(mainWindow, payload);
+    const started = await wallpaperEngineNativeRuntime.start(String(payload.id || ''), bounds);
+    sessionId = String(started && started.sessionId || '');
+    if (operation !== wallpaperEngineNativeOperation) {
+      await wallpaperEngineNativeRuntime.stop(sessionId).catch(() => {});
+      return { ok: false, error: 'WALLPAPER_ENGINE_START_SUPERSEDED', sessionId };
+    }
+    // Recording uses the real Wallpaper Engine window as a desktopCapturer
+    // source. Do not embed it into Mineradio or activate the DWM thumbnail.
+    clearWallpaperEngineNativeGrant();
+    return {
+      ...started,
+      ok: true,
+      recording: true,
+      capturePrepared: false,
+      captureMode: 'window-capture',
+      windowTitle: 'Mineradio Wallpaper ' + sessionId,
+    };
   } catch (error) {
     if (sessionId) await wallpaperEngineNativeRuntime.stop(sessionId).catch(() => {});
     return { ok: false, error: error.code || error.message || 'WALLPAPER_ENGINE_SCENE_START_FAILED', sessionId };
@@ -4305,14 +4308,28 @@ ipcMain.handle('mineradio-wallpaper-update', async (_event, payload) => {
 ipcMain.handle('mineradio-wallpaper-capture-prepare', async (_event, payload) => {
   preferredDisplayMediaSourceId = '';
   preferredDisplayMediaSourceTitle = String(payload && payload.windowTitle || '').trim().slice(0, 160);
-  if (!preferredDisplayMediaSourceTitle) return { ok:false, error:'WALLPAPER_CAPTURE_TITLE_REQUIRED' };
+  const requestedSourceId = String(payload && payload.sourceId || '').trim();
+  if (!preferredDisplayMediaSourceTitle && !requestedSourceId) return { ok:false, error:'WALLPAPER_CAPTURE_TITLE_REQUIRED' };
+  // The native Wallpaper Engine runtime already resolved this exact window
+  // source. Keep it as-is instead of asking desktopCapturer to resolve the
+  // same window a second time; on some Electron/Windows builds that second
+  // enumeration briefly omits the borderless window.
+  if (/^window:\d+:\d+$/.test(requestedSourceId)) {
+    preferredDisplayMediaSourceId = requestedSourceId;
+    return { ok:true, sourceId:requestedSourceId, sourceName:preferredDisplayMediaSourceTitle || 'Wallpaper Engine' };
+  }
   const deadline = Date.now() + 10000;
   do {
     try {
       const sources = await desktopCapturer.getSources({ types:['window'], thumbnailSize:{ width:0, height:0 } });
       const wanted = preferredDisplayMediaSourceTitle.toLowerCase();
-      const source = sources.find(item => String(item && item.name || '').toLowerCase() === wanted)
-        || sources.find(item => String(item && item.name || '').toLowerCase().includes(wanted));
+      const source = (requestedSourceId
+        ? sources.find(item => String(item && item.id || '') === requestedSourceId)
+        : null)
+        || (wanted
+          ? sources.find(item => String(item && item.name || '').toLowerCase() === wanted)
+            || sources.find(item => String(item && item.name || '').toLowerCase().includes(wanted))
+          : null);
       if (source) {
         preferredDisplayMediaSourceId = source.id;
         return { ok:true, sourceId:source.id, sourceName:source.name };
@@ -4320,6 +4337,7 @@ ipcMain.handle('mineradio-wallpaper-capture-prepare', async (_event, payload) =>
     } catch (_error) {}
     await new Promise(resolve => setTimeout(resolve, 100));
   } while (Date.now() < deadline);
+  preferredDisplayMediaSourceId = '';
   preferredDisplayMediaSourceTitle = '';
   return { ok:false, error:'WALLPAPER_CAPTURE_WINDOW_NOT_FOUND' };
 });
@@ -4819,21 +4837,9 @@ if (!gotSingleInstanceLock) {
     } catch (error) {
       console.warn('[Wallpaper Engine] local media protocol unavailable:', error && error.message || error);
     }
-    // Ordinary Mineradio traffic can bypass the VPN while Spotify keeps the
-    // isolated system-network session below. An external switch persists the
-    // choice and the file watcher applies changes without restarting the app.
-    await queueNetworkSplitMode(resolveNetworkSplitEnabled(), 'startup');
-    startNetworkSplitSettingsWatcher();
-    // Playlist imports use an isolated session so Spotify cookies and cache do
-    // not leak into the renderer. Explicitly inherit the Windows system proxy;
-    // relying on Chromium's partition default made domestic-network behavior
-    // vary between clean installs and upgraded profiles.
-    try {
-      const spotifyNetworkSession = session.fromPartition('persist:mineradio-system-network');
-      await spotifyNetworkSession.setProxy({ mode:'system' });
-    } catch (error) {
-      console.warn('[Network] Spotify import session could not inherit the Windows system proxy:', error && error.message || error);
-    }
+    // Follow the current Windows network and proxy settings for every request.
+    // Mineradio does not apply domain- or application-specific routing.
+    await session.defaultSession.setProxy({ mode:'system' });
     session.defaultSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => {
       if (permission !== 'media' && permission !== 'speaker-selection') return false;
       return /^http:\/\/127\.0\.0\.1:\d+\/?$/.test(String(requestingOrigin || ''));
@@ -4938,6 +4944,5 @@ if (!gotSingleInstanceLock) {
     clearWallpaperEngineNativeGrant();
     wallpaperEngineNativeRuntime.stop().catch(() => {});
     if (localServer && localServer.close) localServer.close();
-    if (directLocalProxy && directLocalProxy.close) directLocalProxy.close().catch(() => {});
   });
 }

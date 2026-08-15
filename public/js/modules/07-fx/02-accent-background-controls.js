@@ -735,6 +735,9 @@ function sonicGroundCoverPreviewColors() {
 }
 function updateSonicGroundColorControls() {
   var customMode = fx.sonicGroundColorMode === 'custom';
+  fx.sonicAdaptiveSongColor = !customMode;
+  var adaptiveToggle = document.getElementById('t-sonicAdaptiveSongColor');
+  if (adaptiveToggle) adaptiveToggle.classList.toggle('on', !customMode);
   var coverPreview = customMode ? null : sonicGroundCoverPreviewColors();
   SONIC_GROUND_COLOR_CONTROLS.forEach(function (item) {
     var fallback = fxDefaults[item.key] || '#33e6ff';
@@ -759,6 +762,7 @@ function setSonicGroundColor(key, color, silent) {
   if (!item) return;
   var fallback = fxDefaults[item.key] || '#33e6ff';
   fx.sonicGroundColorMode = 'custom';
+  fx.sonicAdaptiveSongColor = false;
   fx[item.key] = normalizeHexColor(color || fallback, fallback);
   updateSonicGroundColorControls();
   syncFxUniforms();
@@ -769,6 +773,7 @@ function resetSonicGroundColor(key) {
   var item = sonicGroundColorControl(key);
   if (!item) return;
   fx.sonicGroundColorMode = 'cover';
+  fx.sonicAdaptiveSongColor = true;
   SONIC_GROUND_COLOR_CONTROLS.forEach(function (control) {
     fx[control.key] = normalizeHexColor(fxDefaults[control.key] || '#33e6ff', '#33e6ff');
   });
@@ -1089,6 +1094,10 @@ function sonicWorkshopRegionHex(item) {
 }
 function updateSonicWorkshopColorControls() {
   ensureSonicWorkshopCoverPaletteForUi();
+  var allCover = SONIC_WORKSHOP_COLOR_CONTROLS.every(function (item) { return fx[item.modeKey] !== 'custom'; });
+  fx.sonicWorkshopAdaptiveSongColor = allCover;
+  var adaptiveToggle = document.getElementById('t-sonicWorkshopAdaptiveSongColor');
+  if (adaptiveToggle) adaptiveToggle.classList.toggle('on', allCover);
   var theme = currentSonicWorkshopTheme();
   var meta = SONIC_WORKSHOP_THEMES[theme] || SONIC_WORKSHOP_THEMES['coral-mirage'];
   SONIC_WORKSHOP_COLOR_CONTROLS.forEach(function (item) {
@@ -1119,6 +1128,9 @@ function pushSonicWorkshopColorChange(reason) {
 function setSonicWorkshopRegionColorMode(id, mode, silent) {
   var item = sonicWorkshopRegionControl(id);
   if (!item) return;
+  if (mode === 'custom' && fx.sonicWorkshopAdaptiveSongColor === true && typeof window.setSonicWorkshopAdaptiveSongColor === 'function') {
+    window.setSonicWorkshopAdaptiveSongColor(false, true);
+  }
   fx[item.modeKey] = mode === 'custom' ? 'custom' : 'cover';
   pushSonicWorkshopColorChange(item.id === 'theme' ? 'sonicWorkshopColorMode' : item.colorKey);
   if (!silent) showToast('\u97f3\u57df\u56de\u54cd\u00b7WE ' + item.label + ': ' + (fx[item.modeKey] === 'cover' ? '\u5c01\u9762\u53d6\u8272' : '\u56fa\u5b9a\u989c\u8272'));
@@ -1130,6 +1142,7 @@ function setSonicWorkshopTheme(theme, silent) {
   theme = normalizeSonicWorkshopTheme(theme);
   var meta = SONIC_WORKSHOP_THEMES[theme] || SONIC_WORKSHOP_THEMES['coral-mirage'];
   fx.sonicWorkshopColorMode = 'custom';
+  fx.sonicWorkshopAdaptiveSongColor = false;
   fx.sonicWorkshopTheme = theme;
   fx.sonicWorkshopCustomColor = normalizeHexColor(meta.color, '#cb6c89');
   SONIC_WORKSHOP_COLOR_CONTROLS.forEach(function (item) {
@@ -1145,6 +1158,7 @@ function setSonicWorkshopThemeFromPicker(color, silent) {
   var theme = sonicWorkshopThemeForColor(hex);
   var meta = SONIC_WORKSHOP_THEMES[theme] || SONIC_WORKSHOP_THEMES['coral-mirage'];
   fx.sonicWorkshopColorMode = 'custom';
+  fx.sonicWorkshopAdaptiveSongColor = false;
   fx.sonicWorkshopTheme = theme;
   fx.sonicWorkshopCustomColor = hex;
   SONIC_WORKSHOP_COLOR_CONTROLS.forEach(function (item) {
@@ -1161,6 +1175,9 @@ function setSonicWorkshopRegionColorFromPicker(id, color, silent) {
   if (item.id === 'theme') {
     setSonicWorkshopThemeFromPicker(color, silent);
     return;
+  }
+  if (fx.sonicWorkshopAdaptiveSongColor === true && typeof window.setSonicWorkshopAdaptiveSongColor === 'function') {
+    window.setSonicWorkshopAdaptiveSongColor(false, true);
   }
   var hex = normalizeHexColor(color || item.fallback, item.fallback);
   fx[item.modeKey] = 'custom';

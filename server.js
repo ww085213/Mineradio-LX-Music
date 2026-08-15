@@ -18,33 +18,14 @@ const { WallpaperConverter } = require('./wallpaper-converter');
 const lxSourceHost = require('./lx-source-host');
 const lxSearch = require('./lx-search');
 const platformPlaylistImport = require('./platform-playlist-import');
+const agentApi = require('./agent-api');
 let electronNet = null;
-let electronSession = null;
 try {
   const electron = require('electron');
   electronNet = electron.net;
-  electronSession = electron.session;
 } catch (_err) {}
 if (electronNet && typeof electronNet.fetch === 'function') {
-  const directElectronFetch = electronNet.fetch.bind(electronNet);
-  let systemNetworkSession = null;
-  try {
-    systemNetworkSession = electronSession && electronSession.fromPartition
-      ? electronSession.fromPartition('persist:mineradio-system-network')
-      : null;
-  } catch (_error) {}
-  const electronFetch = function mineradioRoutedElectronFetch(url, options) {
-    let hostname = '';
-    try { hostname = new URL(String(url || '')).hostname.toLowerCase(); } catch (_error) {}
-    const useSystemRoute = hostname === 'spotify.com'
-      || hostname.endsWith('.spotify.com')
-      || hostname === 'scdn.co'
-      || hostname.endsWith('.scdn.co');
-    if (useSystemRoute && systemNetworkSession && typeof systemNetworkSession.fetch === 'function') {
-      return systemNetworkSession.fetch(url, options);
-    }
-    return directElectronFetch(url, options);
-  };
+  const electronFetch = electronNet.fetch.bind(electronNet);
   globalThis.fetch = electronFetch;
   lxSearch.setFetchImplementation(electronFetch);
   platformPlaylistImport.setFetchImplementation(electronFetch);
@@ -86,6 +67,135 @@ const UPDATE_FALLBACK_NOTES = [
   '右上角更新提示',
 ];
 const updateDownloadJobs = new Map();
+const WINDOWS_SPEECH_SCRIPT = path.join(__dirname, 'desktop', 'windows-speech-recognizer.ps1');
+const WHISPER_SPEECH_SCRIPT = path.join(__dirname, 'desktop', 'whisper-speech-recognizer.py');
+const WHISPER_PYTHON = path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Python', 'Python313', 'python.exe');
+const WHISPER_MODEL_ROOT = path.join(os.homedir(), '.cache', 'huggingface', 'hub', 'models--Systran--faster-whisper-small', 'snapshots');
+let windowsSpeechProcess = null;
+
+function cancelWindowsSpeechRecognition() {
+  const child = windowsSpeechProcess;
+  windowsSpeechProcess = null;
+  if (!child) return false;
+  try { child.kill(); } catch (_error) {}
+  return true;
+}
+
+function recognizeWindowsSpeech(timeoutSeconds) {
+  if (process.platform !== 'win32' || !fs.existsSync(WINDOWS_SPEECH_SCRIPT)) {
+    return Promise.reject(Object.assign(new Error('当前系统不支持本地语音识别。'), { code: 'SPEECH_NOT_SUPPORTED' }));
+  }
+  if (windowsSpeechProcess) {
+    return Promise.reject(Object.assign(new Error('语音识别正在进行中。'), { code: 'SPEECH_BUSY' }));
+  }
+  const timeout = Math.max(3, Math.min(30, Math.round(Number(timeoutSeconds) || 18)));
+  return new Promise((resolve, reject) => {
+    const child = spawn('powershell.exe', [
+      '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+      '-File', WINDOWS_SPEECH_SCRIPT, '-TimeoutSeconds', String(timeout),
+    ], { windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
+    windowsSpeechProcess = child;
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    let killTimer = null;
+    const finish = (error, data) => {
+      if (settled) return;
+      settled = true;
+      if (windowsSpeechProcess === child) windowsSpeechProcess = null;
+      if (killTimer) clearTimeout(killTimer);
+      if (error) reject(error);
+      else resolve(data);
+    };
+    child.stdout.on('data', chunk => { stdout = (stdout + chunk.toString('utf8')).slice(-65536); });
+    child.stderr.on('data', chunk => { stderr = (stderr + chunk.toString('utf8')).slice(-8192); });
+    child.once('error', error => finish(Object.assign(new Error('无法启动 Windows 语音识别。'), { code: 'SPEECH_START_FAILED', cause: error })));
+    child.once('close', () => {
+      let data = null;
+      const lines = stdout.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+      for (let index = lines.length - 1; index >= 0 && !data; index -= 1) {
+        try { data = JSON.parse(lines[index]); } catch (_error) {}
+      }
+      if (data && data.ok && String(data.text || '').trim()) {
+        finish(null, { ok: true, text: String(data.text).trim().slice(0, 4000), confidence: Number(data.confidence) || 0, engine: data.engine || 'windows-offline-zh-CN' });
+        return;
+      }
+      const errorCode = data && data.error || 'SPEECH_RECOGNITION_FAILED';
+      const speechMessages = {
+        SPEECH_ZH_CN_NOT_INSTALLED: '未安装 Windows 中文语音识别器。',
+        SPEECH_NOT_HEARD: '没有听清，请靠近麦克风再说一次。',
+        SPEECH_RECOGNITION_FAILED: '本地语音识别失败，请检查麦克风是否可用。',
+      };
+      const message = speechMessages[errorCode] || (stderr ? '本地语音识别失败，请检查麦克风。' : '没有听清，请再说一次。');
+      finish(Object.assign(new Error(message), { code: errorCode }));
+    });
+    killTimer = setTimeout(() => {
+      try { child.kill(); } catch (_error) {}
+      finish(Object.assign(new Error('语音输入等待超时，请重试。'), { code: 'SPEECH_TIMEOUT' }));
+    }, (timeout + 5) * 1000);
+  });
+}
+
+function findWhisperModelPath() {
+  try {
+    return fs.readdirSync(WHISPER_MODEL_ROOT, { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .map(entry => path.join(WHISPER_MODEL_ROOT, entry.name))
+      .find(candidate => fs.existsSync(path.join(candidate, 'model.bin'))) || '';
+  } catch (_error) { return ''; }
+}
+
+function recognizeWhisperAudio(audioBuffer, extension) {
+  const modelPath = findWhisperModelPath();
+  if (!modelPath || !fs.existsSync(WHISPER_PYTHON) || !fs.existsSync(WHISPER_SPEECH_SCRIPT)) {
+    return Promise.reject(Object.assign(new Error('高精度本地语音模型不可用。'), { code: 'WHISPER_NOT_AVAILABLE' }));
+  }
+  if (!Buffer.isBuffer(audioBuffer) || audioBuffer.length < 1024) {
+    return Promise.reject(Object.assign(new Error('没有听清，请再说一次。'), { code: 'SPEECH_NOT_HEARD' }));
+  }
+  const safeExtension = /^\.(?:webm|wav|ogg|m4a)$/i.test(extension || '') ? extension : '.webm';
+  const tempPath = path.join(os.tmpdir(), 'mineradio-speech-' + process.pid + '-' + Date.now() + safeExtension);
+  fs.writeFileSync(tempPath, audioBuffer);
+  return new Promise((resolve, reject) => {
+    const child = spawn(WHISPER_PYTHON, [WHISPER_SPEECH_SCRIPT, '--audio', tempPath, '--model', modelPath], {
+      windowsHide: true,
+      shell: false,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: Object.assign({}, process.env, { PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' })
+    });
+    windowsSpeechProcess = child;
+    let stdout = '';
+    let settled = false;
+    let killTimer = null;
+    const finish = (error, data) => {
+      if (settled) return;
+      settled = true;
+      if (windowsSpeechProcess === child) windowsSpeechProcess = null;
+      if (killTimer) clearTimeout(killTimer);
+      try { fs.unlinkSync(tempPath); } catch (_error) {}
+      if (error) reject(error); else resolve(data);
+    };
+    child.stdout.on('data', chunk => { stdout = (stdout + chunk.toString('utf8')).slice(-65536); });
+    child.once('error', error => finish(Object.assign(new Error('无法启动高精度本地语音识别。'), { code: 'WHISPER_START_FAILED', cause: error })));
+    child.once('close', () => {
+      let data = null;
+      const lines = stdout.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+      for (let index = lines.length - 1; index >= 0 && !data; index -= 1) {
+        try { data = JSON.parse(lines[index]); } catch (_error) {}
+      }
+      if (data && data.ok && String(data.text || '').trim()) {
+        finish(null, { ok: true, text: String(data.text).trim().slice(0, 4000), engine: data.engine || 'faster-whisper-small-zh' });
+        return;
+      }
+      const code = data && data.error || 'WHISPER_RECOGNITION_FAILED';
+      finish(Object.assign(new Error(code === 'SPEECH_NOT_HEARD' ? '没有听清，请靠近麦克风再说一次。' : '高精度本地语音识别失败。'), { code }));
+    });
+    killTimer = setTimeout(() => {
+      try { child.kill(); } catch (_error) {}
+      finish(Object.assign(new Error('语音识别等待超时，请重试。'), { code: 'SPEECH_TIMEOUT' }));
+    }, 90000);
+  });
+}
 
 function applySystemCertificateAuthorities() {
   try {
@@ -179,7 +289,7 @@ function applySecurityHeaders(res) {
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
   // Electron's explicit desktop-source capture is exposed through getUserMedia
   // and therefore needs the camera directive for this local origin only.
-  res.setHeader('Permissions-Policy', 'camera=(self), geolocation=(), microphone=()');
+    res.setHeader('Permissions-Policy', 'camera=(self), geolocation=(), microphone=(self)');
   res.setHeader('Content-Security-Policy', [
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net https://unpkg.com",
@@ -2469,6 +2579,102 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pn === '/api/agent/config') {
+    if (req.method === 'GET') {
+      try { sendJSON(res, { ok: true, ...agentApi.getConfig() }); }
+      catch (err) { sendJSON(res, agentApi.toPublicError(err), err.status || 500); }
+      return;
+    }
+    if (req.method === 'POST') {
+      try {
+        const body = await readRequestBody(req);
+        sendJSON(res, { ok: true, ...await agentApi.saveConfig(body) });
+      } catch (err) {
+        sendJSON(res, agentApi.toPublicError(err), err.status || 400);
+      }
+      return;
+    }
+    sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+    return;
+  }
+
+  if (pn === '/api/agent/chat') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    try {
+      const body = await readRequestBody(req);
+      sendJSON(res, await agentApi.chat(body));
+    } catch (err) {
+      sendJSON(res, agentApi.toPublicError(err), err.status || 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/agent/speech/capabilities') {
+    if (req.method !== 'GET') {
+      sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    sendJSON(res, {
+      ok: true,
+      whisperAvailable: !!(findWhisperModelPath() && fs.existsSync(WHISPER_PYTHON) && fs.existsSync(WHISPER_SPEECH_SCRIPT)),
+      windowsSpeechAvailable: process.platform === 'win32' && fs.existsSync(WINDOWS_SPEECH_SCRIPT),
+    });
+    return;
+  }
+
+  if (pn === '/api/agent/speech/recognize') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    try {
+      const body = await readRequestBody(req);
+      sendJSON(res, await recognizeWindowsSpeech(body && body.timeoutSeconds));
+    } catch (err) {
+      sendJSON(res, { ok: false, error: err && err.code || 'SPEECH_RECOGNITION_FAILED', message: err && err.message || '语音识别失败。' }, 400);
+    }
+    return;
+  }
+
+  if (pn === '/api/agent/speech/transcribe') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    try {
+      if (windowsSpeechProcess) throw Object.assign(new Error('语音识别正在进行中。'), { code: 'SPEECH_BUSY' });
+      const body = await readBinaryRequestBody(req, 24 * 1024 * 1024);
+      const contentType = String(req.headers['content-type'] || '').toLowerCase();
+      const extension = contentType.includes('wav') ? '.wav' : (contentType.includes('ogg') ? '.ogg' : (contentType.includes('mp4') ? '.m4a' : '.webm'));
+      sendJSON(res, await recognizeWhisperAudio(body, extension));
+    } catch (err) {
+      sendJSON(res, { ok: false, error: err && err.code || 'WHISPER_RECOGNITION_FAILED', message: err && err.message || '语音识别失败。' }, 400);
+    }
+    return;
+  }
+
+  if (pn === '/api/agent/speech/cancel') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    sendJSON(res, { ok: true, canceled: cancelWindowsSpeechRecognition() });
+    return;
+  }
+
+  if (pn === '/api/agent/test') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    try { sendJSON(res, await agentApi.testConnection()); }
+    catch (err) { sendJSON(res, agentApi.toPublicError(err), err.status || 500); }
+    return;
+  }
+
   if (pn === '/api/lx-source/status') {
     try {
       sendJSON(res, await lxSourceHost.status());
@@ -2754,6 +2960,36 @@ const server = http.createServer(async (req, res) => {
       sendJSON(res, await lxSourceHost.selectSource(body.id));
     } catch (err) {
       sendJSON(res, { ok: false, error: err.message || 'LX_SOURCE_SELECT_FAILED' }, 400);
+    }
+    return;
+  }
+
+  if (pn === '/api/lx-source/toggle') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    try {
+      const body = await readRequestBody(req);
+      const ids = Array.isArray(body.ids) ? body.ids : body.id;
+      sendJSON(res, await lxSourceHost.setSourcesEnabled(ids, body.enabled !== false));
+    } catch (err) {
+      sendJSON(res, { ok: false, error: err.message || 'LX_SOURCE_TOGGLE_FAILED' }, 400);
+    }
+    return;
+  }
+
+  if (pn === '/api/lx-source/check') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    try {
+      const body = await readRequestBody(req);
+      const ids = Array.isArray(body.ids) ? body.ids : body.id;
+      sendJSON(res, await lxSourceHost.checkSources(ids));
+    } catch (err) {
+      sendJSON(res, { ok: false, error: err.message || 'LX_SOURCE_CHECK_FAILED' }, 400);
     }
     return;
   }
@@ -3048,7 +3284,12 @@ const server = http.createServer(async (req, res) => {
     try {
       if (!wallpaperProjectIndex.size) scanWallpaperEngineLibrary();
       const id = String(url.searchParams.get('id') || '');
-      if (!wallpaperProjectIndex.has(id)) throw new Error('WALLPAPER_PROJECT_NOT_FOUND');
+      // Native Scene ids are generated by the desktop Wallpaper Engine
+      // library and are not part of the legacy server-side project index.
+      // They still use the same safe 24-hex id format for FFmpeg cache names.
+      if (!wallpaperProjectIndex.has(id) && !/^[a-f0-9]{24}$/i.test(id)) {
+        throw new Error('WALLPAPER_PROJECT_NOT_FOUND');
+      }
       const fps = Math.max(30, Math.min(60, Math.round(Number(url.searchParams.get('fps')) || 60)));
       const raw = await readBinaryRequestBody(req, 192 * 1024 * 1024);
       if (raw.length < 1024) throw new Error('WALLPAPER_RECORDING_EMPTY');

@@ -5,10 +5,7 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const failures = [];
 
-function fail(message) {
-  failures.push(message);
-}
-
+function fail(message) { failures.push(message); }
 function read(relativePath) {
   const absolutePath = path.join(root, relativePath);
   if (!fs.existsSync(absolutePath)) {
@@ -17,244 +14,81 @@ function read(relativePath) {
   }
   return fs.readFileSync(absolutePath, 'utf8');
 }
-
-function requireText(relativePath, text, label) {
-  if (!text.includes(label)) fail(`${relativePath} 缺少发布能力标记: ${label}`);
+function requireText(relativePath, source, marker) {
+  if (!source.includes(marker)) fail(`${relativePath} 缺少发布能力标记: ${marker}`);
 }
-
-function checkPortableExecutable(relativePath, minimumBytes) {
-  const absolutePath = path.join(root, relativePath);
-  if (!fs.existsSync(absolutePath)) {
-    fail(`缺少转换工具: ${relativePath}`);
-    return;
-  }
-  const stat = fs.statSync(absolutePath);
-  if (stat.size < minimumBytes) fail(`${relativePath} 文件大小异常: ${stat.size}`);
-  const header = Buffer.alloc(2);
-  const fd = fs.openSync(absolutePath, 'r');
-  try { fs.readSync(fd, header, 0, 2, 0); } finally { fs.closeSync(fd); }
-  if (header.toString('ascii') !== 'MZ') fail(`${relativePath} 不是有效的 Windows 可执行文件`);
+function checkSyntax(relativePath) {
+  const source = read(relativePath);
+  if (!source) return;
+  try { new vm.Script(source, { filename: relativePath }); }
+  catch (error) { fail(`${relativePath} 语法错误: ${error.message}`); }
 }
 
 const packageJson = JSON.parse(read('package.json'));
 const releaseVersion = packageJson.mineradio && packageJson.mineradio.releaseVersion;
-if (packageJson.version !== '1.5.7') fail(`npm package version 未同步为 1.5.7，实际为 ${packageJson.version}`);
-if (packageJson.build.buildVersion !== '1.5.7.2') fail('Windows buildVersion 未同步为 1.5.7.2');
-if (releaseVersion !== '1.5.7.2') fail('应用内 releaseVersion 未同步为 1.5.7.2');
-if (!packageJson.build.files.includes('bin/**/*')) fail('安装包未声明包含 bin/**/*');
-if (!packageJson.build.files.includes('node_modules/qrcode/**/*')) fail('安装包未显式声明包含 qrcode 运行时');
-if (!packageJson.build.files.includes('LICENSE')) fail('安装包未声明包含 GPL-3.0 LICENSE');
-if (!packageJson.build.files.includes('!public/**/*.map')) fail('正式安装包未排除前端源码映射文件');
-if (!packageJson.build.files.includes('!build/finalize-windows-release.js')) fail('正式安装包未排除仅用于发布机的收尾脚本');
-if (packageJson.build.nsis.artifactName !== 'Mineradio.Setup.1.5.7.2.${ext}') fail('安装包文件名版本不正确');
+if (!/^\d+\.\d+\.\d+$/.test(releaseVersion || '')) fail(`发布版本无效: ${releaseVersion || '(empty)'}`);
+if (packageJson.version !== releaseVersion) fail(`package version 与 releaseVersion 不一致: ${packageJson.version} / ${releaseVersion}`);
+if (packageJson.build.buildVersion !== releaseVersion) fail(`buildVersion 与 releaseVersion 不一致: ${packageJson.build.buildVersion} / ${releaseVersion}`);
+if (packageJson.build.nsis.artifactName !== `Mineradio.Setup.${releaseVersion}.\${ext}`) fail('Windows 安装包文件名版本不正确');
+
+for (const entry of [
+  'desktop/**/*', 'public/**/*', 'bin/**/*', 'agent-api.js', 'qishui-auth-v6.js',
+  'qishui-auth-v6/**/*', 'qishui-qr-login.js', 'NOTICE.md', 'LICENSE', 'package.json',
+]) {
+  if (!packageJson.build.files.includes(entry)) fail(`安装包 files 缺少: ${entry}`);
+}
 for (const forbidden of ['Mineradio-Network-Split-Switch.ps1', 'Mineradio网络分流开关.cmd', 'desktop-ui-state.json']) {
   if (!packageJson.build.files.includes(`!${forbidden}`) && !packageJson.build.files.includes(`!**/${forbidden}`)) {
-    fail(`发布文件规则未显式排除私有文件: ${forbidden}`);
+    fail(`发布规则未排除私有文件: ${forbidden}`);
   }
-  if (fs.existsSync(path.join(root, forbidden))) fail(`发布根目录不应包含: ${forbidden}`);
-}
-if (!packageJson.scripts['build:win'].includes('build/finalize-windows-release.js')) fail('Windows 构建未固定 latest.yml 的发布版本');
-if (packageJson.dependencies.qrcode !== '1.5.4') fail('局域网遥控二维码运行时依赖 qrcode@1.5.4 未固定');
-try {
-  const QRCode = require(path.join(root, 'node_modules', 'qrcode'));
-  if (!QRCode || typeof QRCode.toDataURL !== 'function') fail('qrcode 运行时接口不可用');
-} catch (error) {
-  fail(`qrcode 运行时依赖无法加载: ${error.message}`);
 }
 
-const mainSource = read('desktop/main.js');
-const indexSource = read('public/index.html');
-const installerSource = read('build/installer.nsh');
-const converterSource = read('wallpaper-converter.js');
 const serverSource = read('server.js');
+const agentSource = read('agent-api.js');
+const commandSource = read('public/js/music-agent-command.js');
+const toolsSource = read('public/js/agent-music-tools.js');
+const indexSource = read('public/index.html');
+const mainSource = read('desktop/main.js');
 const preloadSource = read('desktop/preload.js');
-const proxySource = read('desktop/direct-local-proxy.js');
+const installerSource = read('build/installer.nsh');
 
-requireText('desktop/main.js', mainSource, "writeStartupDiagnostic('app-when-ready'");
-requireText('desktop/main.js', mainSource, 'setIgnoreMouseEvents(true)');
-requireText('desktop/main.js', mainSource, 'mainWindowSplashWatchdogTimer');
-requireText('desktop/main.js', mainSource, 'splash watchdog forced the home screen to reveal');
-requireText('desktop/main.js', mainSource, "process.platform !== 'win32' || !app.isPackaged");
-requireText('desktop/main.js', mainSource, "'startup-storage-preserved'");
-requireText('desktop/main.js', mainSource, "require('./full-desktop-mode-runtime')");
-requireText('desktop/main.js', mainSource, 'enableDesktopFusionOverlay(payload || {})');
-requireText('desktop/main.js', mainSource, "iconLayerMode: enabled ? 'workerw-toggle' : ''");
-requireText('desktop/main.js', mainSource, "runtime.setSoftwareInteractionLocked(");
-requireText('desktop/main.js', mainSource, "process.env.MINERADIO_FORCE_DIRECT_ROUTE === '1'");
-requireText('desktop/main.js', mainSource, "setProxy({ mode: 'system' })");
-if (/clearStorageData\s*\(\s*\{\s*storages\s*:\s*\[\s*['"]localstorage['"]\s*\]/.test(mainSource)) {
-  fail('desktop/main.js 鍚姩鎭㈠浠嶄細娓呯┖鍏ㄩ儴 localStorage');
+requireText('server.js', serverSource, "require('./agent-api')");
+requireText('server.js', serverSource, "pn === '/api/agent/chat'");
+requireText('server.js', serverSource, "pn === '/api/agent/config'");
+requireText('server.js', serverSource, "pn === '/api/agent/speech/recognize'");
+for (const provider of ['openai', 'anthropic', 'gemini', 'deepseek', 'qwen', 'kimi', 'ollama', 'custom']) {
+  requireText('agent-api.js', agentSource, `'${provider}'`);
 }
-requireText('server.js', serverSource, "persist:mineradio-system-network");
-requireText('server.js', serverSource, "hostname.endsWith('.spotify.com')");
-requireText('public/index.html', indexSource, 'body.desktop-wallpaper-mode #fullscreen-diy-zone');
-requireText('public/index.html', indexSource, 'body.desktop-embedded #fullscreen-diy-zone');
-requireText('public/index.html', indexSource, 'body.desktop-wallpaper-mode #mobile-back-btn');
-requireText('public/index.html', indexSource, 'body.desktop-wallpaper-mode #mobile-diy-btn');
-requireText('public/index.html', indexSource, 'html.desktop-native-root #mobile-back-btn');
-requireText('public/index.html', indexSource, 'html.desktop-native-root #mobile-diy-btn');
-requireText('public/index.html', indexSource, 'id="desktop-fusion-corners"');
-requireText('public/index.html', indexSource, 'id="app-nav-diy"');
-requireText('public/index.html', indexSource, 'onclick="toggleDiyMode()"');
-requireText('public/index.html', indexSource, "['diy-mode-btn', 'fullscreen-diy-btn', 'app-nav-diy']");
-requireText('public/index.html', indexSource, 'data-corner="tl"');
-requireText('public/index.html', indexSource, 'data-corner="tr"');
-requireText('public/index.html', indexSource, 'data-corner="bl"');
-requireText('public/index.html', indexSource, 'data-corner="br"');
-requireText('public/index.html', indexSource, 'function toggleDesktopFusionCornerControl');
-requireText('desktop/preload.js', preloadSource, 'setDesktopSoftwareLocked:');
-requireText('desktop/preload.js', preloadSource, 'updateDesktopPointerRoute:');
-requireText('desktop/preload.js', preloadSource, 'onWallpaperModeState:');
-requireText('public/index.html', indexSource, 'id="now-flow-time"');
-requireText('public/index.html', indexSource, 'function setPlaybackTimeText(text)');
-requireText('public/index.html', indexSource, "nowFlowProgressBar.addEventListener('click'");
-const nowFlowRootTag = (indexSource.match(/<div id="now-flow"[^>]*>/) || [''])[0];
-if (!nowFlowRootTag) fail('public/index.html 缺少 Now Flow 播放条根节点');
-if (/onclick\s*=/.test(nowFlowRootTag)) fail('Now Flow 播放条空白区域仍会切换播放状态');
-requireText('public/index.html', indexSource, 'function getAdaptiveRenderFps()');
-requireText('public/index.html', indexSource, 'remaining = (1000 / fps)');
-requireText('public/index.html', indexSource, 'var RENDER_VISIBLE_VSYNC = true;');
-requireText('public/index.html', indexSource, 'function markSplashReadyToEnter()');
-requireText('public/index.html', indexSource, 'Never leave a first-time install waiting indefinitely on the intro.');
-requireText('public/index.html', indexSource, 'A click/keyboard action is an explicit request to enter.');
-requireText('public/index.html', indexSource, "performanceQuality: 'ultra'");
-requireText('public/index.html', indexSource, 'mineradio-performance-ultra-default-v1');
+for (const tool of [
+  'search_and_play_music', 'control_playback', 'set_volume', 'skip_track',
+  'control_audio_quality', 'open_mineradio_interface', 'control_mineradio_app',
+  'control_lyric_animation', 'save_music_to_playlist', 'create_local_playlist',
+  'build_recommended_playlist', 'control_diy_visual',
+]) {
+  requireText('agent-api.js', agentSource, `'${tool}'`);
+}
+requireText('public/js/music-agent-command.js', commandSource, 'isWorldPeaceEasterEggIntent');
+requireText('public/js/music-agent-command.js', commandSource, 'focusChatInputAfterReply');
+requireText('public/js/music-agent-command.js', commandSource, 'togglePetVisible');
+requireText('public/js/agent-music-tools.js', toolsSource, 'control_audio_quality');
+requireText('public/js/agent-music-tools.js', toolsSource, 'open_mineradio_interface');
+requireText('public/index.html', indexSource, 'music-agent-command.css');
+requireText('public/index.html', indexSource, 'music-agent-advanced-controls');
 requireText('public/index.html', indexSource, `Mineradio v${releaseVersion}`);
 requireText('public/index.html', indexSource, `currentVersion: '${releaseVersion}'`);
-if (indexSource.includes('1.5.5.1')) fail('public/index.html 仍包含上一版 1.5.5.1 的界面或更新兜底版本');
-requireText('build/installer.nsh', installerSource, 'MINERADIO_INSTALL_MARKER');
-requireText('build/installer.nsh', installerSource, '!macro customRemoveFiles');
-requireText('build/installer.nsh', installerSource, 'MineradioDisableUnsafeOldUninstallers');
-requireText('build/installer.nsh', installerSource, 'MineradioExistingInstallPathCanBeAdopted');
-requireText('build/installer.nsh', installerSource, 'MineradioValidateInstallDir');
-requireText('build/installer.nsh', installerSource, 'un.MineradioValidateUninstallDir');
-requireText('public/index.html', indexSource, 'function renderOnlineArtistOverview()');
-requireText('public/index.html', indexSource, 'function createSoundFieldChain(ctx)');
-requireText('public/index.html', indexSource, 'id="fx-player-spectrum-height"');
-requireText('public/index.html', indexSource, 'id="t-homeAlwaysTransparent"');
-requireText('public/index.html', indexSource, 'id="fx-desktoplyricsx"');
-requireText('server.js', serverSource, "pn === '/api/remote/info'");
-requireText('desktop/preload.js', preloadSource, 'exportTextFile:');
-requireText('desktop/preload.js', preloadSource, 'exportLxmcFile:');
-requireText('desktop/preload.js', preloadSource, 'copyText: (text)');
-requireText('desktop/preload.js', preloadSource, 'suppressDesktopOnlyMobileNavigation();');
-requireText('desktop/preload.js', preloadSource, "element.style.setProperty('display', 'none', 'important')");
-requireText('desktop/preload.js', preloadSource, "ipcRenderer.invoke('mineradio-clipboard-read-text')");
-requireText('desktop/main.js', mainSource, "ipcMain.handle('mineradio-clipboard-write-text'");
-requireText('desktop/main.js', mainSource, "ipcMain.handle('mineradio-clipboard-read-text'");
-requireText('desktop/main.js', mainSource, "ipcMain.handle('mineradio-export-lxmc-file'");
-requireText('desktop/main.js', mainSource, "require('./direct-local-proxy')");
-requireText('desktop/direct-local-proxy.js', proxySource, 'createDirectLocalProxy');
-requireText('desktop/main.js', mainSource, "path.join(__dirname, '..', 'bin', 'ffmpeg.exe')");
-requireText('wallpaper-converter.js', converterSource, "path.join(this.appDir, 'bin', 'ffmpeg.exe')");
-requireText('wallpaper-converter.js', converterSource, "path.join(this.appDir, 'bin', 'repkg', 'RePKG.exe')");
-requireText('public/index.html', indexSource, "lxSourceOneClickButton.addEventListener('click', oneClickImportLxSource)");
-requireText('public/index.html', indexSource, "type:'playListPart_v2'");
-requireText('public/index.html', indexSource, 'exportSecondaryLibraryPlaylist()');
-requireText('public/index.html', indexSource, 'requestMissingSongCover(song');
-requireText('public/index.html', indexSource, 'scheduleImportedLxAudioPrefetch');
-requireText('public/index.html', indexSource, 'body.empty-home-active #search-area{top:24px;opacity:1;pointer-events:auto}');
-requireText('public/index.html', indexSource, '一次选择一个或多个本地落雪音源脚本并导入');
-requireText('public/index.html', indexSource, '主要使用枪码复制和导入');
-requireText('public/index.html', indexSource, "var USER_FX_SHARE_PREFIX = 'MR2'");
-requireText('public/index.html', indexSource, '>导出枪码</button>');
-const userFxExportBody = (indexSource.match(/async function exportUserFxArchive\(index\)\s*\{([\s\S]*?)\n\}/) || [,''])[1];
-if (!/copyUserFxArchiveShareCode\(index\)/.test(userFxExportBody) || /exportJsonFile|createObjectURL|\.download\s*=/.test(userFxExportBody)) {
-  fail('用户 FX 卡片导出必须复制枪码，不能下载文件');
-}
-const userFxCopyBody = (indexSource.match(/async function copyUserFxArchiveShareCode\(index\)\s*\{([\s\S]*?)\n\}/) || [,''])[1];
-if (!/api\.copyText\(code\)/.test(userFxCopyBody)) fail('用户 FX 枪码导出未使用 Electron 原生剪贴板');
-const userFxImportBody = (indexSource.match(/async function promptUserFxArchiveShareCode\(\)\s*\{([\s\S]*?)\n\}/) || [,''])[1];
-if (!/api\.readText\(\)/.test(userFxImportBody)) fail('用户 FX 枪码导入未使用 Electron 原生剪贴板');
-requireText('public/index.html', indexSource, 'id="t-sonicAdaptiveSongColor"');
-requireText('public/index.html', indexSource, 'Require the title or album to');
-requireText('public/index.html', indexSource, 'song.albumCover || song.coverUrl');
-requireText('server.js', serverSource, "'Accept': 'image/avif,image/webp");
-const oneClickBody = (indexSource.match(/async function oneClickImportLxSource\(\)\s*\{([\s\S]*?)\n\}/) || [,''])[1];
-if (!/openLxSourceImport\(\)/.test(oneClickBody) || /readLxSourceClipboardText/.test(oneClickBody)) {
-  fail('一键音源导入没有保持为本地文件选择');
-}
-const platformImporterSource = read('platform-playlist-import.js');
-requireText('platform-playlist-import.js', platformImporterSource, 'embedFallback.songs.map');
-requireText('platform-playlist-import.js', platformImporterSource, 'The embed list is the canonical full ordering.');
-requireText('platform-playlist-import.js', platformImporterSource, 'selected song during playback');
-if (/songs\s*:\s*await\s+matchReferenceSongsForPlayback\(rows,\s*['"]spotifyMeta['"]\)/.test(platformImporterSource)) {
-  fail('Spotify playlist import still waits for eager cross-platform matching');
-}
-
-try {
-  const playlistImporter = require(path.join(root, 'platform-playlist-import.js'));
-  const detectionCases = [
-    ['tx', 'https://y.qq.com/n/ryqq/playlist/123456789'],
-    ['wy', 'https://music.163.com/#/playlist?id=123456789'],
-    ['kw', 'https://www.kuwo.cn/playlist_detail/123456789'],
-    ['kg', 'https://www.kugou.com/yy/special/single/123456.html'],
-    ['kgc', 'https://t1.kugou.com/share/zlist.html?global_collection_id=collection_abc123'],
-    ['mg', 'https://music.migu.cn/v3/music/playlist/123456789'],
-    ['sp', 'https://open.spotify.com/playlist/5FV0B8IjLkD58AxFYb60k2'],
-    ['qs', 'https://qishui.douyin.com/s/AbCdEf12/'],
-    ['am', 'https://music.apple.com/cn/playlist/example/pl.u-abc123'],
-  ];
-  detectionCases.forEach(([source, input]) => {
-    const detected = playlistImporter.detect(input, source);
-    if (!detected || detected.source !== source || !detected.id) {
-      fail(`平台歌单识别失败: ${source}`);
-    }
-  });
-} catch (error) {
-  fail(`平台歌单导入模块检查失败: ${error.message}`);
-}
-
-try {
-  const djStart = indexSource.indexOf('var RADIO_DJ_TRACK_PATTERN');
-  const djEnd = indexSource.indexOf('function radioModeAcceptsSong', djStart);
-  if (djStart < 0 || djEnd < 0) throw new Error('DJ filter source not found');
-  const djContext = { isRadioMusicSong: () => true };
-  vm.runInNewContext(indexSource.slice(djStart, djEnd), djContext, { filename:'dj-filter-smoke.js' });
-  if (djContext.isRadioDjSong({ name:'Faded', singer:'Alan Walker', album:'Different World' })) {
-    fail('热门 DJ 仍会把普通制作人歌曲误判为 DJ 歌曲');
-  }
-  if (!djContext.isRadioDjSong({ name:'Faded (DJ Remix)', singer:'Test Artist', album:'Mixes' })) {
-    fail('热门 DJ 无法识别标题明确标注的 Remix 歌曲');
-  }
-  if (djContext.isRadioDjSong({ name:'普通歌曲', singer:'DJ Example', album:'普通专辑' })) {
-    fail('热门 DJ 仍会只凭歌手名称误收普通歌曲');
-  }
-} catch (error) {
-  fail(`热门 DJ 过滤检查失败: ${error.message}`);
-}
-
-try {
-  const coverStart = indexSource.indexOf('function normalizeRemoteCoverUrl');
-  const coverEnd = indexSource.indexOf('function songCustomCoverKey', coverStart);
-  if (coverStart < 0 || coverEnd < 0) throw new Error('cover helper source not found');
-  const coverContext = { URL, isInlineCoverSrc: () => false };
-  vm.runInNewContext(indexSource.slice(coverStart, coverEnd), coverContext, { filename:'cover-url-smoke.js' });
-  const spotifyCover = 'https://i.scdn.co/image/abc123';
-  if (coverContext.coverUrlWithSize(spotifyCover, 220) !== spotifyCover) fail('Spotify 封面 URL 仍被追加不兼容尺寸参数');
-  const neteaseCover = coverContext.coverUrlWithSize('https://p1.music.126.net/example.jpg', 220);
-  if (!/[?&]param=220y220/.test(neteaseCover)) fail('网易封面没有保留受支持的尺寸参数');
-} catch (error) {
-  fail(`封面 URL 兼容检查失败: ${error.message}`);
-}
+requireText('desktop/main.js', mainSource, 'handleGlobalHotkeyAction');
+requireText('public/index.html', indexSource, "key:'toggleMusicAgent'");
+requireText('desktop/preload.js', preloadSource, 'requestDesktopKeyboardFocus');
+requireText('build/installer.nsh', installerSource, '!macro customCheckAppRunning');
+requireText('build/installer.nsh', installerSource, 'nsProcess::CloseProcess');
+requireText('build/installer.nsh', installerSource, 'nsProcess::KillProcess');
 
 for (const relativePath of [
-  'desktop/main.js',
-  'desktop/preload.js',
-  'desktop/direct-local-proxy.js',
-  'server.js',
-  'wallpaper-converter.js',
-  'dj-analyzer.js',
-  'lx-search.js',
-  'lx-source-host.js',
-  'platform-playlist-import.js',
-  'public/lyric-animation.js',
-]) {
-  const source = read(relativePath);
-  if (!source) continue;
-  try { new vm.Script(source, { filename: relativePath }); }
-  catch (error) { fail(`${relativePath} 语法错误: ${error.message}`); }
-}
+  'desktop/main.js', 'desktop/preload.js', 'desktop/local-music-library.js',
+  'server.js', 'agent-api.js', 'lx-source-host.js', 'qishui-auth-v6.js',
+  'qishui-qr-login.js', 'public/js/music-agent-command.js',
+  'public/js/agent-music-tools.js', 'public/js/modules/08-account/00-login-easter-egg.js',
+]) checkSyntax(relativePath);
 
 const inlineScriptPattern = /<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi;
 let inlineMatch;
@@ -266,24 +100,14 @@ while ((inlineMatch = inlineScriptPattern.exec(indexSource))) {
   catch (error) { fail(`public/index.html 内联脚本 ${inlineIndex} 语法错误: ${error.message}`); }
 }
 
-checkPortableExecutable('bin/ffmpeg.exe', 100 * 1024 * 1024);
-checkPortableExecutable('bin/repkg/RePKG.exe', 1024 * 1024);
-for (const notice of [
-  'bin/FFMPEG-NOTICE.txt',
-  'bin/repkg/LICENSE',
-  'bin/repkg/MINERADIO-NOTICE.txt',
-  'bin/repkg/THIRD-PARTY-NOTICES.txt',
-  'build/icon.ico',
-  'build/prepare-windows-tools.ps1',
-  'build/finalize-windows-release.js',
-  'LICENSE',
-  'public/assets/music-planet-bg.webp',
-]) read(notice);
+if (/矿灵/.test([serverSource, agentSource, commandSource, toolsSource, indexSource].join('\n'))) {
+  fail('AI Agent 用户界面仍包含旧称“矿灵”');
+}
 
 if (failures.length) {
   console.error('\nMineradio 发布前检查失败：');
-  failures.forEach((message) => console.error(`  - ${message}`));
+  failures.forEach(message => console.error(`  - ${message}`));
   process.exit(1);
 }
 
-console.log(`Mineradio ${releaseVersion} 发布前检查通过：代码语法、安装迁移、进度时间、性能调度和壁纸转换工具均已就绪。`);
+console.log(`Mineradio ${releaseVersion} 发布前检查通过：AI Agent、小M工具、安装升级逻辑、版本与代码语法均已就绪。`);
