@@ -56,6 +56,7 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('fx-windowbgopacity', '窗口背景透明', '窗口透明度'),
         fxConsoleItem('fx-bgglassopacity', '毛玻璃透明', '玻璃 背景模糊'),
         fxConsoleItem('fx-glassaberration', '控制台玻璃色差', 'RGB 色散 玻璃质感'),
+        fxConsoleItem('t-controlGlassRefraction', '搜索栏播放条折射', '搜索栏 播放条 玻璃折射 纯透明'),
         fxConsoleItem('fx-playlistblur', '左栏雾面', '歌单栏 模糊'),
         fxConsoleItem('fx-playlistdensity', '左栏遮挡', '歌单栏 密度 透明'),
         fxConsoleItem('fx-playlistopen', '左栏唤出', '打开速度 秒数'),
@@ -158,7 +159,22 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('sonic-ground-cool-picker', '冷色峰值', '音域冷色'),
         fxConsoleItem('sonic-ground-warm-picker', '暖色峰值', '音域暖色'),
         fxConsoleItem('sonic-ground-accent-picker', '涟漪高光', '音域强调色'),
+        fxConsoleItem('t-sonicAdaptiveSongColor', 'Ajin 随歌曲变色', 'Ajin 封面取色 自动配色 随歌曲变色'),
         fxConsoleItem('fx-sonicglow', '音域光强', '地形辉光')
+      ] },
+      { key: 'sonic-workshop', title: '音域回响 · Wallpaper Engine', hint: 'WE 版本的音频响应与独立区域配色', items: [
+        fxConsoleItem('t-sonicWorkshopAdaptiveSongColor', 'WE 随歌曲变色', 'Wallpaper Engine 封面取色 自动配色 随歌曲变色'),
+        fxConsoleItem('fx-sonicwegain', 'WE 输入压制', 'Wallpaper Engine 输入增益'),
+        fxConsoleItem('fx-sonicweaudio', 'WE 音频响应', 'Wallpaper Engine 响应强度'),
+        fxConsoleItem('fx-sonicwerange', 'WE 响应范围', 'Wallpaper Engine 范围'),
+        fxConsoleItem('fx-sonicwepeak', 'WE 中心高光', 'Wallpaper Engine 峰值'),
+        fxConsoleItem('sonic-workshop-cover-picker', 'WE 主题基色', 'Wallpaper Engine 主色'),
+        fxConsoleItem('sonic-workshop-base-picker', 'WE 地形底色', 'Wallpaper Engine 底色'),
+        fxConsoleItem('sonic-workshop-warm-picker', 'WE 暖色主体', 'Wallpaper Engine 暖色'),
+        fxConsoleItem('sonic-workshop-cool-picker', 'WE 上层高光', 'Wallpaper Engine 冷色'),
+        fxConsoleItem('sonic-workshop-ripple-picker', 'WE 波纹亮区', 'Wallpaper Engine 波纹'),
+        fxConsoleItem('sonic-workshop-peak-picker', 'WE 峰值高光', 'Wallpaper Engine 高光'),
+        fxConsoleItem('sonic-workshop-theme-seg', 'WE 配色主题', '珊瑚 深海 冰蓝 翠绿 极简')
       ] },
       { key: 'sonic-audio', title: '频谱响应', hint: 'Kick 检测、频段范围和各段权重', items: [
         fxConsoleItem('t-sonicAudioMonitorEnabled', '实时频谱', '音频分析 频谱开关'),

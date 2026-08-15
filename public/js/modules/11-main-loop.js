@@ -522,6 +522,15 @@ function animate() {
   bass = Math.min(0.90, smoothBass * 1.05 + beatPulse * 0.18) * fx.intensity;
   mid = Math.min(0.72, smoothMid * 1.12) * fx.intensity;
   treble = Math.min(0.62, smoothTreb * 1.20) * fx.intensity;
+  // expose to agent pet visualizer — use raw smooth values, NOT scaled by fx.intensity
+  window.__mineradioAgentAudio = {
+    bass:    Math.min(1, smoothBass * 1.20 + beatPulse * 0.30),
+    mid:     Math.min(1, smoothMid  * 1.30),
+    treble:  Math.min(1, smoothTreb * 1.40),
+    energy:  Math.min(1, smoothEnergy * 1.20 + beatPulse * 0.20),
+    beat:    beatPulse,
+    subBass: Math.min(1, smoothBass * 1.50 + beatPulse * 0.40)
+  };
   if (fx.preset >= 4) {
     var wallpaperAudio = fx.preset === 5;
     var ringBass = smoothBass * (wallpaperAudio ? 1.10 : 1.58) + beatPulse * (wallpaperAudio ? 0.18 : 0.42) - smoothMid * 0.16 - smoothTreb * 0.06;

@@ -11,6 +11,7 @@ var loginEasterEggState = {
   validating: false,
   cinematicActive: false,
   cinematicReady: false,
+  directCinematic: false,
   achievementTimer: null,
   focusRetryTimers: []
 };
@@ -426,13 +427,16 @@ function prepareLoginEasterEggPixelPhrase(phrase) {
   });
 }
 
-function playLoginEasterEggUnlockCinematic() {
+function playLoginEasterEggUnlockCinematic(options) {
+  options = options || {};
   clearLoginEasterEggFocusRetries();
+  initializeLoginEasterEggCopy();
   loginEasterEggState.ready = true;
   loginEasterEggState.unlocked = true;
   loginEasterEggState.validating = false;
   loginEasterEggState.cinematicActive = true;
   loginEasterEggState.cinematicReady = false;
+  loginEasterEggState.directCinematic = options.direct === true;
   setLoginEasterEggStatus('愿望已收到', 'success');
   var modal = document.getElementById('login-modal');
   var cinematic = document.getElementById('login-easter-unlock-cinematic');
@@ -440,7 +444,7 @@ function playLoginEasterEggUnlockCinematic() {
   prepareLoginEasterEggPixelPhrase(phrase);
   var sourceCells = Array.prototype.slice.call(document.querySelectorAll('#login-easter-egg-cells .login-easter-cell'));
   var phraseChars = phrase ? Array.prototype.slice.call(phrase.querySelectorAll('span')) : [];
-  if (!cinematic || sourceCells.length !== 4 || phraseChars.length !== 4) {
+  if (!cinematic || phraseChars.length !== 4) {
     completeLoginEasterEggUnlock();
     return;
   }
@@ -454,10 +458,14 @@ function playLoginEasterEggUnlockCinematic() {
   });
   window.requestAnimationFrame(function () {
     phraseChars.forEach(function (charNode, index) {
-      var sourceRect = sourceCells[index].getBoundingClientRect();
       var targetRect = charNode.getBoundingClientRect();
-      var fromX = sourceRect.left + sourceRect.width / 2 - (targetRect.left + targetRect.width / 2);
-      var fromY = sourceRect.top + sourceRect.height / 2 - (targetRect.top + targetRect.height / 2);
+      var sourceRect = sourceCells[index] && sourceCells[index].getBoundingClientRect();
+      var fromX = sourceRect
+        ? sourceRect.left + sourceRect.width / 2 - (targetRect.left + targetRect.width / 2)
+        : (index - 1.5) * -22;
+      var fromY = sourceRect
+        ? sourceRect.top + sourceRect.height / 2 - (targetRect.top + targetRect.height / 2)
+        : 44;
       charNode.style.setProperty('--extract-x', fromX.toFixed(2) + 'px');
       charNode.style.setProperty('--extract-y', fromY.toFixed(2) + 'px');
     });
@@ -478,6 +486,14 @@ function playLoginEasterEggUnlockCinematic() {
   });
 }
 
+function playWorldPeaceEasterEgg() {
+  if (loginEasterEggState.cinematicActive) {
+    return { ok: true, active: true, message: '世界和平彩蛋正在播放' };
+  }
+  playLoginEasterEggUnlockCinematic({ direct: true });
+  return { ok: true, active: true, message: '已触发世界和平彩蛋' };
+}
+
 function dismissLoginEasterEggCinematic() {
   if (!loginEasterEggState.cinematicActive || !loginEasterEggState.cinematicReady) return;
   loginEasterEggState.cinematicReady = false;
@@ -487,8 +503,10 @@ function dismissLoginEasterEggCinematic() {
 }
 
 function completeLoginEasterEggUnlock() {
+  var directCinematic = loginEasterEggState.directCinematic;
   loginEasterEggState.cinematicActive = false;
   loginEasterEggState.cinematicReady = false;
+  loginEasterEggState.directCinematic = false;
   var modal = document.getElementById('login-modal');
   var cinematic = document.getElementById('login-easter-unlock-cinematic');
   if (cinematic) {
@@ -498,7 +516,7 @@ function completeLoginEasterEggUnlock() {
   }
   setLoginEasterEggMode(false);
   if (modal) modal.classList.remove('login-easter-egg-unlocking');
-  if (typeof resumeLoginModalAfterGate === 'function') resumeLoginModalAfterGate();
+  if (!directCinematic && typeof resumeLoginModalAfterGate === 'function') resumeLoginModalAfterGate();
   showLoginEasterEggAchievement();
 }
 
@@ -573,6 +591,10 @@ if (typeof document !== 'undefined') {
   } else {
     ensureLoginEasterEggStatus(false);
   }
+}
+
+if (typeof window !== 'undefined') {
+  window.playWorldPeaceEasterEgg = playWorldPeaceEasterEgg;
 }
 
 if (typeof module !== 'undefined' && module.exports) {

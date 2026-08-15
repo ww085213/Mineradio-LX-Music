@@ -1,25 +1,22 @@
 # Mineradio - LX Music / MR
 
-## 最新版本：1.5.7.3
+## 最新版本：1.6.0
 
-[下载 Windows 安装包](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.5.7.3/Mineradio.Setup.1.5.7.3.exe) / [查看 v1.5.7.3 Release](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.5.7.3)
+[下载 Windows 安装包](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.6.0/Mineradio.Setup.1.6.0.exe) / [查看 v1.6.0 Release](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.6.0)
 
-备用下载：
+支持 Windows 10/11 x64。安装向导可选择安装目录和是否创建桌面快捷方式；原版、旧版及其他二创版本可直接覆盖升级。1.6.0 安装器会在覆盖文件前自动关闭正在运行的 Mineradio，并保留 `%APPDATA%\Mineradio` 中的歌单、设置和用户数据。
 
-- [百度网盘下载](https://pan.baidu.com/s/1nUXfOeCM5Bc_ZPznheKeiA?pwd=qm21)（提取码：`qm21`）
-- [夸克网盘下载](https://pan.quark.cn/s/cefc42f0d25e)
+1.6.0 主要更新：
 
-支持 Windows 10/11 x64。安装向导可选择安装目录和是否创建桌面快捷方式；原版、旧版及其他二创版本可直接覆盖升级。安装程序只更新程序文件，会保留 `%APPDATA%\Mineradio` 中的歌单、设置和用户数据。升级前建议先退出正在运行的 Mineradio。
-
-1.5.7.3 主要更新：
-
-- 调整音源管理入口位置：音源状态与管理按钮移到页面右上角，可直接查看当前音源并打开音源管理。
-- 优化右上角主页入口：主页按钮布局和收起交互得到优化，可向右收起，并通过右侧箭头快速恢复。
-- 搜索结果新增“下一首播放”按钮：搜索歌曲时可直接点击加入下一首，不会打断当前正在播放的歌曲。
-- 延续 1.5.7.2 的 `.lxmc` 歌单导出、3D 歌曲卡片封面修复和在线播放加载优化。
-- 延续 1.5.7 的音效实验室、歌手专辑、实时频谱、桌面歌词、音乐星球地图和局域网遥控等功能。
-- 安装器继续支持自选安装目录和覆盖升级，并保留 `%APPDATA%\Mineradio` 中的歌单、设置和用户数据。
-- 正式安装包不包含发布者个人使用的网络分流脚本、用户歌单、自定义音源或启动日志。
+- 新增 AI Agent“小M”：通过悬浮球和对话面板使用自然语言控制 Mineradio。
+- 小M可播放/搜索歌曲、控制播放暂停、上下曲、音量、进度、播放模式、音质和播放队列。
+- 小M可打开音乐库、音乐电台、平台排行榜、音源管理、输出设备、高级设置等软件界面，并控制歌词动画和 DIY 视觉效果。
+- 支持创建本地歌单、保存歌曲、把歌单加入队列，以及按描述生成推荐歌单。
+- 支持 OpenAI、Claude、Gemini、DeepSeek、通义千问、Kimi、Ollama 和 OpenAI 兼容接口；密钥仅保存在用户本机。
+- 增加小M显示开关和热键：窗口内 `Alt+A`，全局 `Ctrl+Alt+A`；隐藏悬浮球后仍可通过热键重新打开。
+- 对小M说“世界和平”可以触发经典彩蛋效果。
+- 修复清除对话记忆后输入框短时间无法点击或输入的问题，并统一助手名称为“小M”。
+- 安装器增加运行进程处理，覆盖升级时会自动关闭旧版 Mineradio，避免主程序文件被占用。
 
 ## 作者支持
 
@@ -33,6 +30,7 @@
 
 ## 主要功能
 
+- AI Agent 小M：自然语言控制播放器、队列、歌单、音质、歌词动画、界面和视觉效果，支持文字及可用环境下的语音输入。
 - 本地音乐：导入本地文件和文件夹，管理音乐库、播放队列、自定义歌单和文件夹歌单。
 - 音乐首页：继续播放、每日推荐、最近播放、聆听统计、接下来播放、音乐星球地图和局域网多设备遥控。
 - 歌手与专辑：在线匹配歌手，浏览专辑及曲目，整张播放或收藏。
@@ -46,11 +44,25 @@
 - 录制与预览：60 FPS H.264 场景录制、GIF 预览和 Wallpaper Engine 资源转换。
 - 更新：从 GitHub Release 检查后续版本并下载更新。
 
+## AI Agent 小M
+
+点击小M悬浮球即可打开对话面板，也可以使用 `Alt+A`；在高级设置中可以隐藏悬浮球，全局热键 `Ctrl+Alt+A` 仍可唤起。
+
+可使用类似下面的自然语言命令：
+
+- “播放海阔天空”“暂停”“下一首”“音量调到 40%”“跳到 1 分 30 秒”
+- “切换无损音质”“打开音乐库”“打开音乐电台”“打开排行榜”“打开音源管理”
+- “歌词动画切换成玻璃”“把当前歌曲收藏到我喜欢”“创建一个通勤歌单”
+- “隐藏小M”“打开小M”“世界和平”
+
+模型服务可在小M设置中选择。除 Ollama 等本地服务外，通常需要用户自行申请并填写对应服务商的 API Key；项目不内置、不收集也不代管任何密钥。请求会直接发送到用户选择的模型服务商，请同时遵守相应服务条款和隐私政策。
+
 ## 安装包包含的内容
 
 正式 Windows 安装包包含运行完整功能所需的：
 
 - Electron 主程序、页面、桌面歌词和全部前端资源
+- AI Agent 小M前后端、工具调用、热键、语音辅助脚本和设置界面
 - 音效、歌手专辑、实时频谱、音乐星球、局域网遥控代码与二维码运行时依赖
 - FFmpeg 8.1.1、RePKG v0.4.0-alpha 及第三方许可说明
 - 安全覆盖升级、路径校验和卸载保护逻辑
@@ -72,10 +84,10 @@ npm run build:win
 
 `build:win` 会下载并校验固定版本的 FFmpeg 与 RePKG，运行发布校验，然后生成：
 
-- `dist/Mineradio.Setup.1.5.7.3.exe`
-- `dist/Mineradio.Setup.1.5.7.3.exe.blockmap`
+- `dist/Mineradio.Setup.1.6.0.exe`
+- `dist/Mineradio.Setup.1.6.0.exe.blockmap`
 - `dist/latest.yml`
-- `dist/Mineradio.Setup.1.5.7.3.SHA256.txt`
+- `dist/Mineradio.Setup.1.6.0.SHA256.txt`
 
 macOS DMG 需在 macOS 环境执行 `npm run build:mac`。
 
@@ -92,4 +104,3 @@ macOS DMG 需在 macOS 环境执行 `npm run build:mac`。
 ## License
 
 本项目采用 [GNU General Public License v3.0](LICENSE)（GPL-3.0-only）发布。
-

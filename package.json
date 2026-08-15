@@ -1,7 +1,7 @@
 {
   "name": "mineradio",
   "productName": "Mineradio",
-  "version": "1.5.7",
+  "version": "1.6.0",
   "description": "Mineradio 桌面音乐播放器，支持本地播放、歌单导入同步、跨平台搜索、歌词与可视化效果。",
   "author": "Mineradio",
   "license": "GPL-3.0-only",
@@ -16,7 +16,7 @@
     "build:mac": "electron-builder --mac dmg zip --universal --publish never"
   },
   "build": {
-    "buildVersion": "1.5.7.3",
+    "buildVersion": "1.6.0",
     "appId": "com.mineradio.desktop",
     "productName": "Mineradio",
     "directories": {
@@ -56,18 +56,23 @@
       "!updates/**/*",
       "!backups/**/*",
       "server.js",
+      "agent-api.js",
       "wallpaper-converter.js",
       "dj-analyzer.js",
       "lx-search.js",
       "lx-source-host.js",
       "platform-playlist-import.js",
       "qishui-api.js",
+      "qishui-auth-v6.js",
+      "qishui-auth-v6/**/*",
+      "qishui-qr-login.js",
       "kugou-api.js",
       "qq-vip-api.js",
       "spotify-api.js",
       "qishui-audio-decryptor/**/*",
       "cuefield/**/*",
       "LICENSE",
+      "NOTICE.md",
       "package.json",
       "!public/index.*.html",
       "public/index.html"
@@ -104,10 +109,10 @@
           ]
         }
       ],
-      "artifactName": "Mineradio-1.5.7.3-mac-${arch}.${ext}"
+      "artifactName": "Mineradio-1.6.0-mac-${arch}.${ext}"
     },
     "dmg": {
-      "artifactName": "Mineradio-1.5.7.3-mac-${arch}.${ext}"
+      "artifactName": "Mineradio-1.6.0-mac-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -119,7 +124,7 @@
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "include": "build/installer.nsh",
-      "artifactName": "Mineradio.Setup.1.5.7.3.${ext}"
+      "artifactName": "Mineradio.Setup.1.6.0.${ext}"
     },
     "publish": [
       {
@@ -130,7 +135,7 @@
     ]
   },
   "mineradio": {
-    "releaseVersion": "1.5.7.3",
+    "releaseVersion": "1.6.0",
     "update": {
       "provider": "github",
       "owner": "ww085213",

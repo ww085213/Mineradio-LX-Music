@@ -121,7 +121,9 @@ function saveMigratedSource(record) {
 function readSourceStore() {
   const saved = readJsonIfExists(MR_SOURCES_FILE);
   const records = Array.isArray(saved?.records)
-    ? saved.records.filter(item => item && typeof item.script === 'string' && item.script.trim())
+    ? saved.records
+      .filter(item => item && typeof item.script === 'string' && item.script.trim())
+      .map(item => ({ ...item, enabled: item.enabled !== false }))
     : [];
   const legacy = readJsonIfExists(MR_SOURCE_FILE);
   if (legacy && typeof legacy.script === 'string' && legacy.script.trim() &&
@@ -141,7 +143,8 @@ function writeSourceStore(store) {
 
 function activeScriptRecord() {
   const store = readSourceStore();
-  const imported = store.records.find(item => item.id === store.activeId) || store.records[0];
+  const imported = store.records.find(item => item.id === store.activeId && item.enabled !== false) ||
+    store.records.find(item => item.enabled !== false);
   if (imported && typeof imported.script === 'string' && imported.script.trim()) return imported;
 
   const saved = readFirstLxJson('user_api.json');
@@ -160,7 +163,7 @@ function activeScriptRecord() {
 
 function allScriptRecords() {
   const store = readSourceStore();
-  const records = store.records.slice();
+  const records = store.records.filter(item => item.enabled !== false).slice();
   const saved = readFirstLxJson('user_api.json');
   const userApis = saved && (Array.isArray(saved) ? saved : saved.userApis);
   if (Array.isArray(userApis)) records.push(...userApis.filter(item => item && typeof item.script === 'string'));
@@ -558,6 +561,7 @@ async function importSource(script, fileName) {
   script = String(script || '').replace(/^\uFEFF/, '');
   if (!script.trim() || script.length > 5 * 1024 * 1024) throw new Error('LX_SOURCE_FILE_INVALID');
   const record = metadataFromScript(script, fileName);
+  record.enabled = true;
   fs.mkdirSync(MR_SOURCE_DIR, { recursive: true });
   const previousStore = readSourceStore();
   const store = { activeId: record.id, records: previousStore.records.slice() };
@@ -593,6 +597,7 @@ function listSources() {
     name: item.name || '未命名音源',
     version: item.version || '',
     author: item.author || '',
+    enabled: item.enabled !== false,
     active: item.id === store.activeId,
   }));
 }
@@ -601,6 +606,7 @@ async function selectSource(id) {
   const store = readSourceStore();
   const record = store.records.find(item => item.id === String(id || ''));
   if (!record) throw new Error('LX_SOURCE_NOT_FOUND');
+  if (record.enabled === false) throw new Error('LX_SOURCE_DISABLED');
   const previousId = store.activeId;
   store.activeId = record.id;
   writeSourceStore(store);
@@ -614,6 +620,91 @@ async function selectSource(id) {
     runtime = null;
     throw err;
   }
+}
+
+function normalizeSourceIds(ids) {
+  return [...new Set((Array.isArray(ids) ? ids : [ids])
+    .map(id => String(id || '').trim()).filter(Boolean))];
+}
+
+async function setSourcesEnabled(ids, enabled) {
+  const sourceIds = normalizeSourceIds(ids);
+  if (!sourceIds.length) throw new Error('LX_SOURCE_IDS_REQUIRED');
+  const nextEnabled = enabled !== false;
+  const previousStore = readSourceStore();
+  const existing = new Set(previousStore.records.map(item => item.id));
+  if (sourceIds.some(id => !existing.has(id))) throw new Error('LX_SOURCE_NOT_FOUND');
+
+  const nextRecords = previousStore.records.map(item =>
+    sourceIds.includes(item.id) ? { ...item, enabled: nextEnabled } : item
+  );
+  let nextActiveId = previousStore.activeId;
+  if (!nextEnabled && sourceIds.includes(nextActiveId)) {
+    const fallback = nextRecords.find(item => item.enabled !== false);
+    if (!fallback) throw new Error('LX_SOURCE_AT_LEAST_ONE_ENABLED');
+    nextActiveId = fallback.id;
+  }
+  const nextStore = { activeId: nextActiveId, records: nextRecords };
+  const previousActive = previousStore.records.find(item => item.id === previousStore.activeId);
+  const nextActive = nextRecords.find(item => item.id === nextActiveId);
+  writeSourceStore(nextStore);
+  if (nextActive) fs.writeFileSync(MR_SOURCE_FILE, JSON.stringify(nextActive), 'utf8');
+  const activeChanged = previousStore.activeId !== nextActiveId;
+  if (activeChanged) runtime = null;
+  try {
+    const host = await getRuntime(activeChanged);
+    return {
+      ok: true,
+      name: host.name,
+      version: host.version,
+      sources: host.sources,
+      installed: listSources(),
+    };
+  } catch (err) {
+    writeSourceStore(previousStore);
+    try {
+      if (previousActive) fs.writeFileSync(MR_SOURCE_FILE, JSON.stringify(previousActive), 'utf8');
+    } catch (_err) {}
+    runtime = null;
+    throw err;
+  }
+}
+
+async function checkSources(ids) {
+  const sourceIds = normalizeSourceIds(ids);
+  if (!sourceIds.length) throw new Error('LX_SOURCE_IDS_REQUIRED');
+  const store = readSourceStore();
+  const checked = [];
+  for (const id of sourceIds) {
+    const record = store.records.find(item => item.id === id);
+    if (!record) {
+      checked.push({ id, ok: false, error: 'LX_SOURCE_NOT_FOUND' });
+      continue;
+    }
+    try {
+      const host = await withTimeout(createRuntime(record), 12000, 'LX_SOURCE_CHECK_TIMEOUT');
+      checked.push({
+        id,
+        ok: true,
+        name: record.name || host.name || '未命名音源',
+        version: record.version || host.version || '',
+        enabled: record.enabled !== false,
+        active: record.id === store.activeId,
+        sources: Object.keys(host.sources || {}),
+      });
+    } catch (err) {
+      checked.push({
+        id,
+        ok: false,
+        name: record.name || '未命名音源',
+        version: record.version || '',
+        enabled: record.enabled !== false,
+        active: record.id === store.activeId,
+        error: err && err.message ? err.message : 'LX_SOURCE_CHECK_FAILED',
+      });
+    }
+  }
+  return { ok: true, checked, installed: listSources() };
 }
 
 async function deleteSource(id) {
@@ -1151,6 +1242,8 @@ module.exports = {
   importSourceUrl,
   listSources,
   selectSource,
+  setSourcesEnabled,
+  checkSources,
   deleteSource,
   deleteSources,
   resolveMusicUrl,

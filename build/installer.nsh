@@ -88,6 +88,36 @@
   ${EndIf}
 !macroend
 
+!macro customCheckAppRunning
+  retryCloseMineradio:
+    ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+    ${If} $R0 != 0
+      Goto mineradioClosed
+    ${EndIf}
+
+    DetailPrint "正在关闭运行中的 Mineradio..."
+    ${nsProcess::CloseProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+    Sleep 2000
+
+    ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+    ${If} $R0 != 0
+      Goto mineradioClosed
+    ${EndIf}
+
+    DetailPrint "正在结束残留的 Mineradio 进程..."
+    ${nsProcess::KillProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+    Sleep 1200
+
+    ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+    ${If} $R0 == 0
+      MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "Mineradio 仍在运行。请手动关闭后点击“重试”。" /SD IDCANCEL IDRETRY retryCloseMineradio
+      Quit
+    ${EndIf}
+
+  mineradioClosed:
+    ${nsProcess::Unload}
+!macroend
+
 !macro customRemoveFiles
   Call un.MineradioRemoveInstalledFiles
 !macroend
