@@ -3,12 +3,13 @@
 const fs = require('fs');
 const https = require('https');
 const path = require('path');
+const APP_ROOT = path.resolve(__dirname, '..');
 
 const SPOTIFY_ACCOUNTS_BASE = (process.env.SPOTIFY_ACCOUNTS_BASE || 'https://accounts.spotify.com').replace(/\/+$/, '');
 const SPOTIFY_API_BASE = (process.env.SPOTIFY_API_BASE || 'https://api.spotify.com/v1').replace(/\/+$/, '');
 const DEFAULT_SPOTIFY_MARKET = String(process.env.MINERADIO_SPOTIFY_MARKET || process.env.SPOTIFY_MARKET || 'US').trim().toUpperCase();
-const DEFAULT_SPOTIFY_CONFIG_FILE = path.join(__dirname, '.spotify-credentials.json');
-const DEFAULT_SPOTIFY_TOKEN_FILE = path.join(__dirname, '.spotify-token.json');
+const DEFAULT_SPOTIFY_CONFIG_FILE = path.join(APP_ROOT, '.spotify-credentials.json');
+const DEFAULT_SPOTIFY_TOKEN_FILE = path.join(APP_ROOT, '.spotify-token.json');
 const DEFAULT_SPOTIFY_REDIRECT_URI = 'http://127.0.0.1:43879/callback';
 const DEFAULT_SPOTIFY_SCOPES = [
   'playlist-read-private',
@@ -73,7 +74,7 @@ function spotifyConfigFileCandidates() {
   }
   add(firstEnv(['SPOTIFY_CONFIG_FILE', 'MINERADIO_SPOTIFY_CONFIG_FILE']));
   add(DEFAULT_SPOTIFY_CONFIG_FILE);
-  add(path.join(__dirname, 'spotify-credentials.json'));
+  add(path.join(APP_ROOT, 'spotify-credentials.json'));
   return candidates;
 }
 

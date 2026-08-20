@@ -14,11 +14,11 @@ const { once } = require('events');
 const { Readable } = require('stream');
 const { fileURLToPath } = require('url');
 const { execFileSync, spawn } = require('child_process');
-const { WallpaperConverter } = require('./wallpaper-converter');
-const lxSourceHost = require('./lx-source-host');
-const lxSearch = require('./lx-search');
-const platformPlaylistImport = require('./platform-playlist-import');
-const agentApi = require('./agent-api');
+const { WallpaperConverter } = require('./services/wallpaper-converter');
+const lxSourceHost = require('./services/lx-source-host');
+const lxSearch = require('./services/lx-search');
+const platformPlaylistImport = require('./services/platform-playlist-import');
+const agentApi = require('./services/agent-api');
 let electronNet = null;
 try {
   const electron = require('electron');

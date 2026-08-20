@@ -32,8 +32,7 @@ if (packageJson.build.buildVersion !== releaseVersion) fail(`buildVersion 与 re
 if (packageJson.build.nsis.artifactName !== `Mineradio.Setup.${releaseVersion}.\${ext}`) fail('Windows 安装包文件名版本不正确');
 
 for (const entry of [
-  'desktop/**/*', 'public/**/*', 'bin/**/*', 'agent-api.js', 'qishui-auth-v6.js',
-  'qishui-auth-v6/**/*', 'qishui-qr-login.js', 'NOTICE.md', 'LICENSE', 'package.json',
+  'desktop/**/*', 'public/**/*', 'bin/**/*', 'services/**/*', 'qishui-auth-v6/**/*', 'NOTICE.md', 'LICENSE', 'package.json',
 ]) {
   if (!packageJson.build.files.includes(entry)) fail(`安装包 files 缺少: ${entry}`);
 }
@@ -44,7 +43,7 @@ for (const forbidden of ['Mineradio-Network-Split-Switch.ps1', 'Mineradio网络�
 }
 
 const serverSource = read('server.js');
-const agentSource = read('agent-api.js');
+const agentSource = read('services/agent-api.js');
 const commandSource = read('public/js/music-agent-command.js');
 const toolsSource = read('public/js/agent-music-tools.js');
 const indexSource = read('public/index.html');
@@ -52,12 +51,12 @@ const mainSource = read('desktop/main.js');
 const preloadSource = read('desktop/preload.js');
 const installerSource = read('build/installer.nsh');
 
-requireText('server.js', serverSource, "require('./agent-api')");
+requireText('server.js', serverSource, "require('./services/agent-api')");
 requireText('server.js', serverSource, "pn === '/api/agent/chat'");
 requireText('server.js', serverSource, "pn === '/api/agent/config'");
 requireText('server.js', serverSource, "pn === '/api/agent/speech/recognize'");
 for (const provider of ['openai', 'anthropic', 'gemini', 'deepseek', 'qwen', 'kimi', 'ollama', 'custom']) {
-  requireText('agent-api.js', agentSource, `'${provider}'`);
+  requireText('services/agent-api.js', agentSource, `'${provider}'`);
 }
 for (const tool of [
   'search_and_play_music', 'control_playback', 'set_volume', 'skip_track',
@@ -65,7 +64,7 @@ for (const tool of [
   'control_lyric_animation', 'save_music_to_playlist', 'create_local_playlist',
   'build_recommended_playlist', 'control_diy_visual',
 ]) {
-  requireText('agent-api.js', agentSource, `'${tool}'`);
+  requireText('services/agent-api.js', agentSource, `'${tool}'`);
 }
 requireText('public/js/music-agent-command.js', commandSource, 'isWorldPeaceEasterEggIntent');
 requireText('public/js/music-agent-command.js', commandSource, 'focusChatInputAfterReply');
@@ -85,8 +84,8 @@ requireText('build/installer.nsh', installerSource, 'nsProcess::KillProcess');
 
 for (const relativePath of [
   'desktop/main.js', 'desktop/preload.js', 'desktop/local-music-library.js',
-  'server.js', 'agent-api.js', 'lx-source-host.js', 'qishui-auth-v6.js',
-  'qishui-qr-login.js', 'public/js/music-agent-command.js',
+  'server.js', 'services/agent-api.js', 'services/lx-source-host.js', 'services/qishui-auth-v6.js',
+  'services/qishui-qr-login.js', 'public/js/music-agent-command.js',
   'public/js/agent-music-tools.js', 'public/js/modules/08-account/00-login-easter-egg.js',
 ]) checkSyntax(relativePath);
 

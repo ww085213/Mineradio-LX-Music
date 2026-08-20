@@ -5,12 +5,13 @@ const crypto = require('crypto');
 const http = require('http');
 const https = require('https');
 const path = require('path');
+const APP_ROOT = path.resolve(__dirname, '..');
 
 const QISHUI_API_BASE = (process.env.QISHUI_API_BASE || 'https://open.douyin.com').replace(/\/+$/, '');
 const QISHUI_RELATED_MEDIA_PATH = '/api/luna/v1/platform/feed/related-media/';
 const QISHUI_FEED_SONG_TAB_PATH = '/api/luna/v1/platform/feed/song-tab/';
 const QISHUI_SCOPE = 'luna.openapi.platform.play_core';
-const DEFAULT_QISHUI_TOKEN_FILE = path.join(__dirname, '.qishui-token');
+const DEFAULT_QISHUI_TOKEN_FILE = path.join(APP_ROOT, '.qishui-token');
 const QISHUI_UA = 'Mineradio/2.0.2 (Qishui official OpenAPI bridge)';
 const QISHUI_OAUTH_AUTH_URL = (process.env.QISHUI_OAUTH_AUTH_URL || 'https://open.douyin.com/platform/oauth/connect').replace(/\/+$/, '');
 const QISHUI_OAUTH_TOKEN_URL = process.env.QISHUI_OAUTH_TOKEN_URL || 'https://open.douyin.com/oauth/access_token/';
@@ -98,8 +99,8 @@ function qishuiOAuthConfigFileCandidates() {
   };
   add(firstEnv(['QISHUI_OAUTH_CONFIG_FILE', 'DOUYIN_OAUTH_CONFIG_FILE']));
   try { add(path.join(path.dirname(qishuiTokenFile()), '.qishui-oauth.json')); } catch (_) {}
-  add(path.join(__dirname, '.qishui-oauth.json'));
-  add(path.join(__dirname, 'qishui-oauth.json'));
+  add(path.join(APP_ROOT, '.qishui-oauth.json'));
+  add(path.join(APP_ROOT, 'qishui-oauth.json'));
   return candidates;
 }
 

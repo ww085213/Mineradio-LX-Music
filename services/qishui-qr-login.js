@@ -9,7 +9,7 @@ const os = require('os');
 const path = require('path');
 const qishuiAuthV6 = require('./qishui-auth-v6');
 
-const DEFAULT_CONFIG_FILE = path.join(__dirname, '.qishui-qr-login.json');
+const DEFAULT_CONFIG_FILE = path.join(path.resolve(__dirname, '..'), '.qishui-qr-login.json');
 
 function defaultConfig() {
   return {

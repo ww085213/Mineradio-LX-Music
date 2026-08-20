@@ -28,7 +28,7 @@ const UA =
   '(KHTML, like Gecko) SodaMusic/3.2.1 Chrome/136.0.7103.59 ' +
   'Electron/36.4.0-rs.22.release.main.1 TTElectron/36.4.0-rs.22.release.main.1 Safari/537.36';
 
-const ASSET_DIR = path.join(__dirname, 'qishui-auth-v6');
+const ASSET_DIR = path.join(path.resolve(__dirname, '..'), 'qishui-auth-v6');
 const ASSETS = new Map([
   ['security_seed.html', 'text/html; charset=utf-8'],
   ['security_host.html', 'text/html; charset=utf-8'],
