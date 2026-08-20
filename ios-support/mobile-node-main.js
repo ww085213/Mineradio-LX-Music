@@ -3,6 +3,7 @@
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
+const Module = require('module');
 const { app, channel } = require('bridge');
 
 const dataDir = app.datadir();
@@ -17,13 +18,37 @@ for (const dir of [
   fs.mkdirSync(dir, { recursive: true });
 }
 
-process.env.PORT = '3000';
+process.env.PORT = process.env.MINERADIO_MOBILE_PORT || '3000';
 process.env.HOST = '127.0.0.1';
-process.env.MINERADIO_REMOTE_PORT = '3001';
+process.env.MINERADIO_REMOTE_PORT = process.env.MINERADIO_MOBILE_REMOTE_PORT || '3001';
 process.env.MINERADIO_BEAT_CACHE_DIR = path.join(cacheDir, 'beatmaps');
 process.env.MINERADIO_WALLPAPER_CACHE_DIR = path.join(cacheDir, 'wallpapers');
 process.env.MINERADIO_UPDATE_DIR = path.join(cacheDir, 'updates');
 process.env.LOCALAPPDATA = dataDir;
+
+// Node.js for Mobile does not implement child_process. The desktop backend
+// imports it at module load time, although those Windows-only features are not
+// used by the iOS UI. Supply a narrow shim so the local music/search server can
+// boot while unsupported desktop actions fail only if they are actually used.
+const originalModuleLoad = Module._load;
+function unsupportedChildProcess() {
+  const error = new Error('child_process is not available in Mineradio for iOS');
+  error.code = 'ERR_IOS_UNSUPPORTED_CHILD_PROCESS';
+  throw error;
+}
+const childProcessShim = {
+  exec: unsupportedChildProcess,
+  execFile: unsupportedChildProcess,
+  execFileSync: unsupportedChildProcess,
+  execSync: unsupportedChildProcess,
+  fork: unsupportedChildProcess,
+  spawn: unsupportedChildProcess,
+  spawnSync: unsupportedChildProcess,
+};
+Module._load = function mobileModuleLoad(request, parent, isMain) {
+  if (request === 'child_process' || request === 'node:child_process') return childProcessShim;
+  return originalModuleLoad.call(this, request, parent, isMain);
+};
 
 // The bundled UI is served by Capacitor while the API and media proxy run on
 // loopback. Add CORS once at the Node HTTP boundary and hide the cross-origin
@@ -61,14 +86,20 @@ http.createServer = function mobileCreateServer(listener) {
 channel.post('mineradio-node-status', { state: 'starting', dataDir });
 
 try {
-  require('./server');
+  require(process.env.MINERADIO_MOBILE_SERVER_ENTRY || './server');
   channel.post('mineradio-node-status', { state: 'listening', port: 3000 });
 } catch (error) {
+  const message = error && (error.stack || error.message) || String(error);
+  try {
+    fs.writeFileSync(path.join(dataDir, 'mineradio-node-startup.log'), message, 'utf8');
+  } catch (_writeError) {}
   channel.post('mineradio-node-status', {
     state: 'failed',
-    message: error && (error.stack || error.message) || String(error),
+    message,
   });
-  throw error;
+  // Never rethrow here. An unsupported backend feature must not terminate the
+  // embedded Node thread and take the whole iOS application down with it.
+  console.error('[Mineradio iOS] Local engine failed to start:', message);
 }
 
 app.on('pause', pauseLock => pauseLock.release());

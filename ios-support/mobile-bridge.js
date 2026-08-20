@@ -3,6 +3,7 @@
 
   var LOCAL_ORIGIN = 'http://127.0.0.1:3000';
   var READY_KEY = 'mineradio-ios-node-ready';
+  var nodeStartupError = '';
 
   function rewriteApiUrl(value) {
     if (typeof value === 'string' && value.indexOf('/api/') === 0) return LOCAL_ORIGIN + value;
@@ -72,6 +73,30 @@
     root.querySelector('button').onclick = function () { location.reload(); };
   }
 
+  function showStartupError(value) {
+    nodeStartupError = String(value || '未知启动错误');
+    var root = document.getElementById('mineradio-ios-startup');
+    var message = document.getElementById('mineradio-ios-startup-message');
+    if (message) message.textContent = '本机引擎启动失败：' + nodeStartupError.split('\n')[0];
+    if (root) {
+      var dot = root.querySelector('.mineradio-ios-startup-dot');
+      var button = root.querySelector('button');
+      if (dot) dot.style.display = 'none';
+      if (button) button.style.display = 'block';
+    }
+  }
+
+  function bindNodeStatus() {
+    var capacitor = window.Capacitor;
+    var nodejs = capacitor && capacitor.Plugins && capacitor.Plugins.Nodejs;
+    if (!nodejs || typeof nodejs.addListener !== 'function') return;
+    nodejs.addListener('message', function (event) {
+      if (!event || event.eventName !== 'mineradio-node-status') return;
+      var status = event.args && event.args[0];
+      if (status && status.state === 'failed') showStartupError(status.message);
+    });
+  }
+
   function waitForLocalNode() {
     var startedAt = Date.now();
     var root = document.getElementById('mineradio-ios-startup');
@@ -88,6 +113,10 @@
           if (root) root.remove();
         })
         .catch(function () {
+          if (nodeStartupError) {
+            showStartupError(nodeStartupError);
+            return;
+          }
           if (Date.now() - startedAt < 30000) {
             setTimeout(check, 350);
             return;
@@ -109,6 +138,7 @@
     document.body.classList.remove('desktop-shell');
     document.body.classList.add('mobile-device');
     createStartupScreen();
+    bindNodeStatus();
     waitForLocalNode();
   });
 })();
