@@ -1,12 +1,7 @@
-name: Build iOS unsigned IPA
+name: Build standalone iOS IPA
 
 on:
   workflow_dispatch:
-    inputs:
-      backend_url:
-        description: Optional HTTPS backend URL compiled into the app
-        required: false
-        default: ""
 
 permissions:
   contents: read
@@ -14,7 +9,7 @@ permissions:
 jobs:
   build-ios:
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 75
 
     steps:
       - name: Checkout
@@ -25,27 +20,27 @@ jobs:
         with:
           node-version: 22
 
-      - name: Prepare Capacitor project
+      - name: Prepare standalone Capacitor project
         shell: bash
-        env:
-          MINERADIO_BACKEND_URL: ${{ inputs.backend_url }}
         run: |
           set -euo pipefail
           mkdir -p ios-build/www
           rsync -a --delete public/ ios-build/www/
+          mkdir -p ios-build/www/nodejs
           cp ios-support/mobile-bridge.js ios-build/www/mobile-bridge.js
+
+          # Bundle the desktop Node backend and its static assets inside the app.
+          find . -maxdepth 1 -type f -name '*.js' -exec cp {} ios-build/www/nodejs/ \;
+          rsync -a public/ ios-build/www/nodejs/public/
+          for dir in cuefield qishui-audio-decryptor qishui-auth-v6; do
+            if [[ -d "$dir" ]]; then rsync -a "$dir/" "ios-build/www/nodejs/$dir/"; fi
+          done
+          cp ios-support/mobile-node-main.js ios-build/www/nodejs/mobile-node-main.js
 
           python3 - <<'PY'
           from pathlib import Path
-          import os
 
-          root = Path('ios-build/www')
-          bridge = root / 'mobile-bridge.js'
-          backend = os.environ.get('MINERADIO_BACKEND_URL', '').strip().rstrip('/')
-          text = bridge.read_text(encoding='utf-8').replace('__MINERADIO_BACKEND_URL__', backend)
-          bridge.write_text(text, encoding='utf-8')
-
-          index = root / 'index.html'
+          index = Path('ios-build/www/index.html')
           html = index.read_text(encoding='utf-8')
           tag = '<script src="mobile-bridge.js"></script>'
           if tag not in html:
@@ -55,6 +50,29 @@ jobs:
           index.write_text(html, encoding='utf-8')
           PY
 
+          cat > ios-build/www/nodejs/package.json <<'JSON'
+          {
+            "name": "mineradio-ios-node",
+            "productName": "Mineradio",
+            "version": "1.6.0",
+            "private": true,
+            "main": "mobile-node-main.js",
+            "mineradio": {
+              "releaseVersion": "1.6.0",
+              "update": {
+                "provider": "github",
+                "owner": "ww085213",
+                "repo": "Mineradio-LX-Music",
+                "preview": true
+              }
+            },
+            "dependencies": {
+              "qrcode": "1.5.4"
+            }
+          }
+          JSON
+          npm install --prefix ios-build/www/nodejs --omit=dev --no-audit --no-fund
+
           cd ios-build
           cat > package.json <<'JSON'
           {
@@ -62,9 +80,10 @@ jobs:
             "version": "1.6.0",
             "private": true,
             "dependencies": {
-              "@capacitor/cli": "7.4.3",
-              "@capacitor/core": "7.4.3",
-              "@capacitor/ios": "7.4.3"
+              "@capacitor/cli": "8.4.0",
+              "@capacitor/core": "8.4.0",
+              "@capacitor/ios": "8.4.0",
+              "@capawesome/capacitor-nodejs": "0.1.0"
             }
           }
           JSON
@@ -77,14 +96,20 @@ jobs:
               "contentInset": "automatic",
               "preferredContentMode": "mobile"
             },
+            "plugins": {
+              "Nodejs": {
+                "nodeDir": "nodejs",
+                "startMode": "auto"
+              }
+            },
             "server": {
-              "iosScheme": "https",
-              "allowNavigation": ["*"]
+              "iosScheme": "capacitor",
+              "allowNavigation": ["127.0.0.1", "localhost"]
             }
           }
           JSON
           npm install --no-audit --no-fund
-          npx cap add ios
+          npx cap add ios --packagemanager SPM
           npx cap sync ios
 
       - name: Configure iOS metadata
@@ -94,16 +119,18 @@ jobs:
           PLIST="ios-build/ios/App/App/Info.plist"
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string audio" "$PLIST" || true
-          /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string Mineradio may connect to a user-selected music service." "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string Mineradio runs its music engine locally on this iPhone." "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Mineradio" "$PLIST"
 
-      - name: Build unsigned device app
+      - name: Build unsigned standalone device app
         shell: bash
         run: |
           set -euo pipefail
           cd ios-build/ios/App
           xcodebuild \
-            -workspace App.xcworkspace \
+            -project App.xcodeproj \
             -scheme App \
             -configuration Release \
             -sdk iphoneos \
@@ -119,15 +146,15 @@ jobs:
           mkdir -p "$RUNNER_TEMP/ipa/Payload"
           cp -R "$APP_PATH" "$RUNNER_TEMP/ipa/Payload/Mineradio.app"
           cd "$RUNNER_TEMP/ipa"
-          zip -qry Mineradio-1.6.0-unsigned.ipa Payload
-          shasum -a 256 Mineradio-1.6.0-unsigned.ipa > Mineradio-1.6.0-unsigned.SHA256.txt
+          zip -qry Mineradio-1.6.0-standalone-unsigned.ipa Payload
+          shasum -a 256 Mineradio-1.6.0-standalone-unsigned.ipa > Mineradio-1.6.0-standalone-unsigned.SHA256.txt
 
-      - name: Upload unsigned IPA
+      - name: Upload standalone unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Mineradio-iOS-unsigned
+          name: Mineradio-iOS-standalone-unsigned
           if-no-files-found: error
           retention-days: 30
           path: |
-            ${{ runner.temp }}/ipa/Mineradio-1.6.0-unsigned.ipa
-            ${{ runner.temp }}/ipa/Mineradio-1.6.0-unsigned.SHA256.txt
+            ${{ runner.temp }}/ipa/Mineradio-1.6.0-standalone-unsigned.ipa
+            ${{ runner.temp }}/ipa/Mineradio-1.6.0-standalone-unsigned.SHA256.txt
