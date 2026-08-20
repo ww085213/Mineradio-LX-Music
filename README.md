@@ -24,6 +24,8 @@
 
 [查看完整支持页](docs/SUPPORT.md)
 
+[我的抖音](https://v.douyin.com/eRlkIQrTOTw/)
+
 ![Mineradio 作者支持渠道](docs/assets/support/mineradio-author-support-poster.png)
 
 > 支持完全自愿，不提供功能解锁、专属资源、优先服务等权益，也不构成付费服务合同。
