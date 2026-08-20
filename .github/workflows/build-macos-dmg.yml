@@ -103,7 +103,7 @@ jobs:
           set -euo pipefail
           cd ios-build/ios/App
           xcodebuild \
-            -project App.xcodeproj \
+            -workspace App.xcworkspace \
             -scheme App \
             -configuration Release \
             -sdk iphoneos \
