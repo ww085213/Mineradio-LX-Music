@@ -1,27 +1,20 @@
-name: Build macOS DMG
+name: Build iOS unsigned IPA
 
 on:
   workflow_dispatch:
     inputs:
-      release_tag:
-        description: GitHub Release tag to upload assets to
-        required: true
-        default: v1.5.3-supplement
-      upload_release:
-        description: Upload DMG/ZIP assets to the release tag
-        required: true
-        default: "true"
-        type: choice
-        options:
-          - "true"
-          - "false"
+      backend_url:
+        description: Optional HTTPS backend URL compiled into the app
+        required: false
+        default: ""
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  build-macos:
-    runs-on: macos-latest
+  build-ios:
+    runs-on: macos-15
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -30,58 +23,111 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 24
-          cache: npm
+          node-version: 22
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Generate macOS icon
+      - name: Prepare Capacitor project
         shell: bash
-        run: |
-          mkdir -p build/icon.iconset
-          sips -z 16 16 build/icon.png --out build/icon.iconset/icon_16x16.png
-          sips -z 32 32 build/icon.png --out build/icon.iconset/icon_16x16@2x.png
-          sips -z 32 32 build/icon.png --out build/icon.iconset/icon_32x32.png
-          sips -z 64 64 build/icon.png --out build/icon.iconset/icon_32x32@2x.png
-          sips -z 128 128 build/icon.png --out build/icon.iconset/icon_128x128.png
-          sips -z 256 256 build/icon.png --out build/icon.iconset/icon_128x128@2x.png
-          sips -z 256 256 build/icon.png --out build/icon.iconset/icon_256x256.png
-          sips -z 512 512 build/icon.png --out build/icon.iconset/icon_256x256@2x.png
-          sips -z 512 512 build/icon.png --out build/icon.iconset/icon_512x512.png
-          sips -z 1024 1024 build/icon.png --out build/icon.iconset/icon_512x512@2x.png
-          iconutil -c icns build/icon.iconset -o build/icon.icns
-
-      - name: Build DMG and ZIP
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npm run build:mac
+          MINERADIO_BACKEND_URL: ${{ inputs.backend_url }}
+        run: |
+          set -euo pipefail
+          mkdir -p ios-build/www
+          rsync -a --delete public/ ios-build/www/
+          cp ios-support/mobile-bridge.js ios-build/www/mobile-bridge.js
 
-      - name: Checksums
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+
+          root = Path('ios-build/www')
+          bridge = root / 'mobile-bridge.js'
+          backend = os.environ.get('MINERADIO_BACKEND_URL', '').strip().rstrip('/')
+          text = bridge.read_text(encoding='utf-8').replace('__MINERADIO_BACKEND_URL__', backend)
+          bridge.write_text(text, encoding='utf-8')
+
+          index = root / 'index.html'
+          html = index.read_text(encoding='utf-8')
+          tag = '<script src="mobile-bridge.js"></script>'
+          if tag not in html:
+              if '</head>' not in html:
+                  raise SystemExit('index.html does not contain </head>')
+              html = html.replace('</head>', tag + '\n</head>', 1)
+          index.write_text(html, encoding='utf-8')
+          PY
+
+          cd ios-build
+          cat > package.json <<'JSON'
+          {
+            "name": "mineradio-ios-build",
+            "version": "1.6.0",
+            "private": true,
+            "dependencies": {
+              "@capacitor/cli": "7.4.3",
+              "@capacitor/core": "7.4.3",
+              "@capacitor/ios": "7.4.3"
+            }
+          }
+          JSON
+          cat > capacitor.config.json <<'JSON'
+          {
+            "appId": "com.ww085213.mineradio.mobile",
+            "appName": "Mineradio",
+            "webDir": "www",
+            "ios": {
+              "contentInset": "automatic",
+              "preferredContentMode": "mobile"
+            },
+            "server": {
+              "iosScheme": "https",
+              "allowNavigation": ["*"]
+            }
+          }
+          JSON
+          npm install --no-audit --no-fund
+          npx cap add ios
+          npx cap sync ios
+
+      - name: Configure iOS metadata
         shell: bash
         run: |
-          cd dist
-          shasum -a 256 Mineradio-*-mac-*.dmg Mineradio-*-mac-*.zip > macos.SHA256.txt
+          set -euo pipefail
+          PLIST="ios-build/ios/App/App/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string audio" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string Mineradio may connect to a user-selected music service." "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Mineradio" "$PLIST"
 
-      - name: Upload workflow artifact
+      - name: Build unsigned device app
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ios-build/ios/App
+          xcodebuild \
+            -project App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/mineradio-derived" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+          APP_PATH=$(find "$RUNNER_TEMP/mineradio-derived/Build/Products/Release-iphoneos" -maxdepth 1 -name '*.app' -print -quit)
+          test -n "$APP_PATH"
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$APP_PATH" "$RUNNER_TEMP/ipa/Payload/Mineradio.app"
+          cd "$RUNNER_TEMP/ipa"
+          zip -qry Mineradio-1.6.0-unsigned.ipa Payload
+          shasum -a 256 Mineradio-1.6.0-unsigned.ipa > Mineradio-1.6.0-unsigned.SHA256.txt
+
+      - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: mineradio-macos
+          name: Mineradio-iOS-unsigned
+          if-no-files-found: error
+          retention-days: 30
           path: |
-            dist/Mineradio-*-mac-*.dmg
-            dist/Mineradio-*-mac-*.zip
-            dist/latest-mac.yml
-            dist/macos.SHA256.txt
-
-      - name: Upload to GitHub Release
-        if: ${{ inputs.upload_release == 'true' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          gh release upload "${{ inputs.release_tag }}" \
-            dist/Mineradio-*-mac-*.dmg \
-            dist/Mineradio-*-mac-*.zip \
-            dist/latest-mac.yml \
-            dist/macos.SHA256.txt \
-            --clobber
+            ${{ runner.temp }}/ipa/Mineradio-1.6.0-unsigned.ipa
+            ${{ runner.temp }}/ipa/Mineradio-1.6.0-unsigned.SHA256.txt
