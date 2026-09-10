@@ -11,3 +11,4 @@
 - [Mineradio 1.5.7.2](RELEASE_NOTES_1.5.7.2.md)
 - [Mineradio 1.5.7.3](RELEASE_NOTES_1.5.7.3.md)
 - [Mineradio 1.6.0](RELEASE_NOTES_1.6.0.md)
+- [Mineradio 1.6.1](RELEASE_NOTES_1.6.1.md)

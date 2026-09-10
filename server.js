@@ -19,6 +19,8 @@ const lxSourceHost = require('./lx-source-host');
 const lxSearch = require('./lx-search');
 const platformPlaylistImport = require('./platform-playlist-import');
 const agentApi = require('./agent-api');
+const { MultimodalRecommender } = require('./multimodal-recommender');
+const multimodalRecommender = new MultimodalRecommender({ appDir: __dirname });
 let electronNet = null;
 try {
   const electron = require('electron');
@@ -2070,6 +2072,7 @@ async function dailyHotFetchJson(targetUrl, options = {}) {
       method: options.method || 'GET',
       redirect: 'follow',
       signal: controller.signal,
+      body: options.body,
       headers: {
         'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'referer': 'https://music.163.com/',
@@ -2139,10 +2142,10 @@ function dailyHotPushUnique(list, song, seen, limit) {
   list.push(song);
   return true;
 }
-async function fetchNeteaseHotSeeds(limit) {
+async function fetchNeteaseHotSeeds(limit, chartId = '3778678') {
   const endpoints = [
-    'https://music.163.com/api/playlist/detail?id=3778678',
-    'https://music.163.com/api/v6/playlist/detail?id=3778678',
+    `https://music.163.com/api/playlist/detail?id=${encodeURIComponent(chartId)}`,
+    `https://music.163.com/api/v6/playlist/detail?id=${encodeURIComponent(chartId)}`,
   ];
   let lastError = null;
   for (const endpoint of endpoints) {
@@ -2178,13 +2181,34 @@ function dailyHotSongFromQQRank(item) {
     types: ['flac', '320k', '128k'],
   };
 }
-async function fetchQQHotSeeds(limit) {
-  const target = `https://c.y.qq.com/v8/fcg-bin/fcg_v8_toplist_cp.fcg?topid=26&page=detail&type=top&song_begin=0&song_num=${Math.max(30, limit)}&g_tk=5381&format=json`;
-  const data = await dailyHotFetchJson(target, {
-    timeoutMs: 14000,
-    headers: { referer:'https://y.qq.com/n/ryqq/toplist/26' },
+async function fetchQQHotSeeds(limit, chartId = '26') {
+  const target = 'https://u.y.qq.com/cgi-bin/musicu.fcg';
+  const headers = { referer:'https://y.qq.com/n/ryqq/toplist/26', 'content-type':'application/json' };
+  const allBody = {
+    comm:{ ct:24, cv:0 },
+    req_1:{ module:'musicToplist.ToplistInfoServer', method:'GetAll', param:{} },
+  };
+  const all = await dailyHotFetchJson(target, {
+    method:'POST', timeoutMs:14000, headers, body:JSON.stringify(allBody),
   });
-  return (data?.songlist || []).map(dailyHotSongFromQQRank).filter(song => song.name).slice(0, limit);
+  const groups = all?.req_1?.data?.group || [];
+  const requestedTopId = Number(chartId) || 26;
+  const hot = groups.flatMap(group => group?.toplist || []).find(item => Number(item?.topId) === requestedTopId);
+  if (!hot?.period) throw new Error('QQ_HOT_CHART_PERIOD_MISSING');
+  const detailBody = {
+    comm:{ ct:24, cv:0 },
+    req_1:{
+      module:'musicToplist.ToplistInfoServer', method:'GetDetail',
+      param:{ topid:requestedTopId, offset:0, num:Math.max(30, limit), period:hot.period },
+    },
+  };
+  const data = await dailyHotFetchJson(target, {
+    method:'POST', timeoutMs:14000, headers, body:JSON.stringify(detailBody),
+  });
+  return (data?.req_1?.data?.songInfoList || [])
+    .map(dailyHotSongFromQQRank)
+    .filter(song => song.name)
+    .slice(0, limit);
 }
 function dailyHotSplitTopLevelArguments(text) {
   const output = [];
@@ -2221,8 +2245,8 @@ function dailyHotDecodeNuxtToken(token, argumentMap) {
   }
   return '';
 }
-async function fetchKuwoHotSeeds(limit) {
-  const html = await dailyHotFetchText('https://m.kuwo.cn/newh5app/ranklist_detail/16', {
+async function fetchKuwoHotSeeds(limit, chartId = '16') {
+  const html = await dailyHotFetchText(`https://m.kuwo.cn/newh5app/ranklist_detail/${encodeURIComponent(chartId)}`, {
     timeoutMs: 16000,
     headers: { referer:'https://m.kuwo.cn/newh5app/ranklist' },
   });
@@ -2260,12 +2284,12 @@ async function fetchKuwoHotSeeds(limit) {
     types: ['flac24bit', 'flac', '320k', '128k'],
   })).filter(song => song.name);
 }
-async function fetchKugouHotSeeds(limit) {
+async function fetchKugouHotSeeds(limit, chartId = '8888') {
   const output = [];
   const seen = new Set();
   const pageCount = Math.max(1, Math.ceil(limit / 22));
   for (let page = 1; page <= pageCount && output.length < limit; page += 1) {
-    const html = await dailyHotFetchText(`https://www.kugou.com/yy/rank/home/${page}-8888.html`, {
+    const html = await dailyHotFetchText(`https://www.kugou.com/yy/rank/home/${page}-${encodeURIComponent(chartId)}.html`, {
       timeoutMs: 16000,
       headers: { referer:'https://www.kugou.com/yy/html/rank.html' },
     });
@@ -2298,143 +2322,89 @@ async function fetchKugouHotSeeds(limit) {
   }
   return output;
 }
-const DAILY_HOT_PLATFORM_FALLBACKS = {
-  tx: [
-    ['稻香','周杰伦'],['年轮说','杨丞琳'],['达尔文','蔡健雅'],['泡沫','G.E.M.邓紫棋'],['小幸运','田馥甄'],['天黑黑','孙燕姿'],['修炼爱情','林俊杰'],['刻在我心底的名字','卢广仲'],['如果可以','韦礼安'],['突然好想你','五月天'],['说谎','林宥嘉'],['慢冷','梁静茹']
-  ],
-  wy: [
-    ['悬溺','葛东琪'],['若月亮没来','王宇宙Leto / 乔浚丞'],['凄美地','郭顶'],['离别开出花','就是南方凯'],['唯一','告五人'],['起风了','买辣椒也用券'],['可能','程响'],['我记得','赵雷'],['如愿','王菲'],['嘉宾','张远'],['爱人错过','告五人'],['一路生花','温奕心']
-  ],
-  kw: [
-    ['你有没有真的爱过我','阿图表妹'],['岁月如笔写春秋','河南三妹5233'],['人生路漫漫','白小白'],['街角的晚风','陈小春'],['半壶纱','刘珂矣'],['青花','周传雄'],['搀扶','马健涛'],['天地龙鳞','王力宏'],['黄昏','周传雄'],['无人之岛','任然'],['奢香夫人','凤凰传奇'],['野心家','张靓颖']
-  ],
-  kg: [
-    ['吹吹山顶的风','巴扎黑'],['甲乙丙丁','李佳薇'],['樱花草','Sweety'],['抽离','徐良 / 刘丹萌'],['雨爱','杨丞琳'],['有风的日落','万海东'],['街道','林俊杰'],['恋人','李荣浩'],['偏爱','张芸京'],['下雨天','南拳妈妈'],['无人之岛','任然'],['枪火','宝石Gem']
-  ],
-  mg: [
-    ['不为谁而作的歌','林俊杰'],['世界第一等','伍佰 & China Blue'],['特别的人','方大同'],['光亮','周深'],['来自天堂的魔鬼','G.E.M.邓紫棋'],['百年孤寂','王菲'],['阴天','莫文蔚'],['孤勇者','陈奕迅'],['倒带','蔡依林'],['遇见','孙燕姿'],['听海','张惠妹'],['情歌','梁静茹'],['带我去找夜生活','告五人'],['无与伦比的美丽','苏打绿'],['温柔','五月天'],['身骑白马','徐佳莹'],['如果爱忘了','戚薇'],['我怀念的','孙燕姿'],['爱错','王力宏'],['爱我还是他','陶喆'],['爱你','王心凌'],['我们的爱','F.I.R.飞儿乐团'],['开始懂了','孙燕姿'],['遗失的美好','张韶涵'],['你就不要想起我','田馥甄'],['光年之外','G.E.M.邓紫棋'],['可惜没如果','林俊杰'],['任性','五月天'],['这世界那么多人','莫文蔚'],['推开世界的门','杨乃文']
-  ],
-};
-const PLATFORM_CHART_EXPANSION_QUERIES = {
-  tx: ['周杰伦','林俊杰','邓紫棋','孙燕姿','五月天','蔡健雅','陈奕迅','田馥甄','王力宏','陶喆','梁静茹','张惠妹'],
-  wy: ['告五人','赵雷','郭顶','陈粒','房东的猫','许嵩','毛不易','草东没有派对','万能青年旅店','李荣浩','莫文蔚','王菲'],
-  kw: ['周传雄','任然','凤凰传奇','张靓颖','刘珂矣','程响','海来阿木','王琪','刀郎','云朵','韩红','张韶涵'],
-  kg: ['徐良','杨丞琳','张芸京','南拳妈妈','宝石Gem','汪苏泷','许嵩','By2','庄心妍','六哲','李佳薇','小阿七'],
-  mg: ['伍佰','方大同','周深','莫文蔚','王菲','蔡依林','苏打绿','徐佳莹','陶喆','王心凌','F.I.R.飞儿乐团','杨乃文'],
-};
-function dailyHotFallbackSeeds(source) {
-  return (DAILY_HOT_PLATFORM_FALLBACKS[source] || []).map(([name, singer]) => ({
-    name, singer, source, songmid:'', id:'', interval:'', types:['flac', '320k', '128k'],
-  }));
+function dailyHotSongFromMiguRank(row) {
+  const item = row?.objectInfo || row || {};
+  const images = Array.isArray(item.albumImgs) ? item.albumImgs : [];
+  const image = images.find(entry => String(entry?.imgSizeType) === '01') || images[0] || {};
+  return {
+    id:item.songId || item.contentId || item.copyrightId,
+    songmid:item.songId || item.contentId || item.copyrightId,
+    copyrightId:item.copyrightId || '',
+    name:item.songName || item.name || '',
+    singer:item.singer || dailyHotSingers(item.artists),
+    albumName:item.album || item.albumName || '',
+    albumId:item.albumId || '',
+    picUrl:image.webpImg || image.img || '',
+    interval:item.length || '',
+    lrcUrl:item.lrcUrl || '',
+    mrcUrl:item.mrcUrl || '',
+    trcUrl:item.trcUrl || '',
+    source:'mg',
+    types:['flac24bit', 'flac', '320k', '128k'],
+  };
 }
-async function fetchPlatformNativeHotSeeds(source, limit) {
-  if (source === 'tx') return fetchQQHotSeeds(limit);
-  if (source === 'wy') return fetchNeteaseHotSeeds(limit);
-  if (source === 'kw') return fetchKuwoHotSeeds(limit);
-  if (source === 'kg') return fetchKugouHotSeeds(limit);
+async function fetchMiguHotSeeds(limit, chartId = '27186466') {
+  const target = `https://app.c.nf.migu.cn/MIGUM3.0/v1.0/content/querycontentbyId.do?columnId=${encodeURIComponent(chartId)}&needAll=0`;
+  const data = await dailyHotFetchJson(target, {
+    timeoutMs:18000,
+    headers:{ referer:'https://music.migu.cn/' },
+  });
+  if (String(data?.code || '') !== '000000') throw new Error(data?.info || 'MIGU_HOT_CHART_FAILED');
+  return (data?.columnInfo?.contents || [])
+    .map(dailyHotSongFromMiguRank)
+    .filter(song => song.name)
+    .slice(0, limit);
+}
+const PLATFORM_CHART_CATALOG = {
+  tx:[
+    { id:'26', name:'热歌榜' }, { id:'62', name:'飙升榜' }, { id:'27', name:'新歌榜' },
+    { id:'4', name:'流行指数榜' }, { id:'5', name:'内地榜' }, { id:'3', name:'欧美榜' },
+    { id:'16', name:'韩国榜' }, { id:'17', name:'日本榜' },
+  ],
+  wy:[
+    { id:'3778678', name:'热歌榜' }, { id:'19723756', name:'飙升榜' },
+    { id:'3779629', name:'新歌榜' }, { id:'2884035', name:'原创榜' },
+  ],
+  kw:[
+    { id:'16', name:'热歌榜' }, { id:'17', name:'新歌榜' }, { id:'93', name:'飙升榜' },
+  ],
+  kg:[
+    { id:'8888', name:'TOP 500' }, { id:'6666', name:'飙升榜' }, { id:'31308', name:'新歌榜' },
+  ],
+  mg:[{ id:'27186466', name:'尖叫热歌榜' }],
+};
+function platformChartDefinition(source, chartId) {
+  const rows = PLATFORM_CHART_CATALOG[source] || [];
+  return rows.find(item => String(item.id) === String(chartId || '')) || rows[0] || null;
+}
+async function fetchPlatformNativeHotSeeds(source, limit, chartId) {
+  if (source === 'tx') return fetchQQHotSeeds(limit, chartId);
+  if (source === 'wy') return fetchNeteaseHotSeeds(limit, chartId);
+  if (source === 'kw') return fetchKuwoHotSeeds(limit, chartId);
+  if (source === 'kg') return fetchKugouHotSeeds(limit, chartId);
+  if (source === 'mg') return fetchMiguHotSeeds(limit, chartId);
   return [];
 }
-async function resolveDailyHotSeedsAcrossSources(seeds, limit, requestedSource) {
-  const source = /^(tx|wy|kw|kg|mg)$/.test(String(requestedSource || '').toLowerCase())
-    ? String(requestedSource).toLowerCase()
-    : 'all';
-  const workSeeds = seeds.slice(0, Math.min(seeds.length, Math.max(limit * 2, limit + 6)));
-  const resolved = new Array(workSeeds.length);
-  let cursor = 0;
-  const workers = Array.from({ length: Math.min(4, workSeeds.length) }, async () => {
-    while (cursor < workSeeds.length) {
-      const seedIndex = cursor++;
-      const seed = workSeeds[seedIndex];
-      const query = [seed.name, seed.singer].filter(Boolean).join(' ');
-      try {
-        const result = await lxSearch.searchAll(query || seed.name, { sources: source === 'all' ? 'tx,wy,kw,kg,mg' : source, limit: 5 });
-        const candidates = Array.isArray(result?.songs) ? result.songs : [];
-        const seedName = dailyHotNormalizeText(seed.name);
-        const seedSinger = dailyHotNormalizeText(seed.singer);
-        const exact = candidates.find(song => {
-          const sameName = dailyHotNormalizeText(song.name) === seedName;
-          const singer = dailyHotNormalizeText(song.singer);
-          return sameName && (!seedSinger || !singer || seedSinger.includes(singer) || singer.includes(seedSinger));
-        });
-        resolved[seedIndex] = exact || candidates[0] || (source === 'all' ? seed : null);
-      } catch (err) {
-        console.warn('[DailyHotResolve]', query, err.message || err);
-        resolved[seedIndex] = source === 'all' ? seed : null;
-      }
-    }
-  });
-  await Promise.all(workers);
-  const out = [];
-  const seen = new Set();
-  for (let index = 0; index < resolved.length && out.length < limit; index++) {
-    dailyHotPushUnique(out, resolved[index], seen, limit);
-  }
-  if (source === 'all') {
-    for (const seed of seeds) dailyHotPushUnique(out, seed, seen, limit);
-  }
-  return out.slice(0, limit);
-}
-async function fillPlatformChartSongs(source, initialSongs, limit) {
-  const output = [];
-  const seen = new Set();
-  const append = song => {
-    if (!song || !song.name || output.length >= limit) return;
-    const key = dailyHotContentKey(song);
-    if (!key || seen.has(key)) return;
-    seen.add(key);
-    output.push(song);
-  };
-  (initialSongs || []).forEach(append);
-  if (output.length >= limit) return output.slice(0, limit);
-
-  const fallbackSeeds = dailyHotFallbackSeeds(source);
-  if (fallbackSeeds.length) {
-    try {
-      const resolved = await resolveDailyHotSeedsAcrossSources(fallbackSeeds, Math.min(limit, fallbackSeeds.length), source);
-      resolved.forEach(append);
-    } catch (error) {
-      console.warn('[PlatformChartFallbackFill]', source, error?.message || error);
-    }
-  }
-  if (output.length >= limit) return output.slice(0, limit);
-
-  const queries = (PLATFORM_CHART_EXPANSION_QUERIES[source] || []).slice();
-  const batches = new Array(queries.length);
-  let cursor = 0;
-  const workers = Array.from({ length: Math.min(4, queries.length) }, async () => {
-    while (cursor < queries.length) {
-      const index = cursor++;
-      try {
-        const result = await lxSearch.searchAll(queries[index], { sources:source, limit:25 });
-        batches[index] = Array.isArray(result?.songs) ? result.songs : [];
-      } catch (error) {
-        console.warn('[PlatformChartSearchFill]', source, queries[index], error?.message || error);
-        batches[index] = [];
-      }
-    }
-  });
-  await Promise.all(workers);
-  for (const songs of batches) {
-    (songs || []).forEach(append);
-    if (output.length >= limit) break;
-  }
-  return output.slice(0, limit);
-}
-async function fetchSinglePlatformHotResult(source, limit) {
+async function fetchSinglePlatformHotResult(source, limit, requestedChart) {
+  const chart = platformChartDefinition(source, requestedChart);
   let nativeSongs = [];
   let nativeError = '';
   try {
-    nativeSongs = await fetchPlatformNativeHotSeeds(source, Math.max(limit, 30));
+    nativeSongs = await fetchPlatformNativeHotSeeds(source, Math.max(limit, 30), chart && chart.id);
   } catch (error) {
     nativeError = error?.message || String(error || 'PLATFORM_CHART_FAILED');
     console.warn('[PlatformChart]', source, nativeError);
   }
-  const songs = await fillPlatformChartSongs(source, nativeSongs, limit);
-  const label = { tx:'小秋热歌榜', wy:'小芸热歌榜', kw:'小蜗热歌榜', kg:'小狗 TOP 榜', mg:'小菇热歌发现' }[source] || `${source.toUpperCase()} 热榜`;
+  // 榜单必须保持平台返回的原始名次。接口失败或数量不足时宁可少展示，
+  // 也不能再用关键词搜索结果补满，否则普通搜索结果会伪装成榜单名次。
+  const songs = nativeSongs.slice(0, limit);
+  const label = `${{ tx:'小秋', wy:'小芸', kw:'小蜗', kg:'小狗', mg:'小菇' }[source] || source.toUpperCase()}${chart?.name || '热歌榜'}`;
   return {
     songs,
-    chartMode:nativeSongs.length >= limit ? 'native' : (nativeSongs.length ? 'native-supplemented' : 'platform-expanded'),
-    chartLabel:songs.length >= limit ? `${label} · ${songs.length} 首` : label,
+    chartMode:nativeSongs.length ? 'native' : 'unavailable',
+    chartLabel:nativeSongs.length ? `${label} · 平台原榜 ${songs.length} 首` : `${label} · 暂不可用`,
+    chartId:chart?.id || '',
+    chartName:chart?.name || '',
     nativeError,
   };
 }
@@ -2462,16 +2432,18 @@ function mixPlatformCharts(results, limit) {
   }
   return output;
 }
-async function getDailyHotSongs(limit, requestedSource, forceRefresh) {
+async function getDailyHotSongs(limit, requestedSource, forceRefresh, requestedChart) {
   limit = Math.min(Math.max(Number(limit) || 100, 1), 100);
   const source = /^(tx|wy|kw|kg|mg)$/.test(String(requestedSource || '').toLowerCase())
     ? String(requestedSource).toLowerCase()
     : 'all';
-  const cacheKey = source;
+  const chart = source === 'all' ? null : platformChartDefinition(source, requestedChart);
+  const cacheKey = `${source}|${chart?.id || 'default'}`;
   const cached = dailyHotCache[cacheKey];
   const now = Date.now();
-  if (!forceRefresh && cached && now - cached.time < DAILY_HOT_CACHE_MS && cached.songs.length >= limit) {
-    return { ok: true, songs: cached.songs.slice(0, limit), cached: true, updatedAt: cached.time, chartSource:source, chartMode:cached.chartMode, chartLabel:cached.chartLabel };
+  const cachedIsAuthentic = cached && !/(?:expanded|fallback|supplemented)/.test(String(cached.chartMode || ''));
+  if (!forceRefresh && cachedIsAuthentic && now - cached.time < DAILY_HOT_CACHE_MS && cached.songs.length >= limit) {
+    return { ok: true, songs: cached.songs.slice(0, limit), cached: true, updatedAt: cached.time, chartSource:source, chartMode:cached.chartMode, chartLabel:cached.chartLabel, chartId:chart?.id || '' };
   }
   let songs = [];
   let chartMode = 'native';
@@ -2481,16 +2453,16 @@ async function getDailyHotSongs(limit, requestedSource, forceRefresh) {
     const perPlatformLimit = Math.min(60, Math.max(25, Math.ceil(limit / sources.length) + 15));
     const results = await Promise.all(sources.map(item => fetchSinglePlatformHotResult(item, perPlatformLimit)));
     songs = mixPlatformCharts(results, limit);
-    chartMode = results.some(result => result.chartMode !== 'native') ? 'mixed-expanded' : 'mixed-native';
-    chartLabel = '五个平台独立榜单混合';
+    chartMode = 'mixed-native';
+    chartLabel = '各平台真实榜单交叉汇总';
   } else {
-    const result = await fetchSinglePlatformHotResult(source, limit);
+    const result = await fetchSinglePlatformHotResult(source, limit, chart && chart.id);
     songs = result.songs;
     chartMode = result.chartMode;
     chartLabel = result.chartLabel;
   }
   dailyHotCache[cacheKey] = { time:now, songs, chartMode, chartLabel };
-  return { ok:songs.length > 0, songs, cached:false, updatedAt:now, chartSource:source, chartMode, chartLabel };
+  return { ok:songs.length > 0, songs, cached:false, updatedAt:now, chartSource:source, chartMode, chartLabel, chartId:chart?.id || '', error:songs.length ? '' : '平台暂未返回可验证的真实榜单' };
 }
 
 // ====================================================================
@@ -2608,6 +2580,81 @@ const server = http.createServer(async (req, res) => {
       sendJSON(res, await agentApi.chat(body));
     } catch (err) {
       sendJSON(res, agentApi.toPublicError(err), err.status || 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/agent/memory/status') {
+    if (req.method !== 'GET') { sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405); return; }
+    try { sendJSON(res, await agentApi.memoryStatus()); }
+    catch (err) { sendJSON(res, { ok: false, error: err.code || 'MEMORY_STATUS_FAILED', message: err.message || '无法读取小M记忆状态。' }, 500); }
+    return;
+  }
+
+  if (pn === '/api/agent/memory/search') {
+    if (req.method !== 'POST') { sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405); return; }
+    try { sendJSON(res, await agentApi.memorySearch(await readRequestBody(req))); }
+    catch (err) { sendJSON(res, { ok: false, error: err.code || 'MEMORY_SEARCH_FAILED', message: err.message || '记忆检索失败。' }, 500); }
+    return;
+  }
+
+  if (pn === '/api/agent/memory/remember') {
+    if (req.method !== 'POST') { sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405); return; }
+    try { sendJSON(res, await agentApi.memoryRemember(await readRequestBody(req))); }
+    catch (err) { sendJSON(res, { ok: false, error: err.code || 'MEMORY_WRITE_FAILED', message: err.message || '记忆写入失败。' }, 500); }
+    return;
+  }
+
+  if (pn === '/api/agent/memory/maintain') {
+    if (req.method !== 'POST') { sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405); return; }
+    try { sendJSON(res, await agentApi.memoryMaintain()); }
+    catch (err) { sendJSON(res, { ok: false, error: err.code || 'MEMORY_MAINTAIN_FAILED', message: err.message || '记忆维护失败。' }, 500); }
+    return;
+  }
+
+  if (pn === '/api/agent/memory/clear') {
+    if (req.method !== 'POST') { sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405); return; }
+    try { sendJSON(res, await agentApi.memoryClear(await readRequestBody(req))); }
+    catch (err) { sendJSON(res, { ok: false, error: err.code || 'MEMORY_CLEAR_FAILED', message: err.message || '记忆清理失败。' }, 500); }
+    return;
+  }
+
+  if (pn === '/api/recommend/multimodal/status') {
+    if (req.method !== 'GET') {
+      sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    try { sendJSON(res, await multimodalRecommender.status()); }
+    catch (err) { sendJSON(res, { ok: false, error: err.code || 'MULTIMODAL_STATUS_FAILED', message: err.message || '无法读取多模态推荐状态。' }, 500); }
+    return;
+  }
+
+  if (pn === '/api/recommend/multimodal') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    try {
+      const body = await readRequestBody(req);
+      const result = await multimodalRecommender.recommend(body);
+      sendJSON(res, result, result && result.ok === false ? 400 : 200);
+    } catch (err) {
+      sendJSON(res, { ok: false, error: err.code || 'MULTIMODAL_RECOMMEND_FAILED', message: err.message || '多模态推荐失败。' }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/recommend/multimodal/feedback') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    try {
+      const body = await readRequestBody(req);
+      const result = await multimodalRecommender.feedback(body);
+      sendJSON(res, result, result && result.ok === false ? 400 : 200);
+    } catch (err) {
+      sendJSON(res, { ok: false, error: err.code || 'MULTIMODAL_FEEDBACK_FAILED', message: err.message || '推荐反馈保存失败。' }, 500);
     }
     return;
   }
@@ -3015,11 +3062,22 @@ const server = http.createServer(async (req, res) => {
       const result = await getDailyHotSongs(
         url.searchParams.get('limit'),
         url.searchParams.get('source'),
-        url.searchParams.get('refresh') === '1'
+        url.searchParams.get('refresh') === '1',
+        url.searchParams.get('chart')
       );
       sendJSON(res, result, result.ok ? 200 : 502);
     } catch (err) {
       sendJSON(res, { ok: false, songs: [], error: err.message || 'DAILY_HOT_FAILED' }, 502);
+    }
+    return;
+  }
+
+  if (pn === '/api/platform-charts') {
+    const source = String(url.searchParams.get('source') || '').toLowerCase();
+    if (!PLATFORM_CHART_CATALOG[source]) {
+      sendJSON(res, { ok:false, charts:[], error:'UNSUPPORTED_CHART_SOURCE' }, 400);
+    } else {
+      sendJSON(res, { ok:true, source, charts:PLATFORM_CHART_CATALOG[source] });
     }
     return;
   }
@@ -3053,6 +3111,35 @@ const server = http.createServer(async (req, res) => {
       sendJSON(res, result, result.ok ? 200 : 502);
     } catch (err) {
       sendJSON(res, { ok: false, songs: [], error: err.message || 'LX_SEARCH_FAILED' }, 502);
+    }
+    return;
+  }
+
+  if (pn === '/api/lx-source/playlist-search') {
+    try {
+      const result = await lxSearch.searchPlaylists(url.searchParams.get('q'), {
+        sources: url.searchParams.get('sources'),
+        limit: url.searchParams.get('limit'),
+        page: url.searchParams.get('page'),
+      });
+      sendJSON(res, result, result.ok ? 200 : 502);
+    } catch (err) {
+      sendJSON(res, { ok:false, playlists:[], failures:[], error:err.message || 'PLAYLIST_SEARCH_FAILED' }, 502);
+    }
+    return;
+  }
+
+  if (pn === '/api/playlist-square') {
+    try {
+      const category = String(url.searchParams.get('category') || '流行').trim().slice(0, 40);
+      const result = await lxSearch.searchPlaylists(category, {
+        sources: url.searchParams.get('source') || 'tx,wy,kw,kg,mg',
+        limit: url.searchParams.get('limit') || 24,
+        page: url.searchParams.get('page') || 1,
+      });
+      sendJSON(res, { ...result, category, browseMode:'public-playlist-search' }, result.ok ? 200 : 502);
+    } catch (err) {
+      sendJSON(res, { ok:false, playlists:[], failures:[], error:err.message || 'PLAYLIST_SQUARE_FAILED' }, 502);
     }
     return;
   }

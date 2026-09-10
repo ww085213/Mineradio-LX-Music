@@ -7,6 +7,8 @@ updates/
 *.log
 *.tmp
 *.bak
+__pycache__/
+*.py[cod]
 
 # Electron / build output
 *.exe

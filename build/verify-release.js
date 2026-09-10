@@ -32,7 +32,8 @@ if (packageJson.build.buildVersion !== releaseVersion) fail(`buildVersion 与 re
 if (packageJson.build.nsis.artifactName !== `Mineradio.Setup.${releaseVersion}.\${ext}`) fail('Windows 安装包文件名版本不正确');
 
 for (const entry of [
-  'desktop/**/*', 'public/**/*', 'bin/**/*', 'agent-api.js', 'qishui-auth-v6.js',
+  'desktop/**/*', 'public/**/*', 'bin/**/*', 'agent-api.js', 'multimodal-recommender.js',
+  'multimodal-recommender/**/*', 'qishui-auth-v6.js',
   'qishui-auth-v6/**/*', 'qishui-qr-login.js', 'NOTICE.md', 'LICENSE', 'package.json',
 ]) {
   if (!packageJson.build.files.includes(entry)) fail(`安装包 files 缺少: ${entry}`);
@@ -76,6 +77,18 @@ requireText('public/index.html', indexSource, 'music-agent-command.css');
 requireText('public/index.html', indexSource, 'music-agent-advanced-controls');
 requireText('public/index.html', indexSource, `Mineradio v${releaseVersion}`);
 requireText('public/index.html', indexSource, `currentVersion: '${releaseVersion}'`);
+requireText('public/index.html', indexSource, 'secondary-playlist-square-page');
+requireText('public/index.html', indexSource, 'openOnlinePlaylistDetailItem');
+requireText('public/index.html', indexSource, 'openPlatformPlaylistAutoSyncManager');
+requireText('public/index.html', indexSource, 'exportMineradioFullBackup');
+requireText('public/index.html', indexSource, 'restorePreviousQueue');
+requireText('public/index.html', indexSource, 'toggleLoudnessNormalization');
+requireText('server.js', serverSource, "pn === '/api/playlist-square'");
+requireText('server.js', serverSource, "pn === '/api/platform-charts'");
+requireText('lx-search.js', read('lx-search.js'), 'searchPlaylists');
+requireText('multimodal-recommender.js', read('multimodal-recommender.js'), 'class MultimodalRecommender');
+requireText('multimodal-recommender.js', read('multimodal-recommender.js'), 'metadata-behavior-fallback');
+requireText('multimodal-recommender/model_service.py', read('multimodal-recommender/model_service.py'), 'def main(');
 requireText('desktop/main.js', mainSource, 'handleGlobalHotkeyAction');
 requireText('public/index.html', indexSource, "key:'toggleMusicAgent'");
 requireText('desktop/preload.js', preloadSource, 'requestDesktopKeyboardFocus');
@@ -85,7 +98,7 @@ requireText('build/installer.nsh', installerSource, 'nsProcess::KillProcess');
 
 for (const relativePath of [
   'desktop/main.js', 'desktop/preload.js', 'desktop/local-music-library.js',
-  'server.js', 'agent-api.js', 'lx-source-host.js', 'qishui-auth-v6.js',
+  'server.js', 'agent-api.js', 'multimodal-recommender.js', 'lx-source-host.js', 'qishui-auth-v6.js',
   'qishui-qr-login.js', 'public/js/music-agent-command.js',
   'public/js/agent-music-tools.js', 'public/js/modules/08-account/00-login-easter-egg.js',
 ]) checkSyntax(relativePath);
@@ -103,6 +116,7 @@ while ((inlineMatch = inlineScriptPattern.exec(indexSource))) {
 if (/矿灵/.test([serverSource, agentSource, commandSource, toolsSource, indexSource].join('\n'))) {
   fail('AI Agent 用户界面仍包含旧称“矿灵”');
 }
+if (/home-feature-planet/.test(indexSource)) fail('1.6.1 首页仍包含音乐星球入口');
 
 if (failures.length) {
   console.error('\nMineradio 发布前检查失败：');

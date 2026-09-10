@@ -29,6 +29,40 @@ function kuwoCoverUrl(item) {
   return `https://img1.kuwo.cn/star/albumcover/500/${value.replace(/^\/+/, '')}`;
 }
 
+function cleanText(value) {
+  return String(value || '')
+    .replace(/&nbsp;|&#32;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;|&#34;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#x([0-9a-f]+);/gi, (_match, code) => String.fromCodePoint(parseInt(code, 16)))
+    .replace(/&#(\d+);/g, (_match, code) => String.fromCodePoint(Number(code)))
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function playlistResult(source, item) {
+  const id = String(item.id || '').trim();
+  return {
+    id,
+    input: String(item.input || id).trim(),
+    source,
+    sourceName: SOURCE_NAMES[source] || source,
+    name: cleanText(item.name) || `${SOURCE_NAMES[source] || source}歌单`,
+    creator: cleanText(item.creator),
+    description: cleanText(item.description),
+    cover: String(item.cover || '').replace(/^http:\/\//i, 'https://'),
+    trackCount: Math.max(0, Number(item.trackCount) || 0),
+    playCount: Math.max(0, Number(item.playCount) || 0),
+    collectCount: Math.max(0, Number(item.collectCount) || 0),
+    tags: Array.isArray(item.tags) ? item.tags.map(cleanText).filter(Boolean).slice(0, 5) : [],
+    url: String(item.url || ''),
+  };
+}
+
 async function fetchJson(url, options = {}) {
   let lastError;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -226,8 +260,104 @@ async function searchMg(query, limit) {
   }));
 }
 
+async function searchTxPlaylists(query, limit, page = 1) {
+  const url = `https://c.y.qq.com/soso/fcgi-bin/client_music_search_songlist?remoteplace=txt.yqq.playlist&searchid=${Date.now()}&query=${encodeURIComponent(query)}&page_no=${page}&num_per_page=${limit}&format=json`;
+  const data = await fetchJson(url, { headers:{ referer:'https://y.qq.com/' } });
+  return (data?.data?.list || []).map(item => playlistResult('tx', {
+    id:item.dissid,
+    name:item.dissname,
+    creator:item.creator?.name,
+    description:item.introduction,
+    cover:item.imgurl,
+    trackCount:item.song_count || item.copyrightnum,
+    playCount:item.listennum,
+    url:item.dissid ? `https://y.qq.com/n/ryqq/playlist/${item.dissid}` : '',
+  }));
+}
+
+async function searchWyPlaylists(query, limit, page = 1) {
+  const url = `https://music.163.com/api/cloudsearch/pc?s=${encodeURIComponent(query)}&type=1000&offset=${(page - 1) * limit}&limit=${limit}`;
+  const data = await fetchJson(url, { headers:{ referer:'https://music.163.com/' } });
+  return (data?.result?.playlists || []).map(item => playlistResult('wy', {
+    id:item.id,
+    name:item.name,
+    creator:item.creator?.nickname,
+    description:item.description,
+    cover:item.coverImgUrl,
+    trackCount:item.trackCount,
+    playCount:item.playCount,
+    collectCount:item.bookCount,
+    tags:item.officialTags,
+    url:item.id ? `https://music.163.com/playlist?id=${item.id}` : '',
+  }));
+}
+
+async function searchKwPlaylists(query, limit, page = 1) {
+  const url = `https://search.kuwo.cn/r.s?all=${encodeURIComponent(query)}&ft=playlist&client=kt&pn=${page - 1}&rn=${limit}&rformat=json&encoding=utf8&mobi=1`;
+  const data = await fetchJson(url, { useNodeFetch:true });
+  return (data?.abslist || []).map(item => {
+    const id = item.playlistid || item.DC_TARGETID;
+    return playlistResult('kw', {
+      id,
+      name:item.name,
+      creator:item.nickname,
+      description:item.intro,
+      cover:item.hts_pic || item.pic,
+      trackCount:item.songnum,
+      playCount:item.playcnt,
+      tags:String(item.tags || '').split(/[;,，]/),
+      url:id ? `https://www.kuwo.cn/playlist_detail/${id}` : '',
+    });
+  });
+}
+
+async function searchKgPlaylists(query, limit, page = 1) {
+  const url = `https://specialsearch.kugou.com/special_search?keyword=${encodeURIComponent(query)}&page=${page}&pagesize=${limit}&platform=WebFilter&filter=0&iscorrection=1`;
+  const data = await fetchJson(url, { useNodeFetch:true, headers:{ referer:'https://www.kugou.com/' } });
+  return (data?.data?.lists || []).map(item => playlistResult('kg', {
+    id:item.specialid,
+    name:item.specialname,
+    creator:item.nickname,
+    description:item.intro,
+    cover:item.img,
+    trackCount:item.song_count,
+    playCount:item.total_play_count || item.play_count,
+    collectCount:item.collect_count,
+    tags:String(item.tag_str || '').split(/[;,，]/),
+    url:item.specialid ? `https://www.kugou.com/yy/special/single/${item.specialid}.html` : '',
+  }));
+}
+
+async function searchMgPlaylists(query, limit, page = 1) {
+  const timestamp = String(Date.now());
+  const deviceId = '963B7AA0D21511ED807EE5846EC87D20';
+  const sign = crypto.createHash('md5').update(`${query}6cdc72a439cef99a3418d2a78aa28c73yyapp2d16148780a1dcc7408e06336b98cfd50${deviceId}${timestamp}`).digest('hex');
+  const searchSwitch = encodeURIComponent(JSON.stringify({
+    song:0, album:0, singer:0, tagSong:0, mvSong:0, bestShow:0, songlist:1, lyricSong:0,
+  }));
+  const url = `https://jadeite.migu.cn/music_search/v3/search/searchAll?isCorrect=0&isCopyright=1&searchSwitch=${searchSwitch}&pageSize=${limit}&text=${encodeURIComponent(query)}&pageNo=${page}&sort=0&sid=USS`;
+  const data = await fetchJson(url, { headers:{ uiVersion:'A_music_3.6.1', deviceId, timestamp, sign, channel:'0146921' } });
+  return (data?.songListResultData?.result || []).map(item => playlistResult('mg', {
+    id:item.id,
+    name:item.name,
+    creator:item.userName,
+    description:item.intro,
+    cover:item.musicListPicUrl,
+    trackCount:item.musicNum,
+    playCount:item.playNum,
+    collectCount:item.keepNum,
+    tags:item.ts,
+    url:item.id ? `https://music.migu.cn/v3/music/playlist/${item.id}` : '',
+  }));
+}
+
 const PROVIDERS = { tx: searchTx, wy: searchWy, kw: searchKw, kg: searchKg, mg: searchMg };
+const PLAYLIST_PROVIDERS = {
+  tx:searchTxPlaylists, wy:searchWyPlaylists, kw:searchKwPlaylists,
+  kg:searchKgPlaylists, mg:searchMgPlaylists,
+};
 const searchCache = new Map();
+const playlistSearchCache = new Map();
 const providerHealth = new Map();
 
 function providerState(source) {
@@ -280,4 +410,41 @@ async function searchAll(query, options = {}) {
   return value;
 }
 
-module.exports = { searchAll, setFetchImplementation };
+async function searchPlaylists(query, options = {}) {
+  query = String(query || '').trim();
+  if (!query) return { ok:true, playlists:[], failures:[] };
+  const limit = Math.min(Math.max(Number(options.limit) || 12, 1), 30);
+  const page = Math.min(Math.max(Number(options.page) || 1, 1), 50);
+  const requested = String(options.sources || 'tx,wy,kw,kg,mg').split(',').filter(source => PLAYLIST_PROVIDERS[source]);
+  const cacheKey = `${requested.join(',')}|${limit}|${page}|${query.toLowerCase()}`;
+  const cached = playlistSearchCache.get(cacheKey);
+  if (cached && Date.now() - cached.time < 2 * 60 * 1000) return cached.value;
+  const settled = await Promise.allSettled(requested.map(source => PLAYLIST_PROVIDERS[source](query, limit, page)));
+  const playlists = [];
+  const failures = [];
+  settled.forEach((result, index) => {
+    const source = requested[index];
+    if (result.status === 'fulfilled') playlists.push(...result.value);
+    else failures.push({ source, name:SOURCE_NAMES[source], error:result.reason?.message || 'PLAYLIST_SEARCH_FAILED' });
+  });
+  const seen = new Set();
+  const value = {
+    ok:playlists.length > 0 || failures.length < requested.length,
+    playlists:playlists.filter(item => {
+      const key = `${item.source}|${item.id}`;
+      if (!item.id || !item.name || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }),
+    failures,
+    page,
+    query,
+  };
+  if (value.playlists.length) {
+    playlistSearchCache.set(cacheKey, { time:Date.now(), value });
+    if (playlistSearchCache.size > 80) playlistSearchCache.delete(playlistSearchCache.keys().next().value);
+  }
+  return value;
+}
+
+module.exports = { searchAll, searchPlaylists, setFetchImplementation };
