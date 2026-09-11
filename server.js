@@ -3111,6 +3111,38 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Keep the legacy platform search URLs used by the bundled UI working in
+  // the standalone iOS server. The mobile build intentionally centralizes
+  // public catalog lookup in lx-search, while older UI modules still call
+  // /api/search and /api/<provider>/search.
+  const legacySearchSources = {
+    '/api/search': 'tx,wy,kw,kg,mg',
+    '/api/qq/search': 'tx',
+    '/api/kugou/search': 'kg',
+    '/api/qishui/search': 'mg',
+    // Spotify is a metadata-only matching mode in this build; use the
+    // public catalogs so it still returns candidates for source fallback.
+    '/api/spotify/search': 'tx,wy,kg,mg',
+  };
+  if (Object.prototype.hasOwnProperty.call(legacySearchSources, pn)) {
+    try {
+      const query = url.searchParams.get('keywords') || url.searchParams.get('q') || '';
+      const result = await lxSearch.searchAll(query, {
+        sources: legacySearchSources[pn],
+        limit: url.searchParams.get('limit'),
+      });
+      const songs = (Array.isArray(result.songs) ? result.songs : []).map(song => ({
+        ...song,
+        artist: song.artist || song.singer || '',
+        singer: song.singer || song.artist || '',
+      }));
+      sendJSON(res, { ...result, songs }, result.ok ? 200 : 502);
+    } catch (err) {
+      sendJSON(res, { ok: false, songs: [], error: err.message || 'SEARCH_FAILED' }, 502);
+    }
+    return;
+  }
+
   if (pn === '/api/lx-source/search') {
     try {
       const result = await lxSearch.searchAll(url.searchParams.get('q'), {
