@@ -25,6 +25,19 @@ process.env.MINERADIO_BEAT_CACHE_DIR = path.join(cacheDir, 'beatmaps');
 process.env.MINERADIO_WALLPAPER_CACHE_DIR = path.join(cacheDir, 'wallpapers');
 process.env.MINERADIO_UPDATE_DIR = path.join(cacheDir, 'updates');
 process.env.LOCALAPPDATA = dataDir;
+process.env.MINERADIO_MOBILE = '1';
+process.env.MINERADIO_MOBILE_DATA_DIR = dataDir;
+
+function reportRuntimeFailure(reason) {
+  const message = reason && (reason.stack || reason.message) || String(reason);
+  try { fs.writeFileSync(path.join(dataDir, 'mineradio-node-runtime.log'), message, 'utf8'); } catch (_writeError) {}
+  try { channel.post('mineradio-node-status', { state: 'failed', message }); } catch (_postError) {}
+}
+
+// Keep an asynchronous backend error from terminating the embedded Node
+// runtime. The UI can remain open and display the diagnostic instead.
+process.on('uncaughtException', reportRuntimeFailure);
+process.on('unhandledRejection', reportRuntimeFailure);
 
 // Node.js for Mobile does not implement child_process. The desktop backend
 // imports it at module load time, although those Windows-only features are not

@@ -36,6 +36,7 @@ if (electronNet && typeof electronNet.fetch === 'function') {
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
 const REMOTE_PORT = Number(process.env.MINERADIO_REMOTE_PORT || 3001);
+const IS_MOBILE = process.env.MINERADIO_MOBILE === '1';
 const REMOTE_TOKEN = crypto.randomBytes(12).toString('hex');
 let remotePlaybackState = { title:'Mineradio', artist:'', cover:'', playing:false, volume:1, progress:0, duration:0, updatedAt:0 };
 let remoteCommandSeq = 0;
@@ -3709,9 +3710,11 @@ server.listen(PORT, HOST, () => {
   console.log('======================================================');
 });
 
-remoteServer.on('error', err => console.warn('[RemoteControl]', err.message));
-remoteServer.listen(REMOTE_PORT, '0.0.0.0', () => {
-  console.log(' Mineradio Remote -> http://0.0.0.0:' + REMOTE_PORT);
-});
+if (!IS_MOBILE) {
+  remoteServer.on('error', err => console.warn('[RemoteControl]', err.message));
+  remoteServer.listen(REMOTE_PORT, '0.0.0.0', () => {
+    console.log(' Mineradio Remote -> http://0.0.0.0:' + REMOTE_PORT);
+  });
+}
 
 module.exports = server;
