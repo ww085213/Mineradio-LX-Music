@@ -2512,6 +2512,14 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost:' + PORT);
   const pn = url.pathname;
 
+  // This endpoint intentionally does not load or validate a music source.
+  // A freshly installed mobile app has no source yet, but its embedded server
+  // is still healthy and the UI must be allowed to open the source importer.
+  if (pn === '/api/health' && req.method === 'GET') {
+    sendJSON(res, { ok: true, mobile: IS_MOBILE, version: APP_VERSION });
+    return;
+  }
+
   if (pn === '/api/remote/info' && req.method === 'GET') {
     try {
       const entries = await Promise.all(remoteLanAddresses().map(async entry => ({ ...entry, qr:await QRCode.toDataURL(entry.url,{width:280,margin:1,errorCorrectionLevel:'M'}) })));

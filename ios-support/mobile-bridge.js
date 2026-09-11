@@ -134,7 +134,7 @@
     var root = document.getElementById('mineradio-ios-startup');
     var message = document.getElementById('mineradio-ios-startup-message');
     function check() {
-      originalFetch(LOCAL_ORIGIN + '/api/lx-source/status?t=' + Date.now(), { cache: 'no-store' })
+      originalFetch(LOCAL_ORIGIN + '/api/health?t=' + Date.now(), { cache: 'no-store' })
         .then(function (response) {
           if (!response.ok) throw new Error('HTTP ' + response.status);
           if (!sessionStorage.getItem(READY_KEY)) {
