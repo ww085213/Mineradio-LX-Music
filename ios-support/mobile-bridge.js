@@ -65,8 +65,8 @@
     root.innerHTML =
       '<section class="mineradio-ios-startup-card">' +
       '<div class="mineradio-ios-startup-kicker">MINERADIO // LOCAL</div>' +
-      '<h1>正在启动本机音乐引擎</h1>' +
-      '<p id="mineradio-ios-startup-message">首次启动可能需要几秒钟，无需服务器地址。</p>' +
+      '<h1>正在准备 Mineradio</h1>' +
+      '<p id="mineradio-ios-startup-message">正在加载本地音乐库和播放服务，请稍候。</p>' +
       '<div class="mineradio-ios-startup-dot"></div>' +
       '<button type="button">重新尝试</button>' +
       '</section>';
@@ -78,7 +78,7 @@
     nodeStartupError = String(value || '未知启动错误');
     var root = document.getElementById('mineradio-ios-startup');
     var message = document.getElementById('mineradio-ios-startup-message');
-    if (message) message.textContent = '本机引擎启动失败：' + nodeStartupError.split('\n')[0];
+    if (message) message.textContent = '本地播放服务启动失败：' + nodeStartupError.split('\n')[0];
     if (root) {
       var dot = root.querySelector('.mineradio-ios-startup-dot');
       var button = root.querySelector('button');
@@ -110,11 +110,23 @@
       return Promise.reject(new Error('Nodejs plugin start() is unavailable'));
     }
     sessionStorage.setItem(START_KEY, '1');
-    return nodejs.start({ script: 'mobile-node-main.js' }).catch(function (error) {
+    // The native plugin may keep the returned promise pending for the lifetime
+    // of the embedded Node process. Start it and let the health check below
+    // decide when the local service is ready instead of blocking the UI here.
+    try {
+      var startPromise = nodejs.start({ script: 'mobile-node-main.js' });
+      if (startPromise && typeof startPromise.catch === 'function') {
+        startPromise.catch(function (error) {
+          sessionStorage.removeItem(START_KEY);
+          showStartupError(error && (error.message || error) || '本地播放服务启动失败');
+        });
+      }
+    } catch (error) {
       sessionStorage.removeItem(START_KEY);
-      showStartupError(error && (error.message || error) || '本机引擎启动失败');
-      throw error;
-    });
+      showStartupError(error && (error.message || error) || '本地播放服务启动失败');
+      return Promise.reject(error);
+    }
+    return Promise.resolve();
   }
 
   function waitForLocalNode() {
@@ -141,7 +153,7 @@
             setTimeout(check, 350);
             return;
           }
-          if (message) message.textContent = '本机音乐引擎启动失败，请彻底关闭应用后重试。';
+          if (message) message.textContent = '本地播放服务启动失败，请彻底关闭应用后重试。';
           if (root) {
             var dot = root.querySelector('.mineradio-ios-startup-dot');
             var button = root.querySelector('button');
