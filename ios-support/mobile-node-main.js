@@ -1,10 +1,83 @@
 'use strict';
 
 const http = require('http');
+const https = require('https');
 const path = require('path');
 const fs = require('fs');
 const Module = require('module');
 const { app, channel } = require('bridge');
+
+// NodeMobile builds may not expose the Web Fetch API. Keep the native fetch
+// when available and provide a small HTTP/HTTPS fallback otherwise so search,
+// source resolution and the media proxy can reach external services.
+if (typeof globalThis.fetch !== 'function') {
+  const zlib = require('zlib');
+  let ReadableStreamCtor = null;
+  try { ReadableStreamCtor = require('stream/web').ReadableStream; } catch (_error) {}
+  function headerValue(headers, name) {
+    const key = String(name || '').toLowerCase();
+    for (const [entryKey, entryValue] of Object.entries(headers || {})) {
+      if (entryKey.toLowerCase() === key) return Array.isArray(entryValue) ? entryValue.join(', ') : String(entryValue || '');
+    }
+    return null;
+  }
+  function decodeBody(buffer, encoding) {
+    const value = String(encoding || '').toLowerCase();
+    try {
+      if (value.includes('br')) return zlib.brotliDecompressSync(buffer);
+      if (value.includes('gzip')) return zlib.gunzipSync(buffer);
+      if (value.includes('deflate')) return zlib.inflateSync(buffer);
+    } catch (_error) {}
+    return buffer;
+  }
+  function mobileFetch(input, options = {}, redirectCount = 0) {
+    const target = new URL(typeof input === 'string' ? input : String(input && input.url || input));
+    if (!/^https?:$/.test(target.protocol)) return Promise.reject(new Error('Unsupported URL protocol'));
+    if (redirectCount > 5) return Promise.reject(new Error('Too many redirects'));
+    const transport = target.protocol === 'https:' ? https : http;
+    const headers = { ...(options.headers || {}) };
+    if (!headerValue(headers, 'accept-encoding')) headers['accept-encoding'] = 'identity';
+    const method = String(options.method || 'GET').toUpperCase();
+    let requestBody = options.body;
+    if (requestBody instanceof URLSearchParams) requestBody = requestBody.toString();
+    if (requestBody != null && !Buffer.isBuffer(requestBody) && typeof requestBody !== 'string') requestBody = JSON.stringify(requestBody);
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const fail = error => { if (!settled) { settled = true; reject(error); } };
+      const req = transport.request(target, { method, headers }, response => {
+        const status = Number(response.statusCode || 0);
+        const location = response.headers && response.headers.location;
+        if (location && [301, 302, 303, 307, 308].includes(status)) {
+          response.resume();
+          mobileFetch(new URL(location, target).href, { ...options, method: status === 303 ? 'GET' : method }, redirectCount + 1).then(resolve, reject);
+          return;
+        }
+        const chunks = [];
+        response.on('data', chunk => chunks.push(Buffer.from(chunk)));
+        response.on('error', fail);
+        response.on('end', () => {
+          if (settled) return;
+          settled = true;
+          const body = decodeBody(Buffer.concat(chunks), response.headers && response.headers['content-encoding']);
+          const responseHeaders = { get(name) { return headerValue(response.headers, name); } };
+          let stream = null;
+          if (ReadableStreamCtor) stream = new ReadableStreamCtor({ start(controller) { controller.enqueue(new Uint8Array(body)); controller.close(); } });
+          resolve({ ok: status >= 200 && status < 300, status, url: target.href, headers: responseHeaders, body: stream || body,
+            async arrayBuffer() { return body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength); },
+            async text() { return body.toString('utf8'); }, async json() { return JSON.parse(body.toString('utf8')); } });
+        });
+      });
+      req.on('error', fail);
+      if (options.signal) {
+        if (options.signal.aborted) { req.destroy(); fail(new Error('This operation was aborted')); return; }
+        options.signal.addEventListener('abort', () => { req.destroy(); fail(new Error('This operation was aborted')); }, { once: true });
+      }
+      if (requestBody != null && method !== 'GET' && method !== 'HEAD') req.write(requestBody);
+      req.end();
+    });
+  }
+  globalThis.fetch = mobileFetch;
+}
 
 const dataDir = app.datadir();
 const cacheDir = path.join(dataDir, 'cache');

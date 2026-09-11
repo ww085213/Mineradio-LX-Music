@@ -1,7 +1,11 @@
 (function () {
   'use strict';
 
-  var LOCAL_ORIGIN = 'http://127.0.0.1:3000';
+  // Prefer the named loopback host, then fall back to the numeric address.
+  // Different WKWebView/iOS combinations handle these two spellings
+  // differently when talking to the embedded Node service.
+  var LOCAL_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000'];
+  var LOCAL_ORIGIN = LOCAL_ORIGINS[0];
   var READY_KEY = 'mineradio-ios-node-ready';
   var START_KEY = 'mineradio-ios-node-start-requested';
   var nodeStartupError = '';
@@ -133,10 +137,23 @@
     var startedAt = Date.now();
     var root = document.getElementById('mineradio-ios-startup');
     var message = document.getElementById('mineradio-ios-startup-message');
-    function check() {
-      originalFetch(LOCAL_ORIGIN + '/api/health?t=' + Date.now(), { cache: 'no-store' })
+    function probeOrigin(index) {
+      if (index >= LOCAL_ORIGINS.length) return Promise.reject(new Error('LOCAL_NODE_UNREACHABLE'));
+      var candidate = LOCAL_ORIGINS[index];
+      return originalFetch(candidate + '/api/health?t=' + Date.now(), { cache: 'no-store' })
         .then(function (response) {
           if (!response.ok) throw new Error('HTTP ' + response.status);
+          LOCAL_ORIGIN = candidate;
+          window.MOBILE_API_ORIGIN = candidate;
+          return response;
+        })
+        .catch(function (error) {
+          return probeOrigin(index + 1).catch(function () { throw error; });
+        });
+    }
+    function check() {
+      probeOrigin(0)
+        .then(function (response) {
           if (!sessionStorage.getItem(READY_KEY)) {
             sessionStorage.setItem(READY_KEY, '1');
             location.reload();
