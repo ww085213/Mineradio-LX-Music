@@ -3,6 +3,7 @@
 
   var LOCAL_ORIGIN = 'http://127.0.0.1:3000';
   var READY_KEY = 'mineradio-ios-node-ready';
+  var START_KEY = 'mineradio-ios-node-start-requested';
   var nodeStartupError = '';
 
   function rewriteApiUrl(value) {
@@ -87,13 +88,32 @@
   }
 
   function bindNodeStatus() {
-    var capacitor = window.Capacitor;
-    var nodejs = capacitor && capacitor.Plugins && capacitor.Plugins.Nodejs;
+    var nodejs = getNodePlugin();
     if (!nodejs || typeof nodejs.addListener !== 'function') return;
     nodejs.addListener('message', function (event) {
       if (!event || event.eventName !== 'mineradio-node-status') return;
       var status = event.args && event.args[0];
       if (status && status.state === 'failed') showStartupError(status.message);
+    });
+  }
+
+  function getNodePlugin() {
+    var capacitor = window.Capacitor;
+    return capacitor && capacitor.Plugins && capacitor.Plugins.Nodejs;
+  }
+
+  function startNodeRuntime() {
+    if (sessionStorage.getItem(START_KEY)) return Promise.resolve();
+    var nodejs = getNodePlugin();
+    if (!nodejs || typeof nodejs.start !== 'function') {
+      showStartupError('iOS 本机引擎插件不可用');
+      return Promise.reject(new Error('Nodejs plugin start() is unavailable'));
+    }
+    sessionStorage.setItem(START_KEY, '1');
+    return nodejs.start({ script: 'mobile-node-main.js' }).catch(function (error) {
+      sessionStorage.removeItem(START_KEY);
+      showStartupError(error && (error.message || error) || '本机引擎启动失败');
+      throw error;
     });
   }
 
@@ -139,6 +159,6 @@
     document.body.classList.add('mobile-device');
     createStartupScreen();
     bindNodeStatus();
-    waitForLocalNode();
+    startNodeRuntime().then(waitForLocalNode).catch(function () {});
   });
 })();

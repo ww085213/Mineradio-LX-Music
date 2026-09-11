@@ -99,7 +99,7 @@ jobs:
             "plugins": {
               "Nodejs": {
                 "nodeDir": "nodejs",
-                "startMode": "auto"
+                "startMode": "manual"
               }
             },
             "server": {
