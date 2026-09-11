@@ -68,6 +68,11 @@ const safeSourceConsole = Object.freeze({
   error: safeConsoleMethod('error'),
   debug: safeConsoleMethod('debug'),
   trace: safeConsoleMethod('trace'),
+  group: safeConsoleMethod('group'),
+  groupCollapsed: safeConsoleMethod('groupCollapsed'),
+  groupEnd: safeConsoleMethod('groupEnd'),
+  time: safeConsoleMethod('time'),
+  timeEnd: safeConsoleMethod('timeEnd'),
 });
 
 function withTimeout(promise, timeoutMs, code) {
@@ -1219,7 +1224,10 @@ async function resolveMusicUrl(source, musicInfo, quality, options) {
       if (excludedResolvers.has(String(host.name || '').trim().toLowerCase()) ||
           excludedResolvers.has(String(host.id || '').trim().toLowerCase())) continue;
       tried++;
-      const value = await withTimeout(resolveWithHost(host), 8000, 'LX_SOURCE_RESOLVER_TIMEOUT');
+      // Some public aggregators take several seconds to search before they
+      // return a short-lived URL. The old 8s cap made valid mobile responses
+      // look like playback failures, especially on iPad cellular/Wi-Fi DNS.
+      const value = await withTimeout(resolveWithHost(host), 20000, 'LX_SOURCE_RESOLVER_TIMEOUT');
       if (value && value.url) {
         musicUrlCache.set(cacheKey, { time:Date.now(), value });
         if (musicUrlCache.size > 120) musicUrlCache.delete(musicUrlCache.keys().next().value);

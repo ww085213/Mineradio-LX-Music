@@ -1,6 +1,8 @@
 'use strict';
 
 const crypto = require('crypto');
+const http = require('http');
+const https = require('https');
 
 const SOURCE_NAMES = { tx: '小秋音乐', wy: '小芸音乐', kw: '小蜗音乐', kg: '小狗音乐', mg: '小菇音乐' };
 let networkFetch = globalThis.fetch;
@@ -16,7 +18,7 @@ function durationText(seconds) {
 
 function singers(value) {
   if (!Array.isArray(value)) return String(value || '');
-  return value.map(item => item && (item.name || item.singerName)).filter(Boolean).join('、');
+  return value.map(item => typeof item === 'string' ? item : item && (item.name || item.singerName)).filter(Boolean).join('、');
 }
 
 function kuwoCoverUrl(item) {
@@ -360,6 +362,65 @@ const searchCache = new Map();
 const playlistSearchCache = new Map();
 const providerHealth = new Map();
 
+// A small Node HTTP fallback keeps search usable on iOS even when the
+// embedded Web Fetch implementation cannot reach one of the platform hosts.
+// The bundled GD Studio catalog is metadata-only; playback is handled by the
+// matching built-in source and its Netease resolver.
+function directJson(url, redirectCount = 0) {
+  if (redirectCount > 4) return Promise.reject(new Error('SEARCH_TOO_MANY_REDIRECTS'));
+  return new Promise((resolve, reject) => {
+    let target;
+    try { target = new URL(url); } catch (error) { reject(error); return; }
+    const transport = target.protocol === 'https:' ? https : http;
+    const req = transport.get(target, {
+      headers: {
+        accept: 'application/json,text/plain,*/*',
+        'accept-encoding': 'identity',
+        'user-agent': 'Mozilla/5.0 Mineradio iOS',
+      },
+      timeout: 12000,
+    }, response => {
+      const status = Number(response.statusCode || 0);
+      if (status >= 300 && status < 400 && response.headers.location) {
+        response.resume();
+        directJson(new URL(response.headers.location, target).href, redirectCount + 1).then(resolve, reject);
+        return;
+      }
+      const chunks = [];
+      response.on('data', chunk => chunks.push(Buffer.from(chunk)));
+      response.on('error', reject);
+      response.on('end', () => {
+        if (status < 200 || status >= 300) {
+          reject(new Error(`SEARCH_HTTP_${status}`));
+          return;
+        }
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
+        catch (_error) { reject(new Error('SEARCH_INVALID_JSON')); }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => req.destroy(new Error('SEARCH_TIMEOUT')));
+  });
+}
+
+async function searchGdStudio(query, limit) {
+  const target = `https://music-api.gdstudio.xyz/api.php?types=search&source=netease&name=${encodeURIComponent(query)}&count=${limit}`;
+  const rows = await directJson(target);
+  if (!Array.isArray(rows)) throw new Error('SEARCH_INVALID_RESPONSE');
+  return rows.map(item => ({
+    id: String(item.id || '').trim(),
+    songmid: String(item.id || '').trim(),
+    name: cleanText(item.name),
+    singer: singers(item.artist),
+    albumName: cleanText(item.album),
+    albumId: String(item.album_id || ''),
+    picUrl: item.pic_id ? `https://music.126.net/cover/${item.pic_id}` : '',
+    interval: durationText(item.duration),
+    source: 'wy',
+    types: ['flac', '320k', '128k'],
+  })).filter(item => item.id && item.name);
+}
+
 function providerState(source) {
   if (!providerHealth.has(source)) providerHealth.set(source, { failures:0, cooldownUntil:0 });
   return providerHealth.get(source);
@@ -403,6 +464,18 @@ async function searchAll(query, options = {}) {
     }),
     failures,
   };
+  if (!value.songs.length) {
+    try {
+      const fallbackSongs = await searchGdStudio(query, limit);
+      if (fallbackSongs.length) {
+        value.ok = true;
+        value.songs = fallbackSongs;
+        value.failures = value.failures.concat([{ source:'gdstudio', name:'内置聚合搜索', error:'PLATFORM_SEARCH_FALLBACK' }]);
+      }
+    } catch (fallbackError) {
+      value.failures.push({ source:'gdstudio', name:'内置聚合搜索', error:fallbackError.message || 'SEARCH_FALLBACK_FAILED' });
+    }
+  }
   if (value.songs.length) {
     searchCache.set(cacheKey, { time: Date.now(), value });
     if (searchCache.size > 80) searchCache.delete(searchCache.keys().next().value);
