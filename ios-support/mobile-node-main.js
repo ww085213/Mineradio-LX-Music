@@ -7,10 +7,12 @@ const fs = require('fs');
 const Module = require('module');
 const { app, channel } = require('bridge');
 
-// NodeMobile builds may not expose the Web Fetch API. Keep the native fetch
-// when available and provide a small HTTP/HTTPS fallback otherwise so search,
-// source resolution and the media proxy can reach external services.
-if (typeof globalThis.fetch !== 'function') {
+// NodeMobile's Web Fetch API is present on some iOS runtimes but is not
+// reliable for every external music endpoint. Use the small HTTP/HTTPS
+// implementation below for all mobile API calls so search, source resolution
+// and the media proxy share the same predictable network path.
+const useMobileHttpFallback = true; // this entry point is only bundled into the mobile runtime
+if (useMobileHttpFallback || typeof globalThis.fetch !== 'function') {
   const zlib = require('zlib');
   let ReadableStreamCtor = null;
   try { ReadableStreamCtor = require('stream/web').ReadableStream; } catch (_error) {}

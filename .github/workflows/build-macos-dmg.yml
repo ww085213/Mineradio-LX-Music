@@ -31,6 +31,7 @@ jobs:
 
           # Bundle the desktop Node backend and its static assets inside the app.
           find . -maxdepth 1 -type f -name '*.js' -exec cp {} ios-build/www/nodejs/ \;
+          cp builtin-source.json ios-build/www/nodejs/builtin-source.json
           rsync -a public/ ios-build/www/nodejs/public/
           for dir in cuefield qishui-audio-decryptor qishui-auth-v6; do
             if [[ -d "$dir" ]]; then rsync -a "$dir/" "ios-build/www/nodejs/$dir/"; fi

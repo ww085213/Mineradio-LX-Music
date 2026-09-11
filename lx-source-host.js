@@ -28,6 +28,9 @@ const LX_DATA_DIRS = [
 const MR_SOURCE_DIR = path.join(APPDATA_DIR || LOCALAPPDATA_DIR || process.cwd(), 'Mineradio', 'sources');
 const MR_SOURCE_FILE = path.join(MR_SOURCE_DIR, 'active-source.json');
 const MR_SOURCES_FILE = path.join(MR_SOURCE_DIR, 'sources.json');
+// The standalone iOS build carries a known-good LX source so a fresh install
+// can search and resolve music without requiring the WKWebView file picker.
+const BUILTIN_SOURCE_FILE = path.join(__dirname, 'builtin-source.json');
 const ALLOWED_SOURCES = new Set(['kw', 'kg', 'tx', 'wy', 'mg', 'xm', 'local']);
 const ALLOWED_ACTIONS = new Set(['musicUrl', 'lyric', 'pic']);
 const LX_HTTP_TIMEOUT_MS = 12000;
@@ -92,6 +95,16 @@ function readJsonIfExists(file) {
   }
 }
 
+function builtinSourceRecords() {
+  if (process.env.MINERADIO_MOBILE !== '1') return [];
+  const saved = readJsonIfExists(BUILTIN_SOURCE_FILE);
+  const records = Array.isArray(saved) ? saved : saved && saved.userApis;
+  if (!Array.isArray(records)) return [];
+  return records
+    .filter(item => item && typeof item.script === 'string' && item.script.trim())
+    .map(item => ({ ...item, enabled: true, builtin: true }));
+}
+
 function lxDataFileCandidates(fileName) {
   return LX_DATA_DIRS.map(dir => path.join(dir, fileName));
 }
@@ -130,7 +143,12 @@ function readSourceStore() {
       !records.some(item => item.id === legacy.id || item.script === legacy.script)) {
     records.push(legacy);
   }
-  return { activeId: String(saved?.activeId || legacy?.id || ''), records };
+  for (const item of builtinSourceRecords()) {
+    if (!records.some(existing => existing.id === item.id || existing.script === item.script)) {
+      records.push(item);
+    }
+  }
+  return { activeId: String(saved?.activeId || legacy?.id || records[0]?.id || ''), records };
 }
 
 function writeSourceStore(store) {
