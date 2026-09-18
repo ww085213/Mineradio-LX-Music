@@ -102,6 +102,35 @@ process.env.MINERADIO_UPDATE_DIR = path.join(cacheDir, 'updates');
 process.env.LOCALAPPDATA = dataDir;
 process.env.MINERADIO_MOBILE = '1';
 process.env.MINERADIO_MOBILE_DATA_DIR = dataDir;
+process.env.MINERADIO_AGENT_CONFIG_DIR = path.join(dataDir, 'Mineradio');
+
+// Only ciphertext is persisted by agent-api.js. The encryption key lives in
+// iOS Keychain; requests cross the private Capacitor/Node message channel.
+if (typeof channel.on === 'function') {
+  const pendingSecrets = new Map();
+  channel.on('mineradio-secure-response', value => {
+    const pending = value && pendingSecrets.get(value.id);
+    if (!pending) return;
+    pendingSecrets.delete(value.id);
+    clearTimeout(pending.timer);
+    if (value.error) pending.reject(new Error('IOS_KEYCHAIN_UNAVAILABLE'));
+    else pending.resolve(value.result);
+  });
+  function secureRequest(action, value) {
+    return new Promise((resolve, reject) => {
+      const id = require('crypto').randomBytes(16).toString('hex');
+      const timer = setTimeout(() => { pendingSecrets.delete(id); reject(new Error('IOS_KEYCHAIN_TIMEOUT')); }, 10000);
+      pendingSecrets.set(id, { resolve, reject, timer });
+      channel.post('mineradio-secure-request', { id, action, value });
+    });
+  }
+  globalThis.mineradioSecureStorage = {
+    isEncryptionAvailable: () => true,
+    isAsyncEncryptionAvailable: async () => true,
+    async encryptStringAsync(value) { return Buffer.from(await secureRequest('encrypt', value), 'base64'); },
+    async decryptStringAsync(value) { return { result: await secureRequest('decrypt', Buffer.from(value).toString('base64')) }; }
+  };
+}
 
 function reportRuntimeFailure(reason) {
   const message = reason && (reason.stack || reason.message) || String(reason);

@@ -24,14 +24,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node --test ios-support/mobile-bridge.test.cjs
+          node --test ios-support/*.test.cjs
           node --check ios-support/mobile-node-main.js
+          node --check ios-support/mobile-ipad.js
           node --check server.js
           node --check lx-search.js
           mkdir -p ios-build/www
           rsync -a --delete public/ ios-build/www/
           mkdir -p ios-build/www/nodejs
           cp ios-support/mobile-bridge.js ios-build/www/mobile-bridge.js
+          cp ios-support/mobile-ipad.js ios-build/www/mobile-ipad.js
+          cp build/icon.png ios-build/www/mobile-app-icon.png
 
           # Bundle the desktop Node backend and its static assets inside the app.
           find . -maxdepth 1 -type f -name '*.js' -exec cp {} ios-build/www/nodejs/ \;
@@ -47,7 +50,7 @@ jobs:
 
           index = Path('ios-build/www/index.html')
           html = index.read_text(encoding='utf-8')
-          tag = '<script src="mobile-bridge.js"></script>'
+          tag = '<script src="mobile-bridge.js"></script>\n<script src="mobile-ipad.js"></script>'
           if tag not in html:
               if '</head>' not in html:
                   raise SystemExit('index.html does not contain </head>')
@@ -98,7 +101,8 @@ jobs:
             "appName": "Mineradio",
             "webDir": "www",
             "ios": {
-              "contentInset": "automatic",
+              "contentInset": "never",
+              "backgroundColor": "#050608",
               "preferredContentMode": "mobile"
             },
             "plugins": {
@@ -116,6 +120,20 @@ jobs:
           npm install --no-audit --no-fund
           npx cap add ios --packagemanager SPM
           npx cap sync ios
+          cp ../ios-support/AppDelegate.swift ios/App/App/AppDelegate.swift
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          storyboard = Path('ios/App/App/Base.lproj/Main.storyboard')
+          original = storyboard.read_text()
+          assert 'customClass="CAPBridgeViewController"' in original
+          storyboard.write_text(original.replace('customClass="CAPBridgeViewController" customModule="Capacitor"', 'customClass="MineradioViewController" customModule="App"'))
+          assert 'customClass="MineradioViewController"' in storyboard.read_text()
+          icons = Path('ios/App/App/Assets.xcassets/AppIcon.appiconset')
+          icons.mkdir(parents=True, exist_ok=True)
+          (icons / 'Contents.json').write_text(json.dumps({'images': [{'idiom': 'universal', 'platform': 'ios', 'size': '1024x1024', 'filename': 'MR-1024.png'}], 'info': {'author': 'xcode', 'version': 1}}))
+          PY
+          swift ../build/make-ios-icon.swift ../build/icon.png ios/App/App/Assets.xcassets/AppIcon.appiconset/MR-1024.png
 
       - name: Configure iOS metadata
         shell: bash
@@ -129,7 +147,7 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Mineradio" "$PLIST"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.6.1" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 3" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 4" "$PLIST"
 
       - name: Build unsigned standalone device app
         shell: bash
@@ -154,16 +172,16 @@ jobs:
           mkdir -p "$RUNNER_TEMP/ipa/Payload"
           cp -R "$APP_PATH" "$RUNNER_TEMP/ipa/Payload/Mineradio.app"
           cd "$RUNNER_TEMP/ipa"
-          zip -qry Mineradio-1.6.1-network-3.ipa Payload
-          python3 "$GITHUB_WORKSPACE/build/verify-ios-package.py" Mineradio-1.6.1-network-3.ipa --repo "$GITHUB_WORKSPACE"
-          shasum -a 256 Mineradio-1.6.1-network-3.ipa > Mineradio-1.6.1-network-3.SHA256.txt
+          zip -qry Mineradio-1.6.1-ipad-4.ipa Payload
+          python3 "$GITHUB_WORKSPACE/build/verify-ios-package.py" Mineradio-1.6.1-ipad-4.ipa --repo "$GITHUB_WORKSPACE"
+          shasum -a 256 Mineradio-1.6.1-ipad-4.ipa > Mineradio-1.6.1-ipad-4.SHA256.txt
 
       - name: Upload standalone unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Mineradio-iOS-network-3
+          name: Mineradio-iOS-ipad-4
           if-no-files-found: error
           retention-days: 30
           path: |
-            ${{ runner.temp }}/ipa/Mineradio-1.6.1-network-3.ipa
-            ${{ runner.temp }}/ipa/Mineradio-1.6.1-network-3.SHA256.txt
+            ${{ runner.temp }}/ipa/Mineradio-1.6.1-ipad-4.ipa
+            ${{ runner.temp }}/ipa/Mineradio-1.6.1-ipad-4.SHA256.txt

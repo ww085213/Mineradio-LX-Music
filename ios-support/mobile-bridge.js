@@ -6,7 +6,7 @@
   // differently when talking to the embedded Node service.
   var LOCAL_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000'];
   var LOCAL_ORIGIN = LOCAL_ORIGINS[0];
-  var BRIDGE_VERSION = '1.6.1-network-3';
+  var BRIDGE_VERSION = '1.6.1-ipad-4';
   var nodeStartupError = '';
   var engineResolve;
   var engineReject;
@@ -219,6 +219,16 @@
     var nodejs = getNodePlugin();
     if (!nodejs || typeof nodejs.addListener !== 'function') return;
     nodejs.addListener('message', function (event) {
+      if (event && event.eventName === 'mineradio-secure-request') {
+        var request = event.args && event.args[0];
+        if (!request || typeof nodejs.send !== 'function') return;
+        window.Capacitor.nativePromise('MineradioNative', 'secure', request).then(function (result) {
+          return nodejs.send({ eventName: 'mineradio-secure-response', args: [{ id: request.id, result: result.value }] });
+        }).catch(function () {
+          nodejs.send({ eventName: 'mineradio-secure-response', args: [{ id: request.id, error: 'IOS_KEYCHAIN_UNAVAILABLE' }] }).catch(function () {});
+        });
+        return;
+      }
       if (!event || event.eventName !== 'mineradio-node-status') return;
       var status = event.args && event.args[0];
       if (status && status.state === 'failed') showStartupError(status.message);

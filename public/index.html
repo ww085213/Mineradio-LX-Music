@@ -8066,6 +8066,7 @@ function formatPlaybackPitch(value) {
 }
 function configurePlaybackAudioElement(el) {
   if (!el) return;
+  if (window.MineradioMobile && window.MineradioMobile.bindAudio) window.MineradioMobile.bindAudio(el);
   if (voiceInputIsolationDepth > 0) el.muted = true;
   try { el.preservesPitch = true; } catch (e) {}
   try { el.webkitPreservesPitch = true; } catch (e) {}
@@ -9528,6 +9529,7 @@ function getRenderPixelRatio() {
   var quality = renderQualityProfile();
   var budgetCap = Math.sqrt(quality.budget / cssPixels);
   var cap = Math.min(quality.cap, budgetCap);
+  if (window.MineradioMobile) cap = Math.min(cap, window.MineradioMobile.renderScale || 1);
   return Math.max(quality.min, Math.min(device, cap));
 }
 function getRenderPixelLoad() {
@@ -23273,7 +23275,7 @@ function coverProxySrc(url, cacheBust) {
   if (isInlineCoverSrc(url)) return url;
   if (!isProxyableCoverUrl(url)) return '';
   if (window.MineradioMobile && window.MOBILE_API_ORIGIN) {
-    return window.MOBILE_API_ORIGIN + '/api/cover?url=' + encodeURIComponent(url) + (cacheBust ? '&v=' + Date.now() : '');
+    return window.MOBILE_API_ORIGIN + '/api/image-proxy?url=' + encodeURIComponent(url) + (cacheBust ? '&v=' + Date.now() : '');
   }
   return '/api/image-proxy?url=' + encodeURIComponent(url) + (cacheBust ? '&v=' + Date.now() : '');
 }
@@ -23294,7 +23296,7 @@ function mobileRemoteCoverSrc(url) {
   url = normalizeRemoteCoverUrl(url);
   if (!url || isInlineCoverSrc(url)) return url;
   if (window.MineradioMobile && window.MOBILE_API_ORIGIN && /^https?:\/\//i.test(url)) {
-    return window.MOBILE_API_ORIGIN + '/api/cover?url=' + encodeURIComponent(url);
+    return window.MOBILE_API_ORIGIN + '/api/image-proxy?url=' + encodeURIComponent(url);
   }
   return url;
 }
@@ -35057,6 +35059,7 @@ async function attemptAudioPlay(opts) {
   opts = opts || {};
   try {
       if (!audio) return false;
+      if (window.MineradioMobile && window.MineradioMobile.activateAudio) await window.MineradioMobile.activateAudio();
       if (!audioReady) initAudio();
       if (opts.fade !== false) preparePlaybackFadeIn();
       if (opts.manual) {
@@ -50328,7 +50331,7 @@ function updateRenderFpsHud() {
   var target = String(renderPerfState.mode || 'vsync').replace(/fps$/i, '').toUpperCase();
   var hz = Math.max(30, Math.round(Number(desktopRuntimeState && desktopRuntimeState.displayFrequency) || 60));
   var dpr = typeof renderer !== 'undefined' && renderer ? renderer.getPixelRatio() : (window.devicePixelRatio || 1);
-  hud.innerHTML = '<b>' + actual + ' FPS</b><br><span>目标 ' + target + ' · 屏幕 ' + hz + 'Hz · DPR ' + Number(dpr).toFixed(2) + '<br>F8 隐藏</span>';
+  hud.innerHTML = '<b>' + actual + ' FPS</b><br><span>目标 ' + target + ' · 屏幕 ' + hz + 'Hz · DPR ' + Number(dpr).toFixed(2) + '<br>' + (window.MineradioMobile ? '点击隐藏' : 'F8 隐藏') + '</span>';
 }
 function toggleRenderFpsHud(force) {
   renderFpsHudVisible = typeof force === 'boolean' ? force : !renderFpsHudVisible;
@@ -50416,6 +50419,7 @@ function sampleRenderPerf(now, dt) {
     renderPerfState.fps = Math.round(renderPerfState.frames * 1000 / Math.max(1, now - renderPerfState.lastSampleAt));
     renderPerfState.frames = 0;
     renderPerfState.lastSampleAt = now;
+    if (window.MineradioMobile && window.MineradioMobile.updatePerformance) window.MineradioMobile.updatePerformance(renderPerfState.fps);
     updateRenderFpsHud();
   }
   renderPerfState.terrainActive = typeof isTerrainPresetActive === 'function' ? isTerrainPresetActive() : false;

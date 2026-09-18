@@ -2560,6 +2560,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (IS_MOBILE && pn.startsWith('/api/mobile/audio-cache')) {
+    await require('./mobile-media-cache').handle(req, res, url, process.env.MINERADIO_MOBILE_DATA_DIR);
+    return;
+  }
+
   if (pn === '/api/agent/config') {
     if (req.method === 'GET') {
       try { sendJSON(res, { ok: true, ...agentApi.getConfig() }); }
@@ -3486,7 +3491,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (pn === '/api/image-proxy') {
+  if (pn === '/api/image-proxy' || pn === '/api/cover') {
     try {
       const target = new URL(String(url.searchParams.get('url') || ''));
       if (!/^https?:$/.test(target.protocol) || /^(?:localhost|127\.|0\.0\.0\.0|::1$)/i.test(target.hostname)) {
@@ -3496,7 +3501,7 @@ const server = http.createServer(async (req, res) => {
       const fetchImpl = electronNet && typeof electronNet.fetch === 'function'
         ? electronNet.fetch.bind(electronNet)
         : fetch;
-      const referer = target.hostname.includes('qq.com')
+      const referer = /(?:^|\.)(?:qq\.com|gtimg\.cn)$/.test(target.hostname)
         ? 'https://y.qq.com/'
         : (target.hostname.includes('music.163.com') || target.hostname.includes('126.net') ? 'https://music.163.com/' : undefined);
       const headers = {

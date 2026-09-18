@@ -901,7 +901,7 @@ function tryElectronSecurity() {
 function createAgentApi(options) {
   const opts = options || {};
   const electron = tryElectronSecurity();
-  const safeStorage = opts.safeStorage || electron.safeStorage;
+  const safeStorage = opts.safeStorage || (process.env.MINERADIO_MOBILE === '1' && globalThis.mineradioSecureStorage) || electron.safeStorage;
 
   function configFilePath() {
     if (opts.configFile) return opts.configFile;
@@ -992,7 +992,7 @@ function createAgentApi(options) {
         }
       } catch (_error) {}
       if (!encrypted) {
-        throw new AgentApiError('AGENT_KEY_ENCRYPTION_UNAVAILABLE', 'Windows 安全存储当前不可用，API Key 未保存。', 503);
+        throw new AgentApiError('AGENT_KEY_ENCRYPTION_UNAVAILABLE', (process.env.MINERADIO_MOBILE === '1' ? 'iOS 钥匙串' : '系统安全存储') + '当前不可用，API Key 未保存。', 503);
       }
       next.apiKeyEncrypted = Buffer.from(encrypted).toString('base64');
       next.apiKeyHint = '••••' + apiKey.slice(-4);
