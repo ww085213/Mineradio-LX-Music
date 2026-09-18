@@ -2516,7 +2516,7 @@ const server = http.createServer(async (req, res) => {
   // A freshly installed mobile app has no source yet, but its embedded server
   // is still healthy and the UI must be allowed to open the source importer.
   if (pn === '/api/health' && req.method === 'GET') {
-    sendJSON(res, { ok: true, mobile: IS_MOBILE, version: APP_VERSION });
+    sendJSON(res, { ok: true, service: 'mineradio-local-engine', mobile: IS_MOBILE, version: APP_VERSION });
     return;
   }
 
@@ -3724,6 +3724,11 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(500);
       res.end();
     }
+    return;
+  }
+
+  if (pn.startsWith('/api/')) {
+    sendJSON(res, { ok: false, error: 'API_NOT_FOUND', path: pn }, 404);
     return;
   }
 

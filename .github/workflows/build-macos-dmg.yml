@@ -24,6 +24,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          node --test ios-support/mobile-bridge.test.cjs
+          node --check ios-support/mobile-node-main.js
+          node --check server.js
+          node --check lx-search.js
           mkdir -p ios-build/www
           rsync -a --delete public/ ios-build/www/
           mkdir -p ios-build/www/nodejs
@@ -125,7 +129,7 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Mineradio" "$PLIST"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.6.1" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 2" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 3" "$PLIST"
 
       - name: Build unsigned standalone device app
         shell: bash
@@ -146,18 +150,20 @@ jobs:
 
           APP_PATH=$(find "$RUNNER_TEMP/mineradio-derived/Build/Products/Release-iphoneos" -maxdepth 1 -name '*.app' -print -quit)
           test -n "$APP_PATH"
+          python3 "$GITHUB_WORKSPACE/build/verify-ios-package.py" "$APP_PATH" --repo "$GITHUB_WORKSPACE"
           mkdir -p "$RUNNER_TEMP/ipa/Payload"
           cp -R "$APP_PATH" "$RUNNER_TEMP/ipa/Payload/Mineradio.app"
           cd "$RUNNER_TEMP/ipa"
-          zip -qry Mineradio-1.6.1-standalone-crashfix-unsigned.ipa Payload
-          shasum -a 256 Mineradio-1.6.1-standalone-crashfix-unsigned.ipa > Mineradio-1.6.1-standalone-crashfix-unsigned.SHA256.txt
+          zip -qry Mineradio-1.6.1-network-3.ipa Payload
+          python3 "$GITHUB_WORKSPACE/build/verify-ios-package.py" Mineradio-1.6.1-network-3.ipa --repo "$GITHUB_WORKSPACE"
+          shasum -a 256 Mineradio-1.6.1-network-3.ipa > Mineradio-1.6.1-network-3.SHA256.txt
 
       - name: Upload standalone unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Mineradio-iOS-standalone-crashfix-unsigned
+          name: Mineradio-iOS-network-3
           if-no-files-found: error
           retention-days: 30
           path: |
-            ${{ runner.temp }}/ipa/Mineradio-1.6.1-standalone-crashfix-unsigned.ipa
-            ${{ runner.temp }}/ipa/Mineradio-1.6.1-standalone-crashfix-unsigned.SHA256.txt
+            ${{ runner.temp }}/ipa/Mineradio-1.6.1-network-3.ipa
+            ${{ runner.temp }}/ipa/Mineradio-1.6.1-network-3.SHA256.txt

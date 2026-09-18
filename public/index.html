@@ -23096,7 +23096,10 @@ async function apiJson(url, opts) {
   }
   try {
     var res = await fetch(url, fetchOpts);
-    var data = await res.json().catch(function(){ return { ok:false, error:'HTTP_' + res.status }; });
+    var data = await res.json().catch(function(){
+      return { ok:false, error:'接口返回的不是有效 JSON（HTTP ' + res.status + '）。' + (window.MineradioMobile ? '请打开“联网检查”查看本机服务是否已连接。' : '请检查服务地址。') };
+    });
+    if (!data || typeof data !== 'object') data = { ok:false, error:'接口返回了无效数据（HTTP ' + res.status + '）' };
     if (!res.ok && data && data.ok !== false) data.ok = false;
     return data;
   } finally {
@@ -32181,8 +32184,8 @@ function waitForImportedAudioUsable(media, timeoutMs) {
 }
 async function startImportedAudioUrl(audioUrl) {
   var directProxy = /^\/api\/audio\?/i.test(String(audioUrl || ''));
-  var proxyAudioUrl = directProxy ? audioUrl : ((window.MOBILE_API_ORIGIN || '') + '/api/audio?url=' + encodeURIComponent(audioUrl));
-  var candidates = directProxy ? [audioUrl] : [proxyAudioUrl, audioUrl];
+  var proxyAudioUrl = directProxy ? ((window.MOBILE_API_ORIGIN || '') + audioUrl) : ((window.MOBILE_API_ORIGIN || '') + '/api/audio?url=' + encodeURIComponent(audioUrl));
+  var candidates = directProxy ? [proxyAudioUrl] : [proxyAudioUrl, audioUrl];
   var lastError = null;
   for (var i = 0; i < candidates.length; i++) {
     try {
@@ -33217,7 +33220,7 @@ async function renderLxSearchBridge(q) {
     }
     try {
       var sourceParam = searchMode === 'all' ? 'tx,wy,kw,kg,mg' : searchMode;
-      var result = await apiJson('/api/lx-source/search?q=' + encodeURIComponent(q) + '&limit=12&sources=' + encodeURIComponent(sourceParam), { timeoutMs:18000 });
+      var result = await apiJson('/api/lx-source/search?q=' + encodeURIComponent(q) + '&limit=12&sources=' + encodeURIComponent(sourceParam), { timeoutMs:window.MineradioMobile ? 32000 : 18000 });
       if (requestSeq !== searchRequestSeq || String($input && $input.value || '').trim() !== q) return;
       var online = result && Array.isArray(result.songs) ? result.songs : [];
       if (online.length) {

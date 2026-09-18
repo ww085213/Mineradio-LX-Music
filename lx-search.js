@@ -67,9 +67,11 @@ function playlistResult(source, item) {
 
 async function fetchJson(url, options = {}) {
   let lastError;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  const mobile = process.env.MINERADIO_MOBILE === '1';
+  const attempts = mobile ? 2 : 3;
+  for (let attempt = 0; attempt < attempts; attempt++) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12000);
+    const timer = setTimeout(() => controller.abort(), mobile ? 6500 : 12000);
     try {
       const selectedFetch = options.useNodeFetch ? globalThis.fetch : networkFetch;
       const fetchOptions = { ...options };
@@ -97,9 +99,9 @@ async function fetchJson(url, options = {}) {
     } catch (error) {
       lastError = error;
       const retryable = /HTTP_(?:429|5\d\d)|abort|timeout|fetch|network|socket|ECONN|ENOTFOUND/i.test(String(error && (error.message || error)));
-      if (!retryable || attempt >= 2) throw error;
+      if (!retryable || attempt >= attempts - 1) throw error;
       const exponentialDelay = 350 * (2 ** attempt);
-      const retryAfterDelay = Math.min(10000, Math.max(0, Number(error.retryAfterMs) || 0));
+      const retryAfterDelay = Math.min(mobile ? 1000 : 10000, Math.max(0, Number(error.retryAfterMs) || 0));
       await new Promise(resolve => setTimeout(resolve, Math.max(exponentialDelay, retryAfterDelay)));
     } finally {
       clearTimeout(timer);
@@ -128,11 +130,12 @@ async function searchKw(query, limit) {
 async function searchKg(query, limit) {
   const baseUrl = `https://songsearch.kugou.com/song_search_v2?keyword=${encodeURIComponent(query)}&page=1&pagesize=${limit}&userid=0&platform=WebFilter&filter=2&iscorrection=1&privilege_filter=0&area_code=1`;
   let rows = [];
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  const attempts = process.env.MINERADIO_MOBILE === '1' ? 1 : 3;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     const data = await fetchJson(`${baseUrl}&_=${Date.now()}_${attempt}`, { useNodeFetch: true });
     rows = data?.data?.lists || [];
     if (rows.length) break;
-    if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 380 * (2 ** attempt)));
+    if (attempt < attempts - 1) await new Promise(resolve => setTimeout(resolve, 380 * (2 ** attempt)));
   }
   return rows.map(item => ({
     id: item.Audioid,
