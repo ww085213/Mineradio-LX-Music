@@ -11,11 +11,25 @@
 
 ## 项目预览
 
-![Mineradio 沉浸式播放界面](docs/screenshots/playlist-wallpaper-example.png)
+### 主界面
 
-![Mineradio 歌词舞台](docs/screenshots/lyric-stage-playback-example.png)
+![Mineradio 最新主界面](docs/screenshots/showcase/showcase-home.webp)
 
-> 当前仓库中的截图用于展示项目界面与功能形态。项目仍在持续迭代。
+沉浸式首页展示：每日推荐、最近播放、平台排行榜、歌单广场、音乐电台、局域网遥控与实时频谱等功能。
+
+### AI Agent「小M」
+
+![AI Agent 小M](docs/screenshots/showcase/showcase-agent.webp)
+
+小M 不只是聊天窗口，可将自然语言指令转换为播放器实际操作，例如搜索并播放歌曲、调整音量、切换音质、操作歌单等。
+
+### 歌词与可视化
+
+![Mineradio 歌词与可视化](docs/screenshots/showcase/showcase-visualizer.webp)
+
+粒子可视化、双语歌词与实时频谱组合展示，体现桌面音乐播放器的沉浸式视觉能力。
+
+> 截图来自当前版本实际运行界面，项目仍在持续迭代。
 
 ## 项目亮点
 
