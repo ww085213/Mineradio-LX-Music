@@ -7,4 +7,5 @@
 *.bin binary
 *.ico binary
 *.png binary
+*.webp binary
 *.bmp binary

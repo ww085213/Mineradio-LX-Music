@@ -13,19 +13,19 @@
 
 ### 主界面
 
-![Mineradio 最新主界面](docs/screenshots/showcase/showcase-home.webp)
+![Mineradio 最新主界面](docs/screenshots/showcase/showcase-home.png)
 
 沉浸式首页展示：每日推荐、最近播放、平台排行榜、歌单广场、音乐电台、局域网遥控与实时频谱等功能。
 
 ### AI Agent「小M」
 
-![AI Agent 小M](docs/screenshots/showcase/showcase-agent.webp)
+![AI Agent 小M](docs/screenshots/showcase/showcase-agent.png)
 
 小M 不只是聊天窗口，可将自然语言指令转换为播放器实际操作，例如搜索并播放歌曲、调整音量、切换音质、操作歌单等。
 
 ### 歌词与可视化
 
-![Mineradio 歌词与可视化](docs/screenshots/showcase/showcase-visualizer.webp)
+![Mineradio 歌词与可视化](docs/screenshots/showcase/showcase-visualizer.png)
 
 粒子可视化、双语歌词与实时频谱组合展示，体现桌面音乐播放器的沉浸式视觉能力。
 
