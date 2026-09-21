@@ -7,6 +7,8 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6)](#运行与打包)
 [![Electron](https://img.shields.io/badge/Electron-Desktop-47848F)](#技术栈)
 
+[**Windows 下载**](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.6.1/Mineradio.Setup.1.6.1.exe) · [**GitHub Release**](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.6.1) · [**抖音项目演示**](https://v.douyin.com/eRlkIQrTOTw/)
+
 ## 项目预览
 
 ![Mineradio 沉浸式播放界面](docs/screenshots/playlist-wallpaper-example.png)
@@ -24,7 +26,7 @@
 - **播放稳定性优化**：围绕资源解析、缓存、下一曲预取、超时、失败重试与回退机制持续优化。
 - **长列表与界面性能优化**：针对大量歌曲、歌单与复杂界面进行分批渲染及交互优化。
 - **完整发布流程**：使用 Electron / electron-builder 构建 Windows 安装包，并通过 GitHub Release 发布版本。
-- **真实用户反馈驱动迭代**：通过抖音持续展示项目功能和版本更新，相关账号累计 **9000+ 粉丝**，根据实际反馈持续改进功能。
+- **真实用户反馈驱动迭代**：通过[抖音项目演示](https://v.douyin.com/eRlkIQrTOTw/)持续展示项目功能和版本更新，相关账号累计 **9000+ 粉丝**，根据实际反馈持续改进功能。
 
 ## 技术栈
 
