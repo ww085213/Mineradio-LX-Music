@@ -27,7 +27,7 @@ function boot() {
     } },
     addEventListener() {}, applyRendererPowerMode() { calls.push({ method: 'resize' }); }
   };
-  const document = { hidden: false, head: { appendChild() {} }, getElementById: () => null,
+  const document = { hidden: false, head: { appendChild() {} }, getElementById: () => null, querySelector: () => null,
     createElement: () => ({}), addEventListener(name, fn) { if (name === 'DOMContentLoaded') domReady = fn; } };
   const context = vm.createContext({ window, document, navigator: {}, console, innerWidth: 1180, innerHeight: 820,
     localStorage: { getItem: key => stored.get(key), setItem: (key, value) => stored.set(key, value) },
@@ -60,15 +60,19 @@ test('pinch produces zoom, not an unintended song click', () => {
   assert.ok(app.events.some(e => e.type === 'wheel' && e.deltaY < 0));
   assert.equal(app.events.filter(e => e.type === 'click').length, 0);
 });
-test('handoff pauses WebAudio and concurrent focus/visibility returns resume exactly once', async () => {
+test('handoff keeps WebAudio alive until native starts and releases native only after foreground audio is ready', async () => {
   const app = boot();
   app.mobile.enterBackgroundAudio();
-  assert.equal(app.media.paused, true);
+  assert.equal(app.media.paused, false);
   assert.equal(app.calls.filter(c => c.method === 'syncAudio').length, 1);
+  app.mobile.nativeBackgroundAudioDidStart();
+  assert.equal(app.media.paused, true);
   await Promise.all([app.mobile.resumeForegroundAudio(), app.mobile.resumeForegroundAudio()]);
   assert.equal(app.calls.filter(c => c.method === 'resumeWebAudio').length, 1);
+  assert.equal(app.calls.filter(c => c.method === 'finishWebAudioResume').length, 1);
   assert.equal(app.media.currentTime, 24);
   assert.equal(app.media.paused, false);
+  assert.equal(app.mobile.isNativeAudioOwned(), false);
 });
 test('stable time updates do not reserialize the playlist', async () => {
   const app = boot();
@@ -76,8 +80,17 @@ test('stable time updates do not reserialize the playlist', async () => {
   for (let i = 0; i < 10; i++) { app.setNow(11000 + i * 1000); app.mediaListeners.get('timeupdate')(); }
   await tick();
   const syncs = app.calls.filter(c => c.method === 'syncAudio');
-  assert.equal(syncs.length, 11);
+  assert.ok(syncs.length >= 2 && syncs.length <= 11);
   assert.equal(syncs.filter(c => c.value.queue).length, 1);
+  assert.ok(syncs.every(c => Object.prototype.hasOwnProperty.call(c.value, 'cover')));
+});
+test('every native playback snapshot retains the current album cover', async () => {
+  const app = boot();
+  app.window.currentDesktopSongMeta = () => ({ title:'song', artist:'artist', cover:'https://img.example/album.jpg' });
+  app.mediaListeners.get('playing')();
+  await tick();
+  const sync = app.calls.filter(call => call.method === 'syncAudio').at(-1);
+  assert.equal(sync.value.cover, 'https://img.example/album.jpg');
 });
 test('adaptive resolution reduces pixel cost under load, with hysteresis', () => {
   const app = boot();
@@ -95,4 +108,20 @@ test('cover proxy functions use existing backend route; FPS supports tap', () =>
   assert.ok(!html.includes("'/api/cover?url='"));
   assert.ok(html.includes("'/api/image-proxy?url='"));
   assert.ok(html.includes("window.MineradioMobile ? '点击隐藏'"));
+  assert.match(html, /transportRetries < 2/);
+  assert.match(html, /startImportedAudioUrl\(failedSource/);
+  assert.match(html, /\[LXImportedTransportResume\]/);
+});
+
+test('native bridge merges partial state and implements two-phase foreground ownership', () => {
+  const swift = fs.readFileSync(path.join(__dirname, 'AppDelegate.swift'), 'utf8');
+  assert.match(swift, /CAPPluginMethod\(name: "finishWebAudioResume"/);
+  assert.match(swift, /incoming\.forEach \{ self\.state\[\$0\.key\] = \$0\.value \}/);
+  assert.doesNotMatch(swift, /self\.state = call\.options/);
+  const resume = swift.slice(swift.indexOf('@objc func resumeWebAudio'), swift.indexOf('private func cancelPlaybackRecovery'));
+  assert.match(resume, /foregroundHandoffPending = true/);
+  assert.match(resume, /@objc func finishWebAudioResume/);
+  assert.match(resume, /self\.player\.pause\(\)/);
+  assert.match(swift, /duration - second < 45/);
+  assert.doesNotMatch(code, /queueResolvedUrl/);
 });

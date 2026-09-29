@@ -21,7 +21,13 @@ async function main() {
     res.setHeader('Content-Type', type);
     let body = fs.readFileSync(file);
     if (file.endsWith('mobile-bridge.js')) body = body.toString().replaceAll(':3000', ':' + server.address().port);
-    if (file.endsWith('index.html')) body = body.toString().replace('</head>', '<script>window.Capacitor={Plugins:{Nodejs:{start:async()=>{},addListener:()=>{},send:async()=>{}}},nativePromise:async()=>({status:200,owned:false})};</script><script src="mobile-bridge.js"></script><script src="mobile-ipad.js"></script></head>');
+    if (file.endsWith('index.html')) {
+      const stub = '<script>window.Capacitor={Plugins:{Nodejs:{start:async()=>{},addListener:()=>{},send:async()=>{}}},nativePromise:async()=>({status:200,owned:false})};</script>';
+      const html = body.toString();
+      body = html.includes('<script src="mobile-bridge.js"></script>')
+        ? html.replace('<script src="mobile-bridge.js"></script>', stub + '<script src="mobile-bridge.js"></script>')
+        : html.replace('</head>', stub + '<script src="mobile-bridge.js"></script><script src="mobile-ipad.js"></script></head>');
+    }
     res.end(body);
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -33,7 +39,7 @@ async function main() {
       const errors = [];
       page.on('pageerror', error => errors.push(error.message));
       await page.goto('http://127.0.0.1:' + server.address().port, { waitUntil: 'domcontentloaded' });
-      await page.waitForFunction(() => window.renderer && window.toggleRenderFpsHud && window.MineradioMobile?.build === '1.6.1-ipad-4');
+      await page.waitForFunction(() => window.renderer && window.toggleRenderFpsHud && window.MineradioMobile?.build === '1.6.1-ipad-5');
       await page.evaluate(() => {
         document.body.classList.remove('splash-active', 'splash-revealing', 'immersive-mode');
         document.body.classList.add('empty-home-active');

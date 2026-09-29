@@ -25,6 +25,8 @@ jobs:
         run: |
           set -euo pipefail
           node --test ios-support/*.test.cjs
+          node build/verify-public-assets.cjs
+          node build/verify-audio-proxy-reconnect.cjs
           node --check ios-support/mobile-node-main.js
           node --check ios-support/mobile-ipad.js
           node --check server.js
@@ -147,7 +149,7 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Mineradio" "$PLIST"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.6.1" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 4" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 5" "$PLIST"
 
       - name: Build unsigned standalone device app
         shell: bash
@@ -172,16 +174,16 @@ jobs:
           mkdir -p "$RUNNER_TEMP/ipa/Payload"
           cp -R "$APP_PATH" "$RUNNER_TEMP/ipa/Payload/Mineradio.app"
           cd "$RUNNER_TEMP/ipa"
-          zip -qry Mineradio-1.6.1-ipad-4.ipa Payload
-          python3 "$GITHUB_WORKSPACE/build/verify-ios-package.py" Mineradio-1.6.1-ipad-4.ipa --repo "$GITHUB_WORKSPACE"
-          shasum -a 256 Mineradio-1.6.1-ipad-4.ipa > Mineradio-1.6.1-ipad-4.SHA256.txt
+          zip -qry Mineradio-1.6.1-ipad-5.ipa Payload
+          python3 "$GITHUB_WORKSPACE/build/verify-ios-package.py" Mineradio-1.6.1-ipad-5.ipa --repo "$GITHUB_WORKSPACE"
+          shasum -a 256 Mineradio-1.6.1-ipad-5.ipa > Mineradio-1.6.1-ipad-5.SHA256.txt
 
       - name: Upload standalone unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Mineradio-iOS-ipad-4
+          name: Mineradio-iOS-ipad-5
           if-no-files-found: error
           retention-days: 30
           path: |
-            ${{ runner.temp }}/ipa/Mineradio-1.6.1-ipad-4.ipa
-            ${{ runner.temp }}/ipa/Mineradio-1.6.1-ipad-4.SHA256.txt
+            ${{ runner.temp }}/ipa/Mineradio-1.6.1-ipad-5.ipa
+            ${{ runner.temp }}/ipa/Mineradio-1.6.1-ipad-5.SHA256.txt

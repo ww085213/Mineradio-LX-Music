@@ -7112,6 +7112,7 @@ window.mobileNavigateBack = function() {
 //  Global State
 // ============================================================
 var audio = null, audioCtx = null, source = null, analyser = null, beatAnalyser = null, gainNode = null, audioReady = false;
+var iosDryPathGainNode = null, iosFxPathGainNode = null, iosAnalysisKeepAliveNode = null;
 var eqNodes = [], eqInputNode = null, eqOutputNode = null, preampGainNode = null;
 var soundFieldInputNode = null, reverbConvolverNode = null, reverbDryNode = null, reverbWetNode = null;
 var spatialPannerNode = null, orbitStereoPannerNode = null, spatialToneNode = null, masterCompressorNode = null, masterOutputNode = null;
@@ -8473,6 +8474,7 @@ function ensurePitchShiftNode() {
   return pitchShiftInitPromise;
 }
 function applyPitchShiftValue() {
+  syncIosAudioRoute(false);
   if (!pitchShiftNode) {
     if (playbackTuning.pitch !== 0) ensurePitchShiftNode();
     return;
@@ -9139,6 +9141,7 @@ function readAudioEffectsSettings() {
       orbitSpeed: clampRange(Number(raw.orbitSpeed) || 0, 0, 1.5),
       stereoWidth: clampRange(raw.stereoWidth == null ? 1 : Number(raw.stereoWidth), 0, 2),
       masterEnabled: raw.masterEnabled !== false,
+      masterExplicit: raw.masterExplicit === true,
       loudnessNormalization: raw.loudnessNormalization === true,
       smartDj: raw.smartDj === true,
       vocalLevel: clampRange(raw.vocalLevel == null ? 1 : Number(raw.vocalLevel), 0, 1.5),
@@ -9146,7 +9149,7 @@ function readAudioEffectsSettings() {
       eqGains: EQ_BANDS.map(function(_, i){ return clampRange(Number(gains[i]) || 0, -18, 18); })
     };
   } catch (e) {
-    return { enabled:false, preset:'flat', preamp:0, eqQ:1.25, environment:'off', roomSize:1, reverbDecay:1.2, reverbWet:0, spatialEnabled:false, spatialDistance:.15, orbitSpeed:0, stereoWidth:1, masterEnabled:true, loudnessNormalization:false, smartDj:false, vocalLevel:1, accompanimentLevel:1, eqGains:EQ_BANDS.map(function(){ return 0; }) };
+    return { enabled:false, preset:'flat', preamp:0, eqQ:1.25, environment:'off', roomSize:1, reverbDecay:1.2, reverbWet:0, spatialEnabled:false, spatialDistance:.15, orbitSpeed:0, stereoWidth:1, masterEnabled:true, masterExplicit:false, loudnessNormalization:false, smartDj:false, vocalLevel:1, accompanimentLevel:1, eqGains:EQ_BANDS.map(function(){ return 0; }) };
   }
 }
 var audioEffects = readAudioEffectsSettings();
@@ -17477,6 +17480,11 @@ function updateControlTrackInfo(song) {
   var artist = document.getElementById('control-artist');
   if (title) title.textContent = song.name || '';
   if (artist) artist.textContent = songDisplaySubtitle(song);
+  var controlCover = song.picUrl || song.cover || song.img || '';
+  if (!controlCover && (song.name || song.title) && typeof buildLxFallbackCover === 'function') {
+    controlCover = buildLxFallbackCover(song);
+  }
+  if (controlCover) setControlCoverSrc(controlCover);
   if (typeof updateNowFlowBar === 'function') updateNowFlowBar(true);
 }
 
@@ -31875,7 +31883,7 @@ async function resolveCrossPlatformAudioFallback(song, failedSource, excludedRes
       if (!candidate || String(candidate.source || '') === failedSource) return false;
       var candidateName = simpleSearchNorm(candidate.name || '');
       return wantedName && (candidateName === wantedName || candidateName.indexOf(wantedName) >= 0 || wantedName.indexOf(candidateName) >= 0);
-    }).slice(0, 10) : [];
+    }).slice(0, 5) : [];
     for (var i = 0; i < candidates.length; i++) {
       var candidate = candidates[i];
       var sourceName = normalizeLxSourceName(candidate.source);
@@ -31890,9 +31898,9 @@ async function resolveCrossPlatformAudioFallback(song, failedSource, excludedRes
             quality:String(song._requestedLxQuality || qualities[0] || '128k'),
             musicInfo:candidatePayload,
             excludeResolvers:Array.isArray(excludedResolvers) ? excludedResolvers : [],
-            maxResolvers:6
+            maxResolvers:4
           }),
-          timeoutMs:30000
+          timeoutMs:20000
         });
         if (resolved && resolved.ok && (/^https?:\/\//i.test(String(resolved.url || '')) || /^\/api\/audio\?/i.test(String(resolved.proxyUrl || '')))) {
           applyCrossPlatformSongMatch(song, candidate, sourceName);
@@ -31947,9 +31955,9 @@ async function resolveImportedLxAudio(song, excludedResolvers, options) {
           quality:quality,
           musicInfo:payload,
           excludeResolvers:Array.isArray(excludedResolvers) ? excludedResolvers : [],
-          maxResolvers:Math.max(3, Math.min(8, Number(options.maxResolvers) || 6))
+          maxResolvers:Math.max(1, Math.min(6, Number(options.maxResolvers) || 5))
         }),
-        timeoutMs:Math.max(8000, Number(options.timeoutMs) || 45000)
+        timeoutMs:Math.max(8000, Number(options.timeoutMs) || 30000)
       });
     } catch (e) {
       if (e && e.name === 'AbortError') throw new Error('音源解析超时，请换音源或稍后重试');
@@ -32184,9 +32192,12 @@ function waitForImportedAudioUsable(media, timeoutMs) {
     }, timeoutMs || 8000);
   });
 }
-async function startImportedAudioUrl(audioUrl) {
-  var directProxy = /^\/api\/audio\?/i.test(String(audioUrl || ''));
-  var proxyAudioUrl = directProxy ? ((window.MOBILE_API_ORIGIN || '') + audioUrl) : ((window.MOBILE_API_ORIGIN || '') + '/api/audio?url=' + encodeURIComponent(audioUrl));
+async function startImportedAudioUrl(audioUrl, options) {
+  options = options || {};
+  var directProxy = /^(?:\/api\/audio\?|https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\/api\/audio\?)/i.test(String(audioUrl || ''));
+  var proxyAudioUrl = directProxy
+    ? (/^https?:\/\//i.test(String(audioUrl || '')) ? String(audioUrl) : ((window.MOBILE_API_ORIGIN || '') + audioUrl))
+    : ((window.MOBILE_API_ORIGIN || '') + '/api/audio?url=' + encodeURIComponent(audioUrl));
   var candidates = directProxy ? [proxyAudioUrl] : [proxyAudioUrl, audioUrl];
   var lastError = null;
   for (var i = 0; i < candidates.length; i++) {
@@ -32195,6 +32206,9 @@ async function startImportedAudioUrl(audioUrl) {
       audio.removeAttribute('src');
       audio.src = candidates[i];
       syncAudioSingleLoopMode();
+      if (Number(options.resumeSeconds) > 0.35) {
+        scheduleAudioResumePosition(audio, Number(options.resumeSeconds), Number(options.playbackToken) || trackSwitchToken);
+      }
       audio.load();
       audio.muted = voiceInputIsolationDepth > 0;
       audio.__mrGesturePrimed = false;
@@ -32202,7 +32216,7 @@ async function startImportedAudioUrl(audioUrl) {
       // play() serialized buffering and added up to 12 seconds to every
       // uncached switch; the play promise already waits for usable media and
       // the track-switch retry handles Chromium's rare early rejection.
-      var started = await attemptAudioPlay({ manual:true, silent:true, playTimeoutMs:6500 });
+      var started = await attemptAudioPlay({ manual:true, silent:true, playTimeoutMs:6500, fade:options.fade });
       if (started) {
         return true;
       }
@@ -32219,22 +32233,26 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
   if (lxAudioPrefetchTimer) { clearTimeout(lxAudioPrefetchTimer); lxAudioPrefetchTimer = 0; }
   var runtimeRetry = Math.max(0, Number(opts.runtimeRetry) || 0);
   var runtimeResumeSeconds = Math.max(0, Number(opts.resumeSeconds != null ? opts.resumeSeconds : opts.resumeAt) || 0);
-  safePlaybackStep('listen-session-finalize-lx-imported', function(){ finalizeListenSession(false); });
+  var recovering = runtimeRetry > 0 && Number(opts.playbackToken) === trackSwitchToken;
+  if (!recovering) safePlaybackStep('listen-session-finalize-lx-imported', function(){ finalizeListenSession(false); });
   activePlaybackContext = { type:'lx-imported', playlistIndex:playlistIndex, songIndex:songIndex, playlistName:song && song.lxPlaylistName || '' };
-  trackSwitchToken++;
-  var playbackToken = trackSwitchToken;
-  prepareImportedLxPlayerUi(song);
+  if (!recovering) trackSwitchToken++;
+  var playbackToken = recovering ? Number(opts.playbackToken) : trackSwitchToken;
+  if (!recovering) prepareImportedLxPlayerUi(song);
   // Invalidate the previous track immediately and fetch lyrics in parallel
   // with audio URL resolution. This removes the old-lyric linger on switches.
-  var pendingLyricText = String(song && (song.name || song.title) || '正在加载歌词');
-  var pendingLyricLines = [{ t:0, text:pendingLyricText, duration:9999, charCount:Math.max(1, pendingLyricText.length), fallback:true }];
-  setOriginalLyricsState(pendingLyricLines, false, 'loading');
-  applyLyricsState(pendingLyricLines, false, 'loading');
-  desktopOverlayPushState.lastLyricsTimelineKey = '';
-  desktopOverlayPushState.lastLyricsKey = '';
-  setTimeout(function(){ if (playbackToken === trackSwitchToken) pushDesktopLyricsState(true); }, 0);
-  var importedLyricsPromise = loadImportedLxLyrics(song, playbackToken);
-  showToast('正在解析：' + (song.name || '落雪歌曲'));
+  var importedLyricsPromise = Promise.resolve(true);
+  if (!recovering) {
+    var pendingLyricText = String(song && (song.name || song.title) || '正在加载歌词');
+    var pendingLyricLines = [{ t:0, text:pendingLyricText, duration:9999, charCount:Math.max(1, pendingLyricText.length), fallback:true }];
+    setOriginalLyricsState(pendingLyricLines, false, 'loading');
+    applyLyricsState(pendingLyricLines, false, 'loading');
+    desktopOverlayPushState.lastLyricsTimelineKey = '';
+    desktopOverlayPushState.lastLyricsKey = '';
+    setTimeout(function(){ if (playbackToken === trackSwitchToken) pushDesktopLyricsState(true); }, 0);
+    importedLyricsPromise = loadImportedLxLyrics(song, playbackToken);
+    showToast('正在解析：' + (song.name || '落雪歌曲'));
+  }
   lxAutoDetectSuppressedUntil = Number.POSITIVE_INFINITY;
   setLxBridgeActiveState(false);
   stopLxLoopbackAnalysis();
@@ -32299,16 +32317,39 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
   // the server-side exclusion list stop already-failed resolvers from repeating.
   var knownInstalledSourceCount = currentLxSourceInfo && Array.isArray(currentLxSourceInfo.installed)
     ? currentLxSourceInfo.installed.length : 0;
-  var installedSourceCount = Math.min(8, Math.max(3, knownInstalledSourceCount + 1));
+  var installedSourceCount = Math.min(4, Math.max(2, knownInstalledSourceCount + 1));
   var lastPlaybackError = null;
   var attemptedAudioUrls = [];
-  for (var sourceAttempt = 0; sourceAttempt < installedSourceCount; sourceAttempt++) {
+  var preResolvedUrl = String(opts.preResolvedUrl || '');
+  if (preResolvedUrl) {
     try {
-      var audioUrl = await resolveImportedLxAudio(song, excludedResolvers);
+      attemptedAudioUrls.push(preResolvedUrl);
+      await startImportedAudioUrl(preResolvedUrl, {
+        resumeSeconds:runtimeResumeSeconds,
+        playbackToken:playbackToken,
+        fade:opts.nativeHandoff ? false : undefined
+      });
+    } catch (preResolvedError) {
+      lastPlaybackError = preResolvedError;
+      preResolvedUrl = '';
+      console.warn('[LXImportedNativeHandoffUrl]', preResolvedError);
+    }
+  }
+  for (var sourceAttempt = 0; !preResolvedUrl && sourceAttempt < installedSourceCount; sourceAttempt++) {
+    try {
+      var audioUrl = await resolveImportedLxAudio(song, excludedResolvers, {
+        allowCrossPlatformFallback:false,
+        maxResolvers:sourceAttempt === 0 ? 4 : 3,
+        timeoutMs:25000
+      });
       if (!audioUrl) throw new Error('音源未返回播放地址');
       if (attemptedAudioUrls.indexOf(audioUrl) >= 0) throw new Error('备用音源返回了相同的失效地址');
       attemptedAudioUrls.push(audioUrl);
-      await startImportedAudioUrl(audioUrl);
+      await startImportedAudioUrl(audioUrl, {
+        resumeSeconds:runtimeResumeSeconds,
+        playbackToken:playbackToken,
+        fade:recovering || opts.nativeHandoff ? false : undefined
+      });
       if (sourceAttempt > 0) {
         showSourceFallbackNotice('已自动切换音源', '原音源无法播放，已改用：' + (song._lastLxResolver || '备用音源'));
       }
@@ -32330,7 +32371,11 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
       showSourceFallbackNotice('正在跨平台换源', '当前平台的音源均不可用，正在匹配其他平台版本…');
       var crossPlatformUrl = await resolveCrossPlatformAudioFallback(song, normalizeLxSourceName(song.source || song.provider));
       if (crossPlatformUrl && attemptedAudioUrls.indexOf(crossPlatformUrl) < 0) {
-        await startImportedAudioUrl(crossPlatformUrl);
+        await startImportedAudioUrl(crossPlatformUrl, {
+          resumeSeconds:runtimeResumeSeconds,
+          playbackToken:playbackToken,
+          fade:recovering || opts.nativeHandoff ? false : undefined
+        });
         lastPlaybackError = null;
       }
     } catch (crossPlatformError) {
@@ -32343,34 +32388,65 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
     .catch(function(error){ console.warn('[EveryTrackBeatLoad]', song && (song.name || song.title), error); });
   scheduleImportedLxAudioPrefetch(playbackToken, playlistIndex, songIndex);
   if (runtimeResumeSeconds > 0.35) scheduleAudioResumePosition(audio, runtimeResumeSeconds, trackSwitchToken);
-  // A stream can fail minutes after canplay (expired CDN URL, proxy reset, or
-  // decoder failure). Initial-load retries do not see that case, so re-enter
-  // the resolver with the active resolver excluded. Cap retries to avoid a
-  // permanently broken track looping forever.
+  // A stream can fail minutes after canplay. First reconnect the exact same
+  // proxy URL at the current position; the local proxy can resume the upstream
+  // byte range without changing the song or resolver. Only perform the slower
+  // source replacement after two same-stream recovery attempts fail.
   var playingResolver = String(song._lastLxResolver || '');
-  audio.onerror = function(){
-    if (playbackToken !== trackSwitchToken || runtimeRetry >= 3) return;
-    var resumeSeconds = Math.max(0, Number(audio.currentTime) || 0);
+  var transportRetries = Math.max(0, Number(opts.transportRetry) || 0);
+  function fallBackAfterRuntimeFailure(resumeSeconds) {
     var nextExcluded = excludedResolvers.slice();
     if (playingResolver && nextExcluded.indexOf(playingResolver) < 0) nextExcluded.push(playingResolver);
-    audio.onerror = null;
-    showSourceFallbackNotice('播放中断，正在自动换源', '当前音源连接失败，正在从断点附近重新匹配备用音源…');
-    playImportedLxInsideMineradio(song, playlistIndex, songIndex, {
+    showSourceFallbackNotice('当前连接已失效，正在换源', '原地址断点恢复失败，正在从相同位置匹配备用音源…');
+    return playImportedLxInsideMineradio(song, playlistIndex, songIndex, {
       runtimeRetry:runtimeRetry + 1,
       resumeSeconds:resumeSeconds,
-      excludedResolvers:nextExcluded
+      excludedResolvers:nextExcluded,
+      playbackToken:playbackToken,
+      transportRetry:0
     }).catch(function(error){
       console.warn('[LXImportedRuntimeFallback]', error);
-      showSourceFallbackNotice('自动换源失败', '已尝试可用备用音源，请稍后重试或切换歌曲。');
+      showSourceFallbackNotice('自动恢复失败', '已保留当前歌曲和进度，请稍后点击播放或切换歌曲。');
     });
-  };
-  safePlaybackStep('listen-session-begin-lx-imported', function(){
-    beginListenSession(song, { type:'lx-imported', playlistIndex:playlistIndex, songIndex:songIndex, playlistName:song && song.lxPlaylistName || '' });
-  });
+  }
+  function handleImportedRuntimeError(){
+    if (playbackToken !== trackSwitchToken || runtimeRetry >= 3) return;
+    if (window.MineradioMobile && typeof window.MineradioMobile.isNativeAudioOwned === 'function' && window.MineradioMobile.isNativeAudioOwned()) return;
+    var failedSource = String(audio.currentSrc || audio.src || '');
+    var resumeSeconds = Math.max(0, Number(audio.currentTime) || 0);
+    audio.onerror = null;
+    setTimeout(async function(){
+      if (playbackToken !== trackSwitchToken || runtimeRetry >= 3) return;
+      if (String(audio.currentSrc || audio.src || '') !== failedSource) return;
+      if (window.MineradioMobile && typeof window.MineradioMobile.isNativeAudioOwned === 'function' && window.MineradioMobile.isNativeAudioOwned()) return;
+      if (/^https?:\/\//i.test(failedSource) && transportRetries < 2) {
+        transportRetries++;
+        try {
+          await startImportedAudioUrl(failedSource, {
+            resumeSeconds:resumeSeconds,
+            playbackToken:playbackToken,
+            fade:false
+          });
+          if (playbackToken !== trackSwitchToken) return;
+          audio.onerror = handleImportedRuntimeError;
+          return;
+        } catch (error) {
+          console.warn('[LXImportedTransportResume]', transportRetries, error);
+        }
+      }
+      fallBackAfterRuntimeFailure(resumeSeconds);
+    }, 650);
+  }
+  audio.onerror = handleImportedRuntimeError;
+  if (!recovering) {
+    safePlaybackStep('listen-session-begin-lx-imported', function(){
+      beginListenSession(song, { type:'lx-imported', playlistIndex:playlistIndex, songIndex:songIndex, playlistName:song && song.lxPlaylistName || '' });
+    });
+  }
   Promise.resolve(importedLyricsPromise).catch(function(error){ console.warn('[LXImportedLyricsAsync]', error); });
   safeRenderQueuePanel('lx-imported-play', { scrollCurrent:true });
   scheduleShelfRebuild('lx-imported-play', true);
-  showToast('Mineradio 播放：' + (song.name || '落雪歌曲'));
+  if (!recovering && !opts.nativeHandoff) showToast('Mineradio 播放：' + (song.name || '落雪歌曲'));
   return true;
 }
 function ensureLxSongLocation(song) {
@@ -32406,7 +32482,8 @@ function ensureLxSongLocation(song) {
   });
   return { playlistIndex:playlistIndex, songIndex:songIndex };
 }
-async function playLxMirrorSong(playlistIndex, songIndex, directSong) {
+async function playLxMirrorSong(playlistIndex, songIndex, directSong, opts) {
+  opts = opts || {};
   primeOnlineAudioForUserGesture();
   if (directSong) {
     var location = ensureLxSongLocation(directSong);
@@ -32435,7 +32512,7 @@ async function playLxMirrorSong(playlistIndex, songIndex, directSong) {
   try {
     if (audio && !audio.paused && !audio.__mrGesturePrimed) await fadeOutAndPauseAudio();
     setLxActiveQueue(Number(playlistIndex), Number(songIndex));
-    await playImportedLxInsideMineradio(song, Number(playlistIndex), Number(songIndex));
+    await playImportedLxInsideMineradio(song, Number(playlistIndex), Number(songIndex), opts);
     return true;
   } catch (e) {
     console.warn('[LXMirrorPlay]', e);
@@ -33397,6 +33474,7 @@ function saveAudioEffectsSettings() {
       orbitSpeed: clampRange(Number(audioEffects.orbitSpeed) || 0, 0, 1.5),
       stereoWidth: clampRange(audioEffects.stereoWidth == null ? 1 : Number(audioEffects.stereoWidth), 0, 2),
       masterEnabled: audioEffects.masterEnabled !== false,
+      masterExplicit: audioEffects.masterExplicit === true,
       loudnessNormalization: audioEffects.loudnessNormalization === true,
       smartDj: audioEffects.smartDj === true,
       vocalLevel: clampRange(audioEffects.vocalLevel == null ? 1 : Number(audioEffects.vocalLevel), 0, 1.5),
@@ -33419,6 +33497,34 @@ function createEqChain(ctx) {
   eqOutputNode = eqNodes[eqNodes.length - 1] || null;
   for (var i = 0; i < eqNodes.length - 1; i++) eqNodes[i].connect(eqNodes[i + 1]);
   applyAudioEffects();
+}
+function iosNativeHandoffAudioMode() {
+  return !!(window.MineradioMobile && window.MineradioMobile.platform === 'ios');
+}
+function iosAudioEffectsActive() {
+  if (!iosNativeHandoffAudioMode()) return true;
+  var stemChanged = Math.abs(Number(audioEffects.vocalLevel == null ? 1 : audioEffects.vocalLevel) - 1) > .001 ||
+    Math.abs(Number(audioEffects.accompanimentLevel == null ? 1 : audioEffects.accompanimentLevel) - 1) > .001;
+  var environmentOn = audioEffects.environment && audioEffects.environment !== 'off' && Number(audioEffects.reverbWet) > .001;
+  var explicitMaster = audioEffects.masterExplicit === true && audioEffects.masterEnabled !== false;
+  var pitchOn = !!(playbackTuning && Math.abs(Number(playbackTuning.pitch) || 0) > .001);
+  return audioEffects.enabled === true || environmentOn || audioEffects.spatialEnabled === true || stemChanged ||
+    audioEffects.loudnessNormalization === true || audioEffects.smartDj === true || explicitMaster || pitchOn;
+}
+function syncIosAudioRoute(immediate) {
+  if (!iosNativeHandoffAudioMode() || !audioCtx || !iosDryPathGainNode || !iosFxPathGainNode) return;
+  var useFx = iosAudioEffectsActive();
+  var now = audioCtx.currentTime || 0;
+  var tau = immediate ? .001 : .018;
+  try {
+    iosDryPathGainNode.gain.cancelScheduledValues(now);
+    iosFxPathGainNode.gain.cancelScheduledValues(now);
+    iosDryPathGainNode.gain.setTargetAtTime(useFx ? 0 : 1, now, tau);
+    iosFxPathGainNode.gain.setTargetAtTime(useFx ? 1 : 0, now, tau);
+  } catch (e) {
+    iosDryPathGainNode.gain.value = useFx ? 0 : 1;
+    iosFxPathGainNode.gain.value = useFx ? 1 : 0;
+  }
 }
 function applyAudioEffects() {
   if (!audioCtx || !eqNodes || !eqNodes.length) return;
@@ -33447,6 +33553,7 @@ function applyAudioEffects() {
     }
   }
   drawEqResponse();
+  syncIosAudioRoute(false);
 }
 function eqPresetPayload(name) {
   var preset = EQ_PRESETS[name] || EQ_PRESETS.flat;
@@ -33520,6 +33627,7 @@ function applyStemSeparation(immediate){
   if(!audioCtx||stemMatrixNodes.length!==4)return;var now=audioCtx.currentTime||0,tau=immediate?.001:.025;
   var vocal=clampRange(audioEffects.vocalLevel==null?1:Number(audioEffects.vocalLevel),0,1.5),backing=clampRange(audioEffects.accompanimentLevel==null?1:Number(audioEffects.accompanimentLevel),0,1.5);
   var same=(vocal+backing)/2,cross=(vocal-backing)/2;[same,cross,cross,same].forEach(function(value,i){stemMatrixNodes[i].gain.setTargetAtTime(value,now,tau);});
+  syncIosAudioRoute(immediate);
 }
 function createSoundFieldChain(ctx) {
   soundFieldInputNode = ctx.createGain();
@@ -33560,13 +33668,16 @@ function applySoundFieldEffects(immediate) {
   spatialToneNode.frequency.setTargetAtTime(20000-distance*9200,now,tau);
   spatialToneNode.Q.setTargetAtTime(.5+distance*.9,now,tau);
   var normalizeLoudness=audioEffects.loudnessNormalization===true;
-  masterCompressorNode.threshold.setTargetAtTime(normalizeLoudness?-13:(audioEffects.masterEnabled!==false?-4:0),now,tau);
-  masterCompressorNode.knee.setTargetAtTime(normalizeLoudness?18:(audioEffects.masterEnabled!==false?12:0),now,tau);
-  masterCompressorNode.ratio.setTargetAtTime(normalizeLoudness?3.2:(audioEffects.masterEnabled!==false?18:1),now,tau);
+  var masterOn=audioEffects.masterEnabled!==false;
+  if(iosNativeHandoffAudioMode()&&audioEffects.masterExplicit!==true)masterOn=false;
+  masterCompressorNode.threshold.setTargetAtTime(normalizeLoudness?-13:(masterOn?-4:0),now,tau);
+  masterCompressorNode.knee.setTargetAtTime(normalizeLoudness?18:(masterOn?12:0),now,tau);
+  masterCompressorNode.ratio.setTargetAtTime(normalizeLoudness?3.2:(masterOn?18:1),now,tau);
   masterCompressorNode.attack.setTargetAtTime(.003,now,tau);
   masterCompressorNode.release.setTargetAtTime(normalizeLoudness?.28:.14,now,tau);
-  masterOutputNode.gain.setTargetAtTime(normalizeLoudness?1.08:(audioEffects.masterEnabled!==false?.94:1),now,tau);
+  masterOutputNode.gain.setTargetAtTime(normalizeLoudness?1.08:(masterOn?.94:1),now,tau);
   refreshReverbImpulse(false);
+  syncIosAudioRoute(immediate);
 }
 function tickSpatialAudio(dt) {
   if (!audioCtx || !spatialPannerNode) return;
@@ -33597,16 +33708,46 @@ function initAudio() {
   beatAnalyser.smoothingTimeConstant = 0.10;
   source.connect(analyser);
   source.connect(beatAnalyser);
-  analyser.connect(pitchInputNode);
-  if (eqInputNode && eqOutputNode) {
-    pitchInputNode.connect(eqInputNode);
-    eqOutputNode.connect(preampGainNode);
-    preampGainNode.connect(stemInputNode);
+  if (iosNativeHandoffAudioMode()) {
+    // iOS uses two foreground paths. Dry mode is bit-preserving apart from the
+    // user's volume; DSP is connected only when the user intentionally enables
+    // EQ/room/spatial/stem/master/pitch processing. This keeps normal foreground
+    // playback matched to the native background player without disabling effects.
+    iosAnalysisKeepAliveNode = audioCtx.createGain();
+    iosAnalysisKeepAliveNode.gain.value = 0;
+    analyser.connect(iosAnalysisKeepAliveNode);
+    beatAnalyser.connect(iosAnalysisKeepAliveNode);
+    iosAnalysisKeepAliveNode.connect(audioCtx.destination);
+    iosDryPathGainNode = audioCtx.createGain();
+    iosFxPathGainNode = audioCtx.createGain();
+    iosDryPathGainNode.gain.value = 1;
+    iosFxPathGainNode.gain.value = 0;
+    source.connect(iosDryPathGainNode);
+    iosDryPathGainNode.connect(gainNode);
+    source.connect(pitchInputNode);
+    if (eqInputNode && eqOutputNode) {
+      pitchInputNode.connect(eqInputNode);
+      eqOutputNode.connect(preampGainNode);
+      preampGainNode.connect(stemInputNode);
+    } else {
+      pitchInputNode.connect(stemInputNode);
+    }
+    stemOutputNode.connect(soundFieldInputNode);
+    masterOutputNode.connect(iosFxPathGainNode);
+    iosFxPathGainNode.connect(gainNode);
+    syncIosAudioRoute(true);
   } else {
-    pitchInputNode.connect(stemInputNode);
+    analyser.connect(pitchInputNode);
+    if (eqInputNode && eqOutputNode) {
+      pitchInputNode.connect(eqInputNode);
+      eqOutputNode.connect(preampGainNode);
+      preampGainNode.connect(stemInputNode);
+    } else {
+      pitchInputNode.connect(stemInputNode);
+    }
+    stemOutputNode.connect(soundFieldInputNode);
+    masterOutputNode.connect(gainNode);
   }
-  stemOutputNode.connect(soundFieldInputNode);
-  masterOutputNode.connect(gainNode);
   gainNode.connect(audioCtx.destination);
   configurePlaybackAudioElement(audio);
   if (playbackTuning.pitch !== 0) ensurePitchShiftNode();
@@ -33799,6 +33940,18 @@ function restorePlaybackGain() {
   audioFadeSerial++;
   setAudioOutputGainImmediate(targetVolume);
 }
+function prepareNativeForegroundHandoff() {
+  audioFadeSerial++;
+  clearAudioFadeTimers();
+  setAudioOutputGainImmediate(0);
+}
+function finishNativeForegroundHandoff() {
+  audioFadeSerial++;
+  rampAudioOutputGain(targetVolume, 70);
+}
+window.prepareNativeForegroundHandoff = prepareNativeForegroundHandoff;
+window.finishNativeForegroundHandoff = finishNativeForegroundHandoff;
+window.syncIosAudioRoute = syncIosAudioRoute;
 function fadeOutAndPauseAudio() {
   if (!audio || audio.paused) return Promise.resolve(false);
   var serial = ++audioFadeSerial;
@@ -34915,12 +35068,12 @@ async function playQueueAt(idx, opts) {
         await syncLxDualPlaybackForSong(lxDualSong, { silent:true, force:true });
       } catch (lxDualError) {
         console.warn('[LXDualQueuePlay]', lxDualError);
-        if (lxQueueSong) await playLxMirrorSong(selectedQueueSong.lxPlaylistIndex, selectedQueueSong.lxSongIndex);
+        if (lxQueueSong) await playLxMirrorSong(selectedQueueSong.lxPlaylistIndex, selectedQueueSong.lxSongIndex, null, opts);
         else await playImportedLxInsideMineradio(selectedQueueSong, -1, -1, opts);
       }
       return;
     }
-    if (lxQueueSong) await playLxMirrorSong(selectedQueueSong.lxPlaylistIndex, selectedQueueSong.lxSongIndex);
+    if (lxQueueSong) await playLxMirrorSong(selectedQueueSong.lxPlaylistIndex, selectedQueueSong.lxSongIndex, null, opts);
     else await playImportedLxInsideMineradio(selectedQueueSong, -1, -1, opts);
     return;
   }
@@ -35090,7 +35243,7 @@ async function attemptAudioPlay(opts) {
 }
 async function playAudio(opts) {
   opts = opts || {};
-  return attemptAudioPlay({ manual: !!opts.manual, silent: !!opts.silent, fade: opts.fade });
+  return attemptAudioPlay({ manual: !!opts.manual, silent: !!opts.silent, fade: opts.fade, playTimeoutMs: opts.playTimeoutMs });
 }
 async function togglePlay() {
   if (lxBridgeActive && !(audio && audio.src && !audio.paused)) {
@@ -38703,7 +38856,7 @@ var smartDjIncomingFade=false;
 function resetSmartDjTransition(){
   if(audio){audio._smartDjTriggered=false;audio._smartDjStarted=false;}
   if(masterOutputNode&&masterOutputNode.gain&&audioCtx){
-    var now=audioCtx.currentTime||0,normal=audioEffects.masterEnabled!==false?.94:1;
+    var now=audioCtx.currentTime||0,masterOn=audioEffects.masterEnabled!==false&&(!iosNativeHandoffAudioMode()||audioEffects.masterExplicit===true),normal=masterOn?.94:1;
     masterOutputNode.gain.cancelScheduledValues(now);
     if(smartDjIncomingFade&&audioEffects.smartDj===true){
       masterOutputNode.gain.setValueAtTime(.025,now);
@@ -38721,7 +38874,7 @@ function smartDjProgressTick(){
   if(!audio||!audioCtx||!masterOutputNode||!isFinite(audio.duration)||audio.duration<=0)return;
   var remaining=audio.duration-audio.currentTime;
   if(audioEffects.smartDj!==true||playMode==='single'||remaining>8){if(remaining>10)resetSmartDjTransition();return;}
-  var normal=audioEffects.masterEnabled!==false?.94:1;
+  var masterOn=audioEffects.masterEnabled!==false&&(!iosNativeHandoffAudioMode()||audioEffects.masterExplicit===true),normal=masterOn?.94:1;
   var progress=clamp01(remaining/8);
   var fade=clampRange(Math.pow(progress,1.45),.015,1);
   masterOutputNode.gain.setTargetAtTime(normal*fade,audioCtx.currentTime||0,.035);
@@ -44010,6 +44163,7 @@ function toggleSpatialAudio() {
 }
 function toggleSmartMaster() {
   audioEffects.masterEnabled=audioEffects.masterEnabled===false;
+  audioEffects.masterExplicit=true;
   updateAudioEffectsControls();applySoundFieldEffects();saveAudioEffectsSettings();
   showToast(audioEffects.masterEnabled?'智能削峰保护已开启':'智能削峰保护已关闭');
 }

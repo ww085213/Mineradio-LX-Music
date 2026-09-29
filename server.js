@@ -383,6 +383,134 @@ function audioProxyUrl(originalUrl, headers) {
   return '/api/audio?' + params.toString();
 }
 
+function audioRangeStart(value) {
+  const match = /^bytes=(\d+)-(?:\d*)$/i.exec(String(value || '').trim());
+  return match ? Number(match[1]) : 0;
+}
+
+function audioContentRangeStart(value) {
+  const match = /^bytes\s+(\d+)-\d+\/\d+$/i.exec(String(value || '').trim());
+  return match ? Number(match[1]) : null;
+}
+
+function audioRangeEnd(value) {
+  const match = /^bytes=\d+-(\d+)$/i.exec(String(value || '').trim());
+  return match ? Number(match[1]) : null;
+}
+
+function waitForWritableDrain(stream) {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      stream.off('drain', onDrain);
+      stream.off('close', onClose);
+      stream.off('error', onError);
+    };
+    const onDrain = () => { cleanup(); resolve(); };
+    const onClose = () => { cleanup(); reject(new Error('AUDIO_CLIENT_CLOSED')); };
+    const onError = error => { cleanup(); reject(error); };
+    stream.once('drain', onDrain);
+    stream.once('close', onClose);
+    stream.once('error', onError);
+  });
+}
+
+async function streamAudioWithReconnect(options) {
+  const { req, res, target, fetchImpl, playbackHeaders, controller } = options;
+  const originalRange = String(req.headers.range || '');
+  const requestedEnd = audioRangeEnd(originalRange);
+  const baseHeaders = {
+    Accept: '*/*',
+    'User-Agent': 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15',
+    ...playbackHeaders,
+  };
+  let response = await fetchImpl(target.href, {
+    method: req.method === 'HEAD' ? 'HEAD' : 'GET',
+    redirect: 'follow',
+    signal: controller.signal,
+    headers: {
+      ...baseHeaders,
+      ...(originalRange ? { Range:originalRange } : {}),
+      ...(req.headers['if-range'] ? { 'If-Range':req.headers['if-range'] } : {}),
+    },
+  });
+  const headers = {
+    'Content-Type': response.headers.get('content-type') || 'audio/mpeg',
+    'Accept-Ranges': response.headers.get('accept-ranges') || 'bytes',
+    'Cache-Control': 'private, no-cache, no-transform',
+    'X-Mineradio-Audio-Proxy': 'range-reconnect-v2',
+  };
+  ['content-length', 'content-range', 'etag', 'last-modified'].forEach(name => {
+    const value = response.headers.get(name);
+    if (value) headers[name] = value;
+  });
+  res.writeHead(response.status, headers);
+  if (req.method === 'HEAD' || !response.body || response.status < 200 || response.status >= 300) {
+    if (response.body && req.method !== 'HEAD') {
+      try {
+        for await (const chunk of Readable.fromWeb(response.body)) res.write(chunk);
+      } catch (_error) {}
+    }
+    res.end();
+    return;
+  }
+
+  const declaredLength = Number(response.headers.get('content-length'));
+  const expectedBytes = Number.isFinite(declaredLength) && declaredLength >= 0 ? declaredLength : null;
+  const contentStart = audioContentRangeStart(response.headers.get('content-range'));
+  const absoluteStart = contentStart == null
+    ? (response.status === 206 ? audioRangeStart(originalRange) : 0)
+    : contentStart;
+  const retryDelays = [120, 350, 800];
+  let written = 0;
+  let lastError = null;
+
+  for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
+    try {
+      if (!response.body) throw new Error('AUDIO_UPSTREAM_EMPTY');
+      for await (const chunk of Readable.fromWeb(response.body)) {
+        if (controller.signal.aborted || res.destroyed) throw new Error('AUDIO_CLIENT_CLOSED');
+        const body = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        written += body.length;
+        if (!res.write(body)) await waitForWritableDrain(res);
+      }
+      if (expectedBytes == null || written >= expectedBytes) {
+        res.end();
+        return;
+      }
+      lastError = new Error(`AUDIO_UPSTREAM_TRUNCATED_${written}_OF_${expectedBytes}`);
+    } catch (error) {
+      lastError = error;
+    }
+
+    if (controller.signal.aborted || res.destroyed || attempt >= retryDelays.length) break;
+    await new Promise(resolve => setTimeout(resolve, retryDelays[attempt]));
+    const resumeStart = absoluteStart + written;
+    const resumeRange = `bytes=${resumeStart}-${requestedEnd == null ? '' : requestedEnd}`;
+    try {
+      const retry = await fetchImpl(target.href, {
+        method: 'GET',
+        redirect: 'follow',
+        signal: controller.signal,
+        headers: {
+          ...baseHeaders,
+          Range: resumeRange,
+          ...(headers.etag ? { 'If-Range':headers.etag } : {}),
+        },
+      });
+      const retryStart = audioContentRangeStart(retry.headers.get('content-range'));
+      if (retry.status !== 206 || retryStart !== resumeStart || !retry.body) {
+        try { await retry.body?.cancel(); } catch (_error) {}
+        throw new Error(`AUDIO_RANGE_RECONNECT_REJECTED_${retry.status}`);
+      }
+      response = retry;
+    } catch (error) {
+      lastError = error;
+      response = { body:null };
+    }
+  }
+  if (!res.destroyed) res.destroy(lastError || new Error('AUDIO_PROXY_STREAM_FAILED'));
+}
+
 const wallpaperMediaIndex = new Map();
 const wallpaperProjectIndex = new Map();
 const WALLPAPER_CAPTURE_WINDOW_TITLE = 'Mineradio Wallpaper Capture';
@@ -3213,35 +3341,7 @@ const server = http.createServer(async (req, res) => {
         ? electronNet.fetch.bind(electronNet)
         : globalThis.fetch;
       const playbackHeaders = audioProxyHeadersFromQuery(url.searchParams.get('h'));
-      const upstream = await fetchImpl(target.href, {
-        method: req.method === 'HEAD' ? 'HEAD' : 'GET',
-        redirect: 'follow',
-        signal: controller.signal,
-        headers: {
-          Accept: '*/*',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          ...playbackHeaders,
-          ...(req.headers.range ? { Range:req.headers.range } : {}),
-          ...(req.headers['if-range'] ? { 'If-Range':req.headers['if-range'] } : {}),
-        },
-      });
-      const headers = {
-        'Content-Type': upstream.headers.get('content-type') || 'audio/mpeg',
-        'Accept-Ranges': upstream.headers.get('accept-ranges') || 'bytes',
-        'Cache-Control': 'no-store',
-      };
-      ['content-length', 'content-range', 'etag', 'last-modified'].forEach(name => {
-        const value = upstream.headers.get(name);
-        if (value) headers[name] = value;
-      });
-      res.writeHead(upstream.status, headers);
-      if (req.method === 'HEAD' || !upstream.body) {
-        res.end();
-      } else {
-        Readable.fromWeb(upstream.body).on('error', () => {
-          if (!res.destroyed) res.destroy();
-        }).pipe(res);
-      }
+      await streamAudioWithReconnect({ req, res, target, fetchImpl, playbackHeaders, controller });
     } catch (err) {
       if (!res.headersSent) sendJSON(res, { ok:false, error:err.message || 'AUDIO_PROXY_FAILED' }, 502);
       else if (!res.destroyed) res.destroy();

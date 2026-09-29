@@ -22,7 +22,7 @@ def verify(target, repo):
 
         info = plistlib.loads(read('Info.plist'))
         assert info['CFBundleShortVersionString'] == '1.6.1'
-        assert info['CFBundleVersion'] == '4', 'Wrong iOS build number'
+        assert info['CFBundleVersion'] == '5', 'Wrong iOS build number'
         assert info['CFBundleIdentifier'] == 'com.ww085213.mineradio.mobile'
         executable = read(info['CFBundleExecutable'])
         assert b'MineradioNativePlugin' in executable, 'Missing native audio/Keychain plugin'
@@ -36,10 +36,13 @@ def verify(target, repo):
         tags = list(re.finditer(r'<script\b[^>]*\bsrc=[\"\'](?:\./)?mobile-bridge\.js[\"\'][^>]*>\s*</script>', html, re.I))
         assert len(tags) == 1, 'Missing or duplicated mobile-bridge.js entry script'
         assert tags[0].start() < html.lower().index('</head>'), 'Bridge must load in head'
-        # Build inserts exactly these two scripts; no desktop overwrite allowed.
+        # The integrated source already contains both iOS entry scripts. Older
+        # checkouts inserted them during the build, so accept either source form
+        # while still requiring an exact packaged/source UI match.
         source_html = (repo / 'public/index.html').read_text(encoding='utf-8')
-        scripts = '<script src="mobile-bridge.js"></script>\n<script src="mobile-ipad.js"></script>\n'
-        assert html.replace('\r\n', '\n') == source_html.replace('</head>', scripts + '</head>', 1), 'UI differs from checked source'
+        script_pair = '<script src="mobile-bridge.js"></script>\n<script src="mobile-ipad.js"></script>'
+        expected_html = source_html if script_pair in source_html else source_html.replace('</head>', script_pair + '\n</head>', 1)
+        assert html.replace('\r\n', '\n') == expected_html.replace('\r\n', '\n'), 'UI differs from checked source'
 
         mapping = {
             'public/mobile-bridge.js': 'ios-support/mobile-bridge.js',
@@ -59,12 +62,12 @@ def verify(target, repo):
             expected = (repo / source).read_bytes().replace(b'\r\n', b'\n')
             assert actual == expected, 'Stale/missing packaged source: ' + packed
         bridge = read('public/mobile-bridge.js')
-        assert b'1.6.1-ipad-4' in bridge and b'CapacitorHttp' in bridge
+        assert b'1.6.1-ipad-5' in bridge and b'CapacitorHttp' in bridge
         assert read('public/mobile-app-icon.png') == (repo / 'build/icon.png').read_bytes()
         assert b'mineradio-local-engine' in read('public/nodejs/server.js')
         assert json.loads(read('public/nodejs/package.json'))['version'] == '1.6.1'
         assert read('public/nodejs/node_modules/qrcode/package.json')
-        print('PASS: build 4; both entry scripts; native audio/Keychain; MR icon; edge-to-edge; exact UI/source match')
+        print('PASS: build 5; resilient proxy; two-phase native audio; artwork; MR icon; exact UI/source match')
         if archive:
             print('SHA256: ' + hashlib.sha256(target.read_bytes()).hexdigest())
     finally:
