@@ -35,11 +35,14 @@ async function main() {
   try {
     for (const [name, width, height] of [['landscape', 1180, 820], ['portrait', 820, 1180], ['split-view', 600, 800]]) {
       const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1, hasTouch: true, isMobile: true });
+      await context.addInitScript(() => {
+        localStorage.setItem('mineradio-lyric-layout-v1', JSON.stringify({ lyricGlowStrength:0, lyricGlow:false }));
+      });
       const page = await context.newPage();
       const errors = [];
       page.on('pageerror', error => errors.push(error.message));
       await page.goto('http://127.0.0.1:' + server.address().port, { waitUntil: 'domcontentloaded' });
-      await page.waitForFunction(() => window.renderer && window.toggleRenderFpsHud && window.MineradioMobile?.build === '1.6.1-ipad-5');
+      await page.waitForFunction(() => window.renderer && window.toggleRenderFpsHud && window.MineradioMobile?.build === '1.6.1-ipad-6');
       await page.evaluate(() => {
         document.body.classList.remove('splash-active', 'splash-revealing', 'immersive-mode');
         document.body.classList.add('empty-home-active');
@@ -58,13 +61,18 @@ async function main() {
           home: { x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom, scrollWidth: home.scrollWidth, clientWidth: home.clientWidth },
           cardBackground: card && getComputedStyle(card).backgroundColor, cardBlur: card && getComputedStyle(card).backdropFilter,
           quickCards: [...home.querySelectorAll('.home-card-quick')].map(el => ({ background: getComputedStyle(el).backgroundColor, blur: getComputedStyle(el).backdropFilter })),
-          dpr: renderer.getPixelRatio(), fpsHint: document.getElementById('render-fps-hud').title };
+          dpr: renderer.getPixelRatio(), fpsHint: document.getElementById('render-fps-hud').title,
+          lyricGlowStrength:fx.lyricGlowStrength, lyricGlow:fx.lyricGlow,
+          backgroundPlaybackMode:window.MineradioMobile && window.MineradioMobile.backgroundPlaybackMode };
       });
       assert.ok(metrics.home.x >= 0 && metrics.home.right <= width + 1, name + ' home outside viewport');
       assert.ok(metrics.home.scrollWidth <= metrics.home.clientWidth + 1, name + ' home horizontal overflow');
       assert.equal(metrics.cardBlur, 'none');
       assert.ok(metrics.quickCards.every(card => card.blur === 'none' && card.background === 'rgba(4, 8, 12, 0.1)'));
       assert.ok(metrics.dpr <= 1);
+      assert.equal(metrics.lyricGlowStrength, 0, name + ' zero lyric glow was not restored');
+      assert.equal(metrics.lyricGlow, false, name + ' lyric glow toggle was not restored');
+      assert.equal(metrics.backgroundPlaybackMode, 'system-media-session');
       assert.deepEqual(errors, [], name + ' uncaught JavaScript errors');
       await page.screenshot({ path: path.join(output, name + '.png') });
       console.log(JSON.stringify({ name, metrics, errors }));

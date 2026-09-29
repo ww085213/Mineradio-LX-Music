@@ -16,13 +16,15 @@ def verify(target, repo):
                      if re.fullmatch(r'Payload/[^/]+\.app/Info\.plist', n)]
             assert len(roots) == 1, 'Expected exactly one app in Payload'
             read = lambda name: archive.read(roots[0] + name)
+            exists = lambda name: roots[0] + name in archive.namelist()
             assert archive.testzip() is None, 'Corrupt ZIP entry'
         else:
             read = lambda name: (target / name).read_bytes()
+            exists = lambda name: (target / name).exists()
 
         info = plistlib.loads(read('Info.plist'))
         assert info['CFBundleShortVersionString'] == '1.6.1'
-        assert info['CFBundleVersion'] == '5', 'Wrong iOS build number'
+        assert info['CFBundleVersion'] == '6', 'Wrong iOS build number'
         assert info['CFBundleIdentifier'] == 'com.ww085213.mineradio.mobile'
         executable = read(info['CFBundleExecutable'])
         assert b'MineradioNativePlugin' in executable, 'Missing native audio/Keychain plugin'
@@ -62,12 +64,13 @@ def verify(target, repo):
             expected = (repo / source).read_bytes().replace(b'\r\n', b'\n')
             assert actual == expected, 'Stale/missing packaged source: ' + packed
         bridge = read('public/mobile-bridge.js')
-        assert b'1.6.1-ipad-5' in bridge and b'CapacitorHttp' in bridge
+        assert b'1.6.1-ipad-6' in bridge and b'CapacitorHttp' in bridge
         assert read('public/mobile-app-icon.png') == (repo / 'build/icon.png').read_bytes()
         assert b'mineradio-local-engine' in read('public/nodejs/server.js')
         assert json.loads(read('public/nodejs/package.json'))['version'] == '1.6.1'
         assert read('public/nodejs/node_modules/qrcode/package.json')
-        print('PASS: build 5; resilient proxy; two-phase native audio; artwork; MR icon; exact UI/source match')
+        assert not exists('public/nodejs/builtin-source.json'), 'iOS package must not contain a built-in audio source'
+        print('PASS: build 6; system media playback; resilient proxy; artwork; no built-in source; exact UI/source match')
         if archive:
             print('SHA256: ' + hashlib.sha256(target.read_bytes()).hexdigest())
     finally:

@@ -18,235 +18,34 @@
     if (typeof window.applyRendererPowerMode === 'function') window.applyRendererPowerMode();
   };
   var native = function (method, data) { return window.Capacitor.nativePromise('MineradioNative', method, data || {}); };
-  var boundAudio = null, handedOff = false, nativeUrl = '', blobSource = '', lastSync = 0, lastQueueKey = '';
-  var lastQueueRef = null, lastQueueLength = -1, lastQueueIndex = -2, lastQueueBuildAt = 0;
-  var handoffPauseTimer = 0, foregroundWarmupSerial = 0, syncInFlight = false, syncPending = false, lastLyricSyncKey = '', lastCoverSync = null;
+  var boundAudio = null;
   mobile.activateAudio = function () {
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (_error) {}
     return native('activateAudio').catch(function (error) { console.warn('[iOS audio session]', error.message); });
   };
-  function showAudioError(message) {
-    if (mobile.diagnostics) mobile.diagnostics.audio = message;
-    if (typeof window.showToast === 'function') window.showToast(message);
-  }
-  var lockLyricMapCacheKey = '', lockLyricMapCache = '';
-  function lockLyricSingleLine(text) {
-    text = String(text || '').replace(/\r/g, '\n').trim();
-    if (!text) return '';
-    try {
-      if (typeof window.nowFlowBilingualSingleLineText === 'function') text = window.nowFlowBilingualSingleLineText(text);
-      else if (typeof window.nowFlowSingleLineText === 'function') text = window.nowFlowSingleLineText(text);
-    } catch (_error) {}
-    text = String(text || '').split(/\n+/)[0] || '';
-    return text.replace(/[\t ]+/g, ' ').replace(/[\u0000-\u001f]+/g, ' ').trim().slice(0, 140);
-  }
-  function buildLockLyricMap() {
-    if (!boundAudio) return '';
-    var rows = Array.isArray(window.lyricsLines) ? window.lyricsLines : [];
-    if (!rows.length) {
-      lockLyricMapCacheKey = 'empty';
-      lockLyricMapCache = '';
-      return '';
-    }
-    var duration = Math.max(0, Number(boundAudio.duration) || 0);
-    if (!duration) {
-      var tail = rows[rows.length - 1] || {};
-      duration = Math.max(0, Number(tail.t) || 0) + Math.max(6, Number(tail.duration) || 0);
-    }
-    // Two lyric samples per second keeps lock-screen updates responsive without
-    // sending an unnecessarily large payload through the Capacitor bridge.
-    var hz = 2;
-    var slots = Math.min(Math.ceil(duration * hz) + 3, 60 * 30 * hz);
-    if (!slots) return '';
-    var first = rows[0] || {}, last = rows[rows.length - 1] || {};
-    var cacheKey = [rows.length, Math.round(duration * 10), Number(first.t) || 0, String(first.text || '').slice(0, 32), Number(last.t) || 0, String(last.text || '').slice(0, 32)].join('|');
-    if (cacheKey === lockLyricMapCacheKey) return lockLyricMapCache;
-    var result = new Array(slots);
-    var rowIndex = -1, current = '';
-    for (var slot = 0; slot < slots; slot++) {
-      var now = slot / hz;
-      while (rowIndex + 1 < rows.length && Number(rows[rowIndex + 1] && rows[rowIndex + 1].t) <= now + 0.05) {
-        rowIndex++;
-        var line = rows[rowIndex] || {};
-        var display = '';
-        try { display = typeof window.lyricDisplayText === 'function' ? window.lyricDisplayText(line) : (line.text || ''); } catch (_error) { display = line.text || ''; }
-        current = lockLyricSingleLine(display);
-      }
-      result[slot] = current;
-    }
-    lockLyricMapCacheKey = cacheKey;
-    lockLyricMapCache = result.join('\n');
-    return lockLyricMapCache;
-  }
-  function currentCover(meta, queue, queueIndex) {
-    var song = queueIndex >= 0 && queueIndex < queue.length ? queue[queueIndex] : null;
-    var cover = meta.cover || song && (song.picUrl || song.cover) || '';
-    if (!cover) {
-      var thumb = document.getElementById('thumb-cover');
-      if (thumb && thumb.src) cover = thumb.src;
-    }
-    return typeof window.mobileRemoteCoverSrc === 'function' ? window.mobileRemoteCoverSrc(cover) : cover;
-  }
-  function compactValueKey(value) {
-    value = String(value || '');
-    return value.length + ':' + value.slice(0, 80) + ':' + value.slice(-40);
-  }
-  function snapshot() {
-    if (!boundAudio || handedOff) return Promise.resolve();
-    if (syncInFlight) { syncPending = true; return Promise.resolve(); }
-    var media = boundAudio;
-    var src = media.currentSrc || media.src;
-    if (!src) return Promise.resolve();
-    var meta = typeof window.currentDesktopSongMeta === 'function' ? window.currentDesktopSongMeta() : {};
-    var queue = window.playQueue || [];
-    var queueIndex = typeof window.currentIdx === 'number' ? window.currentIdx : -1;
-    var data = { url: src.indexOf('blob:') === 0 ? nativeUrl : src,
-      position: Number(media.currentTime) || 0, duration: Number(media.duration) || 0,
-      playing: !media.paused && !media.ended, rate: media.playbackRate || 1,
-      volume: typeof window.targetVolume === 'number' ? window.targetVolume : media.volume,
-      loop: media.loop, title: meta.title || 'Mineradio', artist: meta.artist || '', queueIndex: queueIndex };
-    var cover = currentCover(meta, queue, queueIndex);
-    // Artwork is small compared with the lyric/queue payload and is essential
-    // to iOS Now Playing. Send it on every partial snapshot so both upgraded and
-    // older native bridges cannot accidentally lose it while merging state.
-    data.cover = cover;
-    lastCoverSync = cover;
-    // The native Now Playing plugin reads this 2 Hz timeline while iOS owns
-    // background playback. Each line is the lyric that should be visible at
-    // that half-second slot, so the native ticker can keep lyrics moving even
-    // after WKWebView timers are suspended.
-    var lyricMap = buildLockLyricMap();
-    if (lockLyricMapCacheKey !== lastLyricSyncKey) {
-      data.lyricMap = lyricMap;
-      lastLyricSyncKey = lockLyricMapCacheKey;
-    }
-    var shouldBuildQueue = queue !== lastQueueRef || queue.length !== lastQueueLength || queueIndex !== lastQueueIndex || Date.now() - lastQueueBuildAt > 10000;
-    if (shouldBuildQueue) {
-      var queueData = queue.map(function (song, index) {
-        var queueCover = song.picUrl || song.cover || '';
-        if (typeof window.mobileRemoteCoverSrc === 'function') queueCover = window.mobileRemoteCoverSrc(queueCover);
-        return { title: song.name || song.title || '', artist: song.singer || song.artist || '',
-          source: song.source || song.provider || '', cover: queueCover,
-          musicInfo: typeof window.lxSongPlayPayload === 'function' ? window.lxSongPlayPayload(song) : song };
-      });
-      var queueKey = queueData.map(function (song) { return [song.source, song.title, song.artist, compactValueKey(song.cover)].join('|'); }).join('||') + '|' + data.queueIndex;
-      lastQueueRef = queue;
-      lastQueueLength = queue.length;
-      lastQueueIndex = queueIndex;
-      lastQueueBuildAt = Date.now();
-      if (queueKey !== lastQueueKey) {
-        lastQueueKey = queueKey;
-        data.queue = queueData;
-      }
-    }
-    data.playMode = window.playMode || 'list';
-    syncInFlight = true;
-    return native('syncAudio', data).catch(function (error) {
-      if (data.lyricMap != null) lastLyricSyncKey = '';
-      if (data.cover != null) lastCoverSync = null;
-      showAudioError('后台音频准备失败：' + error.message);
-    }).finally(function () {
-      syncInFlight = false;
-      if (syncPending) { syncPending = false; snapshot(); }
-    });
-  }
   mobile.bindAudio = function (media) {
     boundAudio = media;
     if (media.__ipadBound) return;
     media.__ipadBound = true;
     media.setAttribute('playsinline', '');
-    function sync() {
-      if (handedOff) return;
-      var src = media.currentSrc || media.src;
-      if (src.indexOf('blob:') === 0 && src !== blobSource) {
-        blobSource = src; nativeUrl = '';
-        fetch(src).then(function (response) { return response.blob(); }).then(function (body) {
-          return fetch('/api/mobile/audio-cache', { method: 'POST', headers: { 'Content-Type': body.type || 'application/octet-stream' }, body: body });
-        }).then(function (response) { return response.json(); }).then(function (result) {
-          if (!result.ok) throw new Error(result.error || 'LOCAL_AUDIO_CACHE_FAILED');
-          if (src === blobSource) { nativeUrl = mobile.getServerUrl() + result.url; snapshot(); }
-        }).catch(function () { showAudioError('本地文件的后台播放缓存未准备好，请稍后重试'); });
-      }
-      lastSync = Date.now(); snapshot();
-    }
-    ['playing', 'pause', 'seeked', 'loadedmetadata', 'ratechange', 'volumechange', 'ended'].forEach(function (event) { media.addEventListener(event, sync); });
-    media.addEventListener('timeupdate', function () { if (Date.now() - lastSync > 1200) sync(); });
+    // One media element owns playback in both foreground and background. iOS
+    // publishes its Media Session to Control Center; no second AVPlayer is
+    // started and no source/cover/playhead handoff occurs.
+    media.addEventListener('playing', function () { mobile.activateAudio(); });
   };
-  // Called by the native lifecycle *before* WebKit can suspend its audio graph.
-  mobile.enterBackgroundAudio = function () {
-    if (!boundAudio || handedOff || boundAudio.paused) return;
-    snapshot();
-    handedOff = true;
-    foregroundWarmupSerial++;
-    // Keep WebAudio alive until AVPlayer reports that it is actually playing.
-    // This avoids both the old handoff gap and duplicate early load/play cycles.
-    if (handoffPauseTimer) clearTimeout(handoffPauseTimer);
-    var media = boundAudio;
-    handoffPauseTimer = setTimeout(function () {
-      handoffPauseTimer = 0;
-      if (!handedOff || boundAudio !== media || media.paused) return;
-      try { media.pause(); } catch (_error) {}
-    }, 2500);
-  };
-  mobile.nativeBackgroundAudioDidStart = function () {
-    if (!handedOff || !boundAudio) return;
-    if (handoffPauseTimer) { clearTimeout(handoffPauseTimer); handoffPauseTimer = 0; }
-    if (!boundAudio.paused) {
-      try { boundAudio.pause(); } catch (_error) {}
-    }
-  };
-  mobile.isNativeAudioOwned = function () { return handedOff; };
+  mobile.backgroundPlaybackMode = 'system-media-session';
+  mobile.enterBackgroundAudio = function () {};
+  mobile.nativeBackgroundAudioDidStart = function () {};
+  mobile.isNativeAudioOwned = function () { return false; };
   var resuming = false;
   mobile.resumeForegroundAudio = async function () {
     if (!boundAudio || resuming) return;
     resuming = true;
-    var warmupSerial = ++foregroundWarmupSerial;
     try {
-      if (handoffPauseTimer) { clearTimeout(handoffPauseTimer); handoffPauseTimer = 0; }
-      // Keep Mineradio's WebAudio output muted while native audio remains live.
       await mobile.activateAudio();
       if (typeof window.resumeAudioAnalysis === 'function') await window.resumeAudioAnalysis();
-      if (typeof window.prepareNativeForegroundHandoff === 'function') window.prepareNativeForegroundHandoff();
-      var state = await native('resumeWebAudio');
-      if (!state.owned) {
-        handedOff = false;
-        if (typeof window.finishNativeForegroundHandoff === 'function') window.finishNativeForegroundHandoff();
-        else if (typeof window.restorePlaybackGain === 'function') window.restorePlaybackGain();
-        return;
-      }
-      if (warmupSerial !== foregroundWarmupSerial) return;
-      if (!boundAudio) return;
-      if (state.queueIndex >= 0 && state.queueIndex !== window.currentIdx && typeof window.playQueueAt === 'function') {
-        await window.playQueueAt(state.queueIndex, {
-          nativeHandoff: true,
-          preResolvedUrl: state.url || '',
-          resumeAt: state.position,
-          resumeSeconds: state.position,
-          suppressPlayFailureNotice: true
-        });
-      }
-      if (Number.isFinite(state.position)) {
-        var delta = Math.abs((Number(boundAudio.currentTime) || 0) - state.position);
-        if (delta > 0.035) boundAudio.currentTime = state.position;
-      }
-      if (state.playing) {
-        if (boundAudio.paused) await boundAudio.play();
-        if (typeof window.syncIosAudioRoute === 'function') window.syncIosAudioRoute(true);
-        await native('finishWebAudioResume');
-        handedOff = false;
-        if (typeof window.finishNativeForegroundHandoff === 'function') window.finishNativeForegroundHandoff();
-        else if (typeof window.restorePlaybackGain === 'function') window.restorePlaybackGain();
-        else if (typeof window.applyVolumeToAudio === 'function') window.applyVolumeToAudio({ restoreEnvelope: true });
-      } else {
-        await native('finishWebAudioResume');
-        handedOff = false;
-        boundAudio.pause();
-        if (typeof window.restorePlaybackGain === 'function') window.restorePlaybackGain();
-      }
-      snapshot();
     } catch (error) {
-      handedOff = true;
-      showAudioError('返回前台后请点击播放：' + error.message);
+      console.warn('[iOS system media resume]', error && error.message || error);
     } finally { resuming = false; }
   };
 

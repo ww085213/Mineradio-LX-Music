@@ -41,7 +41,9 @@ jobs:
 
           # Bundle the desktop Node backend and its static assets inside the app.
           find . -maxdepth 1 -type f -name '*.js' -exec cp {} ios-build/www/nodejs/ \;
-          cp builtin-source.json ios-build/www/nodejs/builtin-source.json
+          # iOS intentionally starts without an audio source. Users import and
+          # manage their own source; the desktop-only built-in file is excluded.
+          test ! -e ios-build/www/nodejs/builtin-source.json
           rsync -a public/ ios-build/www/nodejs/public/
           for dir in cuefield qishui-audio-decryptor qishui-auth-v6; do
             if [[ -d "$dir" ]]; then rsync -a "$dir/" "ios-build/www/nodejs/$dir/"; fi
@@ -150,7 +152,7 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Mineradio" "$PLIST"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.6.1" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 5" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 6" "$PLIST"
 
       - name: Build unsigned standalone device app
         shell: bash
@@ -175,16 +177,16 @@ jobs:
           mkdir -p "$RUNNER_TEMP/ipa/Payload"
           cp -R "$APP_PATH" "$RUNNER_TEMP/ipa/Payload/Mineradio.app"
           cd "$RUNNER_TEMP/ipa"
-          zip -qry Mineradio-1.6.1-ipad-5.ipa Payload
-          python3 "$GITHUB_WORKSPACE/build/verify-ios-package.py" Mineradio-1.6.1-ipad-5.ipa --repo "$GITHUB_WORKSPACE"
-          shasum -a 256 Mineradio-1.6.1-ipad-5.ipa > Mineradio-1.6.1-ipad-5.SHA256.txt
+          zip -qry Mineradio-1.6.1-ipad-6.ipa Payload
+          python3 "$GITHUB_WORKSPACE/build/verify-ios-package.py" Mineradio-1.6.1-ipad-6.ipa --repo "$GITHUB_WORKSPACE"
+          shasum -a 256 Mineradio-1.6.1-ipad-6.ipa > Mineradio-1.6.1-ipad-6.SHA256.txt
 
       - name: Upload standalone unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Mineradio-iOS-ipad-5
+          name: Mineradio-iOS-ipad-6
           if-no-files-found: error
           retention-days: 30
           path: |
-            ${{ runner.temp }}/ipa/Mineradio-1.6.1-ipad-5.ipa
-            ${{ runner.temp }}/ipa/Mineradio-1.6.1-ipad-5.SHA256.txt
+            ${{ runner.temp }}/ipa/Mineradio-1.6.1-ipad-6.ipa
+            ${{ runner.temp }}/ipa/Mineradio-1.6.1-ipad-6.SHA256.txt

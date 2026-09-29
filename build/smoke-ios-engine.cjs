@@ -25,6 +25,11 @@ if (process.argv[2] === '--child') {
     const pkg = path.join(tmp, 'nodejs');
     const data = path.join(tmp, 'data');
     fs.mkdirSync(pkg); fs.mkdirSync(data);
+    const persistedSourceDir = path.join(data, 'Mineradio', 'sources');
+    fs.mkdirSync(persistedSourceDir, { recursive: true });
+    const staleBuiltin = { id: 'old-ios-builtin', name: 'old iOS built-in', script: 'globalThis.fakeSource=true', enabled: true, builtin: true };
+    fs.writeFileSync(path.join(persistedSourceDir, 'sources.json'), JSON.stringify({ activeId: staleBuiltin.id, records: [staleBuiltin] }));
+    fs.writeFileSync(path.join(persistedSourceDir, 'active-source.json'), JSON.stringify(staleBuiltin));
     for (const name of fs.readdirSync(repo)) {
       if (name.endsWith('.js')) fs.copyFileSync(path.join(repo, name), path.join(pkg, name));
     }
@@ -59,7 +64,8 @@ if (process.argv[2] === '--child') {
       const status = await get('/api/lx-source/status');
       assert.equal(status.data.error, 'LX_SOURCE_NOT_CONFIGURED');
       assert.equal(fs.existsSync(path.join(pkg, 'builtin-source.json')), false);
-      console.log('PASS: actual mobile engine starts; CORS works; no imported or built-in source');
+      console.log('PASS: actual mobile engine starts; CORS works; packaged and stale persisted built-in sources are ignored');
+      fs.rmSync(path.join(data, 'Mineradio'), { recursive: true, force: true });
       const missing = await get('/api/does-not-exist');
       assert.equal(missing.status, 404);
       assert.equal(missing.data.error, 'API_NOT_FOUND');

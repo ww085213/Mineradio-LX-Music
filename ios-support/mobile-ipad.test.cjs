@@ -23,7 +23,7 @@ function boot() {
     toggleHomeTransparencyMode() {},
     Capacitor: { nativePromise(plugin, method, value) {
       calls.push({ plugin, method, value });
-      return Promise.resolve(method === 'resumeWebAudio' ? { owned: true, position: 24, playing: true, queueIndex: 0 } : {});
+      return Promise.resolve({});
     } },
     addEventListener() {}, applyRendererPowerMode() { calls.push({ method: 'resize' }); }
   };
@@ -60,37 +60,24 @@ test('pinch produces zoom, not an unintended song click', () => {
   assert.ok(app.events.some(e => e.type === 'wheel' && e.deltaY < 0));
   assert.equal(app.events.filter(e => e.type === 'click').length, 0);
 });
-test('handoff keeps WebAudio alive until native starts and releases native only after foreground audio is ready', async () => {
+test('system media mode keeps one player and never performs native handoff', async () => {
   const app = boot();
   app.mobile.enterBackgroundAudio();
   assert.equal(app.media.paused, false);
-  assert.equal(app.calls.filter(c => c.method === 'syncAudio').length, 1);
   app.mobile.nativeBackgroundAudioDidStart();
-  assert.equal(app.media.paused, true);
+  assert.equal(app.media.paused, false);
   await Promise.all([app.mobile.resumeForegroundAudio(), app.mobile.resumeForegroundAudio()]);
-  assert.equal(app.calls.filter(c => c.method === 'resumeWebAudio').length, 1);
-  assert.equal(app.calls.filter(c => c.method === 'finishWebAudioResume').length, 1);
-  assert.equal(app.media.currentTime, 24);
+  assert.equal(app.calls.filter(c => ['syncAudio', 'resumeWebAudio', 'finishWebAudioResume'].includes(c.method)).length, 0);
   assert.equal(app.media.paused, false);
   assert.equal(app.mobile.isNativeAudioOwned(), false);
+  assert.equal(app.mobile.backgroundPlaybackMode, 'system-media-session');
 });
-test('stable time updates do not reserialize the playlist', async () => {
+test('playing only activates the iOS audio session and does not serialize a native queue', async () => {
   const app = boot();
   app.mediaListeners.get('playing')();
-  for (let i = 0; i < 10; i++) { app.setNow(11000 + i * 1000); app.mediaListeners.get('timeupdate')(); }
   await tick();
-  const syncs = app.calls.filter(c => c.method === 'syncAudio');
-  assert.ok(syncs.length >= 2 && syncs.length <= 11);
-  assert.equal(syncs.filter(c => c.value.queue).length, 1);
-  assert.ok(syncs.every(c => Object.prototype.hasOwnProperty.call(c.value, 'cover')));
-});
-test('every native playback snapshot retains the current album cover', async () => {
-  const app = boot();
-  app.window.currentDesktopSongMeta = () => ({ title:'song', artist:'artist', cover:'https://img.example/album.jpg' });
-  app.mediaListeners.get('playing')();
-  await tick();
-  const sync = app.calls.filter(call => call.method === 'syncAudio').at(-1);
-  assert.equal(sync.value.cover, 'https://img.example/album.jpg');
+  assert.equal(app.calls.filter(c => c.method === 'activateAudio').length, 1);
+  assert.equal(app.calls.filter(c => c.method === 'syncAudio').length, 0);
 });
 test('adaptive resolution reduces pixel cost under load, with hysteresis', () => {
   const app = boot();
@@ -111,17 +98,17 @@ test('cover proxy functions use existing backend route; FPS supports tap', () =>
   assert.match(html, /transportRetries < 2/);
   assert.match(html, /startImportedAudioUrl\(failedSource/);
   assert.match(html, /\[LXImportedTransportResume\]/);
+  assert.match(html, /stillAdvancing/);
+  assert.match(html, /preservePresentation:recovering/);
+  assert.match(html, /action === 'seekbackward' \|\| action === 'seekforward'/);
+  assert.match(html, /raw\.lyricGlowStrength == null/);
 });
 
-test('native bridge merges partial state and implements two-phase foreground ownership', () => {
+test('native lifecycle cannot start the retired second background player', () => {
   const swift = fs.readFileSync(path.join(__dirname, 'AppDelegate.swift'), 'utf8');
-  assert.match(swift, /CAPPluginMethod\(name: "finishWebAudioResume"/);
-  assert.match(swift, /incoming\.forEach \{ self\.state\[\$0\.key\] = \$0\.value \}/);
-  assert.doesNotMatch(swift, /self\.state = call\.options/);
-  const resume = swift.slice(swift.indexOf('@objc func resumeWebAudio'), swift.indexOf('private func cancelPlaybackRecovery'));
-  assert.match(resume, /foregroundHandoffPending = true/);
-  assert.match(resume, /@objc func finishWebAudioResume/);
-  assert.match(resume, /self\.player\.pause\(\)/);
-  assert.match(swift, /duration - second < 45/);
-  assert.doesNotMatch(code, /queueResolvedUrl/);
+  assert.doesNotMatch(swift, /AVPlayer|MPRemoteCommand|syncAudio|takeOver\(|resumeWebAudio|finishWebAudioResume/);
+  assert.match(swift, /setCategory\(\.playback/);
+  assert.match(code, /backgroundPlaybackMode = 'system-media-session'/);
+  assert.match(code, /mobile\.isNativeAudioOwned = function \(\) \{ return false; \}/);
+  assert.doesNotMatch(code, /native\('syncAudio'/);
 });

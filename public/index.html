@@ -14037,7 +14037,8 @@ function readSavedLyricLayout() {
       scatter: clampRange(Number(raw.scatter) || fxDefaults.scatter, 0, 0.5),
       bgFade: clampRange(Number(raw.bgFade) || fxDefaults.bgFade, 0, 1.2),
       bloomStrength: clampRange(Number(raw.bloomStrength) || fxDefaults.bloomStrength, 0, 1.6),
-      lyricGlowStrength: clampRange(Number(raw.lyricGlowStrength) || fxDefaults.lyricGlowStrength, 0, 0.85),
+      lyricGlowStrength: clampRange(raw.lyricGlowStrength == null || !isFinite(Number(raw.lyricGlowStrength))
+        ? fxDefaults.lyricGlowStrength : Number(raw.lyricGlowStrength), 0, 0.85),
       lyricScale: clampRange(Number(raw.lyricScale) || 1, 0.35, 1.65),
       lyricOffsetX: clampRange(Number(raw.lyricOffsetX) || 0, -2.0, 2.0),
       lyricOffsetY: clampRange(Number(raw.lyricOffsetY) || 0, -1.2, 1.35),
@@ -14160,7 +14161,8 @@ function saveLyricLayout() {
       scatter: clampRange(Number(fx.scatter) || fxDefaults.scatter, 0, 0.5),
       bgFade: clampRange(Number(fx.bgFade) || fxDefaults.bgFade, 0, 1.2),
       bloomStrength: clampRange(Number(fx.bloomStrength) || fxDefaults.bloomStrength, 0, 1.6),
-      lyricGlowStrength: clampRange(Number(fx.lyricGlowStrength) || fxDefaults.lyricGlowStrength, 0, 0.85),
+      lyricGlowStrength: clampRange(fx.lyricGlowStrength == null || !isFinite(Number(fx.lyricGlowStrength))
+        ? fxDefaults.lyricGlowStrength : Number(fx.lyricGlowStrength), 0, 0.85),
       lyricScale: clampRange(Number(fx.lyricScale) || 1, 0.35, 1.65),
       lyricOffsetX: clampRange(Number(fx.lyricOffsetX) || 0, -2.0, 2.0),
       lyricOffsetY: clampRange(Number(fx.lyricOffsetY) || 0, -1.2, 1.35),
@@ -31833,26 +31835,37 @@ function cachedLxResolvedAudio(song, quality, excludedResolvers) {
   if (record.resolver && excluded.indexOf(String(record.resolver).trim().toLowerCase()) >= 0) return null;
   return record;
 }
-function applyCrossPlatformSongMatch(song, candidate, sourceName) {
+function applyCrossPlatformSongMatch(song, candidate, sourceName, options) {
   song = song || {};
   candidate = candidate || {};
+  options = options || {};
+  var preservePresentation = options.preservePresentation === true;
+  var presentation = preservePresentation ? {
+    name:song.name, title:song.title, singer:song.singer, artist:song.artist,
+    picUrl:song.picUrl, cover:song.cover, img:song.img
+  } : null;
   var previousSource = normalizeLxSourceName(song.source || song.provider || song.type);
   if (!song.referenceSource && /^(sp|am|qs)$/.test(previousSource)) song.referenceSource = previousSource;
   var playbackFields = [
     'id','songmid','mid','songId','rid','hash','FileHash','fileHash','strMediaMid',
     'albumId','albumMid','copyrightId','copyrightid','albumName','interval','duration',
-    'types','picUrl','cover','img','lrcUrl','trcUrl','mrcUrl'
+    'types','lrcUrl','trcUrl','mrcUrl'
   ];
+  if (!preservePresentation) playbackFields.push('picUrl','cover','img');
   playbackFields.forEach(function(key){
     if (candidate[key] != null && candidate[key] !== '') song[key] = candidate[key];
   });
   song.source = sourceName;
   song.provider = sourceName;
   song.channel = sourceName;
-  song.singer = candidate.singer || candidate.artist || song.singer || song.artist || '未知歌手';
-  song.artist = song.singer;
-  song.picUrl = candidate.picUrl || candidate.cover || candidate.img || song.picUrl || song.cover || '';
-  song.cover = song.picUrl || song.cover || '';
+  if (!preservePresentation) {
+    song.singer = candidate.singer || candidate.artist || song.singer || song.artist || '未知歌手';
+    song.artist = song.singer;
+    song.picUrl = candidate.picUrl || candidate.cover || candidate.img || song.picUrl || song.cover || '';
+    song.cover = song.picUrl || song.cover || '';
+  } else {
+    Object.keys(presentation).forEach(function(key){ if (presentation[key] != null) song[key] = presentation[key]; });
+  }
   song.meta = Object.assign({}, song.meta || {}, candidate.meta || {}, {
     source:sourceName,
     channel:sourceName,
@@ -31861,14 +31874,17 @@ function applyCrossPlatformSongMatch(song, candidate, sourceName) {
   song.needsCrossPlatformMatch = false;
   song.crossPlatformMatchedAt = Date.now();
   try { saveImportedLxPlaylists(); } catch (saveError) { console.warn('[CrossPlatformMatchSave]', saveError); }
-  try {
-    applyLxCoverForStatus(song, ['import', song.id || song.songmid || '', song.name || '', song.singer || ''].join('|'));
-    safeRenderQueuePanel('cross-platform-match', { scrollCurrent:true });
-    scheduleShelfRebuild('cross-platform-match', false);
-  } catch (coverError) { console.warn('[CrossPlatformMatchCover]', coverError); }
+  if (!preservePresentation) {
+    try {
+      applyLxCoverForStatus(song, ['import', song.id || song.songmid || '', song.name || '', song.singer || ''].join('|'));
+      safeRenderQueuePanel('cross-platform-match', { scrollCurrent:true });
+      scheduleShelfRebuild('cross-platform-match', false);
+    } catch (coverError) { console.warn('[CrossPlatformMatchCover]', coverError); }
+  }
   return song;
 }
-async function resolveCrossPlatformAudioFallback(song, failedSource, excludedResolvers) {
+async function resolveCrossPlatformAudioFallback(song, failedSource, excludedResolvers, options) {
+  options = options || {};
   var referenceSinger = String(song && (song.singer || song.artist) || '').trim();
   if (referenceSinger === '未知歌手' || /^(?:https?:\/\/|www\.)/i.test(referenceSinger)) referenceSinger = '';
   var query = [song && song.name, referenceSinger].filter(Boolean).join(' ').trim();
@@ -31903,7 +31919,7 @@ async function resolveCrossPlatformAudioFallback(song, failedSource, excludedRes
           timeoutMs:20000
         });
         if (resolved && resolved.ok && (/^https?:\/\//i.test(String(resolved.url || '')) || /^\/api\/audio\?/i.test(String(resolved.proxyUrl || '')))) {
-          applyCrossPlatformSongMatch(song, candidate, sourceName);
+          applyCrossPlatformSongMatch(song, candidate, sourceName, options);
           song._lastLxResolver = String(resolved.resolver || '');
           showSourceFallbackNotice(
             '已自动换源',
@@ -32216,7 +32232,12 @@ async function startImportedAudioUrl(audioUrl, options) {
       // play() serialized buffering and added up to 12 seconds to every
       // uncached switch; the play promise already waits for usable media and
       // the track-switch retry handles Chromium's rare early rejection.
-      var started = await attemptAudioPlay({ manual:true, silent:true, playTimeoutMs:6500, fade:options.fade });
+      var started = await attemptAudioPlay({
+        manual:true,
+        silent:true,
+        playTimeoutMs:window.MineradioMobile ? 15000 : 6500,
+        fade:options.fade
+      });
       if (started) {
         return true;
       }
@@ -32256,7 +32277,10 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
   lxAutoDetectSuppressedUntil = Number.POSITIVE_INFINITY;
   setLxBridgeActiveState(false);
   stopLxLoopbackAnalysis();
-  pauseCurrentAudioForTrackSwitch();
+  // A runtime resolver recovery is still the same song. Keep its UI and media
+  // state intact while resolving; startImportedAudioUrl performs the actual
+  // source replacement only after a candidate URL is ready.
+  if (!recovering) pauseCurrentAudioForTrackSwitch();
   if (!audio) {
     audio = new Audio();
     audio.crossOrigin = 'anonymous';
@@ -32369,7 +32393,12 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
   if (lastPlaybackError) {
     try {
       showSourceFallbackNotice('正在跨平台换源', '当前平台的音源均不可用，正在匹配其他平台版本…');
-      var crossPlatformUrl = await resolveCrossPlatformAudioFallback(song, normalizeLxSourceName(song.source || song.provider));
+      var crossPlatformUrl = await resolveCrossPlatformAudioFallback(
+        song,
+        normalizeLxSourceName(song.source || song.provider),
+        excludedResolvers,
+        { preservePresentation:recovering }
+      );
       if (crossPlatformUrl && attemptedAudioUrls.indexOf(crossPlatformUrl) < 0) {
         await startImportedAudioUrl(crossPlatformUrl, {
           resumeSeconds:runtimeResumeSeconds,
@@ -32415,10 +32444,32 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
     var failedSource = String(audio.currentSrc || audio.src || '');
     var resumeSeconds = Math.max(0, Number(audio.currentTime) || 0);
     audio.onerror = null;
-    setTimeout(async function(){
+    var confirmationChecks = 0;
+    var lastConfirmedPosition = resumeSeconds;
+    async function confirmImportedRuntimeFailure(){
       if (playbackToken !== trackSwitchToken || runtimeRetry >= 3) return;
       if (String(audio.currentSrc || audio.src || '') !== failedSource) return;
       if (window.MineradioMobile && typeof window.MineradioMobile.isNativeAudioOwned === 'function' && window.MineradioMobile.isNativeAudioOwned()) return;
+      var currentPosition = Math.max(0, Number(audio.currentTime) || 0);
+      var stillAdvancing = !audio.paused && !audio.ended && currentPosition > lastConfirmedPosition + 0.18;
+      if (stillAdvancing) {
+        // iOS can report a transient media error even while buffered playback
+        // continues. Never replace a source whose playhead is still moving.
+        audio.onerror = handleImportedRuntimeError;
+        return;
+      }
+      if (audio.paused && !playing) {
+        // A deliberate pause is not a transport failure.
+        audio.onerror = handleImportedRuntimeError;
+        return;
+      }
+      lastConfirmedPosition = currentPosition;
+      confirmationChecks++;
+      if (confirmationChecks < 3) {
+        setTimeout(confirmImportedRuntimeFailure, 1600);
+        return;
+      }
+      resumeSeconds = currentPosition;
       if (/^https?:\/\//i.test(failedSource) && transportRetries < 2) {
         transportRetries++;
         try {
@@ -32435,7 +32486,8 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
         }
       }
       fallBackAfterRuntimeFailure(resumeSeconds);
-    }, 650);
+    }
+    setTimeout(confirmImportedRuntimeFailure, 1600);
   }
   audio.onerror = handleImportedRuntimeError;
   if (!recovering) {
@@ -33498,9 +33550,13 @@ function createEqChain(ctx) {
   for (var i = 0; i < eqNodes.length - 1; i++) eqNodes[i].connect(eqNodes[i + 1]);
   applyAudioEffects();
 }
-function iosNativeHandoffAudioMode() {
+function iosSystemMediaPlaybackMode() {
   return !!(window.MineradioMobile && window.MineradioMobile.platform === 'ios');
 }
+// Build 6 keeps one HTMLMediaElement for foreground and background playback.
+// The old AVPlayer handoff used a second decoder and could restart the request,
+// change resolver metadata, or pause during foreground/background transitions.
+function iosNativeHandoffAudioMode() { return false; }
 function iosAudioEffectsActive() {
   if (!iosNativeHandoffAudioMode()) return true;
   var stemChanged = Math.abs(Number(audioEffects.vocalLevel == null ? 1 : audioEffects.vocalLevel) - 1) > .001 ||
@@ -33693,6 +33749,20 @@ function tickSpatialAudio(dt) {
 }
 function initAudio() {
   if (audioReady) return;
+  if (iosSystemMediaPlaybackMode()) {
+    // Keep iOS on the media element's native system-audio path. Routing the
+    // element through Web Audio makes WKWebView suspend its only audible output
+    // in the background. Visual analysis/effects yield to reliable background
+    // playback on iPad; the same element and playhead remain active throughout.
+    configurePlaybackAudioElement(audio);
+    audioReady = true;
+    applyVolumeToAudio();
+    frequencyData.fill(0);
+    beatFrequencyData.fill(0);
+    beatTimeDomainData.fill(128);
+    resetRealtimeBeatEngine();
+    return;
+  }
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   source = audioCtx.createMediaElementSource(audio);
   analyser = audioCtx.createAnalyser();
@@ -38956,6 +39026,7 @@ function updateSystemMediaSessionPosition() {
  */
 function configureSystemMediaSessionControls() {
   if (!('mediaSession' in navigator) || !navigator.mediaSession.setActionHandler) return;
+  var iosMusicControls = iosSystemMediaPlaybackMode();
   var handlers = {
     play: function(){ if (!audio || audio.paused || audio.ended) togglePlay(); },
     pause: function(){ if (audio && !audio.paused && !audio.ended) togglePlay(); },
@@ -38980,7 +39051,12 @@ function configureSystemMediaSessionControls() {
     }
   };
   Object.keys(handlers).forEach(function(action){
-    try { navigator.mediaSession.setActionHandler(action, handlers[action]); } catch (e) {}
+    try {
+      // Music controls on iPad should be previous / play-pause / next. Do not
+      // advertise podcast-style ±10 second commands to the system UI.
+      var handler = iosMusicControls && (action === 'seekbackward' || action === 'seekforward') ? null : handlers[action];
+      navigator.mediaSession.setActionHandler(action, handler);
+    } catch (e) {}
   });
 }
 configureSystemMediaSessionControls();
