@@ -24,6 +24,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund
           node --test ios-support/*.test.cjs
           node build/verify-public-assets.cjs
           node build/verify-audio-proxy-reconnect.cjs
