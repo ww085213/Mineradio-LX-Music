@@ -31,7 +31,8 @@
     // One media element owns playback in both foreground and background. iOS
     // publishes its Media Session to Control Center; no second AVPlayer is
     // started and no source/cover/playhead handoff occurs.
-    media.addEventListener('playing', function () { mobile.activateAudio(); });
+    // attemptAudioPlay activates the session before play(). Reconfiguring it
+    // again on every playing event can disturb an already audible stream.
   };
   mobile.backgroundPlaybackMode = 'system-media-session';
   mobile.enterBackgroundAudio = function () {};

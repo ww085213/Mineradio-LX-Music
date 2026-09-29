@@ -40,10 +40,14 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "activateAudio", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "secure", returnType: CAPPluginReturnPromise)
     ]
+    private var playbackCategoryConfigured = false
 
     private func activateSession() throws {
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playback, mode: .default, options: [])
+        if !playbackCategoryConfigured {
+            try session.setCategory(.playback, mode: .default, options: [])
+            playbackCategoryConfigured = true
+        }
         try session.setActive(true)
     }
 

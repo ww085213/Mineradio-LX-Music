@@ -72,12 +72,13 @@ test('system media mode keeps one player and never performs native handoff', asy
   assert.equal(app.mobile.isNativeAudioOwned(), false);
   assert.equal(app.mobile.backgroundPlaybackMode, 'system-media-session');
 });
-test('playing only activates the iOS audio session and does not serialize a native queue', async () => {
+test('audio session activation is explicit and the playing event does not reactivate it', async () => {
   const app = boot();
-  app.mediaListeners.get('playing')();
+  await app.mobile.activateAudio();
   await tick();
   assert.equal(app.calls.filter(c => c.method === 'activateAudio').length, 1);
   assert.equal(app.calls.filter(c => c.method === 'syncAudio').length, 0);
+  assert.equal(app.mediaListeners.has('playing'), false);
 });
 test('adaptive resolution reduces pixel cost under load, with hysteresis', () => {
   const app = boot();

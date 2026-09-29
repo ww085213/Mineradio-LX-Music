@@ -31885,15 +31885,17 @@ function applyCrossPlatformSongMatch(song, candidate, sourceName, options) {
 }
 async function resolveCrossPlatformAudioFallback(song, failedSource, excludedResolvers, options) {
   options = options || {};
+  var playbackToken = options.playbackToken;
   var referenceSinger = String(song && (song.singer || song.artist) || '').trim();
   if (referenceSinger === '未知歌手' || /^(?:https?:\/\/|www\.)/i.test(referenceSinger)) referenceSinger = '';
   var query = [song && song.name, referenceSinger].filter(Boolean).join(' ').trim();
-  if (!query) return '';
+  if (!query) return null;
   var sourceNames = { tx:'小秋', wy:'小芸', kw:'小蜗', kg:'小狗', mg:'小菇' };
   try {
     var alternatives = await apiJson('/api/lx-source/search?q=' + encodeURIComponent(query) +
       '&limit=16&sources=' + encodeURIComponent(['wy','kw','kg','mg','tx'].filter(function(source){ return source !== failedSource; }).join(',')),
       { timeoutMs:22000 });
+    if (playbackToken != null && playbackToken !== trackSwitchToken) return null;
     var wantedName = simpleSearchNorm(song.name || '');
     var candidates = alternatives && Array.isArray(alternatives.songs) ? alternatives.songs.filter(function(candidate){
       if (!candidate || String(candidate.source || '') === failedSource) return false;
@@ -31918,27 +31920,34 @@ async function resolveCrossPlatformAudioFallback(song, failedSource, excludedRes
           }),
           timeoutMs:20000
         });
+        if (playbackToken != null && playbackToken !== trackSwitchToken) return null;
         if (resolved && resolved.ok && (/^https?:\/\//i.test(String(resolved.url || '')) || /^\/api\/audio\?/i.test(String(resolved.proxyUrl || '')))) {
-          applyCrossPlatformSongMatch(song, candidate, sourceName, options);
-          song._lastLxResolver = String(resolved.resolver || '');
-          showSourceFallbackNotice(
-            '已自动换源',
-            (sourceNames[failedSource] || failedSource || '原平台') + '版本不可播放，已切换到' + (sourceNames[sourceName] || sourceName)
-          );
-          return String(resolved.proxyUrl || resolved.url);
+          return {
+            url:String(resolved.proxyUrl || resolved.url), candidate:candidate,
+            sourceName:sourceName, failedSource:failedSource,
+            resolver:String(resolved.resolver || ''), sourceNames:sourceNames
+          };
         }
       } catch (_candidateError) {}
     }
   } catch (_searchError) {}
-  return '';
+  return null;
+}
+function commitCrossPlatformAudioFallback(song, match, options) {
+  if (!match || !match.url) return;
+  applyCrossPlatformSongMatch(song, match.candidate, match.sourceName, options);
+  song._lastLxResolver = match.resolver;
+  showSourceFallbackNotice('已自动换源',
+    (match.sourceNames[match.failedSource] || match.failedSource || '原平台') +
+    '版本不可播放，已切换到' + (match.sourceNames[match.sourceName] || match.sourceName));
 }
 async function resolveImportedLxAudio(song, excludedResolvers, options) {
   song = song || {};
   options = options || {};
   var sourceName = normalizeLxSourceName(song.source || song.provider || song.type);
   if (song.needsCrossPlatformMatch || /^(sp|am|qs)$/.test(sourceName)) {
-    var matchedUrl = await resolveCrossPlatformAudioFallback(song, sourceName, excludedResolvers);
-    if (matchedUrl) return matchedUrl;
+    var matched = await resolveCrossPlatformAudioFallback(song, sourceName, excludedResolvers, options);
+    if (matched) return matched;
     throw new Error('暂未在可播放音源中匹配到这首歌曲');
   }
   if (!/^(tx|wy|kw|mg|kg)$/.test(sourceName)) throw new Error('不支持的平台：' + (sourceName || '未知'));
@@ -31978,8 +31987,8 @@ async function resolveImportedLxAudio(song, excludedResolvers, options) {
     } catch (e) {
       if (e && e.name === 'AbortError') throw new Error('音源解析超时，请换音源或稍后重试');
       if (options.allowCrossPlatformFallback !== false) {
-        var fallbackUrl = await resolveCrossPlatformAudioFallback(song, sourceName, excludedResolvers);
-        if (fallbackUrl) return fallbackUrl;
+        var fallback = await resolveCrossPlatformAudioFallback(song, sourceName, excludedResolvers, options);
+        if (fallback) return fallback;
       }
       throw e;
     }
@@ -32210,6 +32219,7 @@ function waitForImportedAudioUsable(media, timeoutMs) {
 }
 async function startImportedAudioUrl(audioUrl, options) {
   options = options || {};
+  var playbackToken = Number(options.playbackToken) || trackSwitchToken;
   var directProxy = /^(?:\/api\/audio\?|https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\/api\/audio\?)/i.test(String(audioUrl || ''));
   var proxyAudioUrl = directProxy
     ? (/^https?:\/\//i.test(String(audioUrl || '')) ? String(audioUrl) : ((window.MOBILE_API_ORIGIN || '') + audioUrl))
@@ -32217,10 +32227,12 @@ async function startImportedAudioUrl(audioUrl, options) {
   var candidates = directProxy ? [proxyAudioUrl] : [proxyAudioUrl, audioUrl];
   var lastError = null;
   for (var i = 0; i < candidates.length; i++) {
+    if (playbackToken !== trackSwitchToken) return false;
     try {
       audio.pause();
       audio.removeAttribute('src');
       audio.src = candidates[i];
+      audio.__mrExplicitPause = false;
       syncAudioSingleLoopMode();
       if (Number(options.resumeSeconds) > 0.35) {
         scheduleAudioResumePosition(audio, Number(options.resumeSeconds), Number(options.playbackToken) || trackSwitchToken);
@@ -32236,13 +32248,16 @@ async function startImportedAudioUrl(audioUrl, options) {
         manual:true,
         silent:true,
         playTimeoutMs:window.MineradioMobile ? 15000 : 6500,
-        fade:options.fade
+        fade:options.fade,
+        playbackToken:playbackToken
       });
+      if (playbackToken !== trackSwitchToken) return false;
       if (started) {
         return true;
       }
       lastError = new Error(i === 0 ? '音频代理无法播放' : '原始播放地址无法播放');
     } catch (e) {
+      if (playbackToken !== trackSwitchToken) return false;
       lastError = e;
       console.warn('[LXImportedAudioCandidate]', candidates[i], e);
     }
@@ -32251,6 +32266,7 @@ async function startImportedAudioUrl(audioUrl, options) {
 }
 async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opts) {
   opts = opts || {};
+  if (Number(opts.runtimeRetry) > 0 && Number(opts.playbackToken) !== trackSwitchToken) return false;
   if (lxAudioPrefetchTimer) { clearTimeout(lxAudioPrefetchTimer); lxAudioPrefetchTimer = 0; }
   var runtimeRetry = Math.max(0, Number(opts.runtimeRetry) || 0);
   var runtimeResumeSeconds = Math.max(0, Number(opts.resumeSeconds != null ? opts.resumeSeconds : opts.resumeAt) || 0);
@@ -32348,40 +32364,56 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
   if (preResolvedUrl) {
     try {
       attemptedAudioUrls.push(preResolvedUrl);
-      await startImportedAudioUrl(preResolvedUrl, {
+      var preResolvedStarted = await startImportedAudioUrl(preResolvedUrl, {
         resumeSeconds:runtimeResumeSeconds,
         playbackToken:playbackToken,
         fade:opts.nativeHandoff ? false : undefined
       });
+      if (playbackToken !== trackSwitchToken) return false;
+      if (!preResolvedStarted) throw new Error('预解析音频无法播放');
     } catch (preResolvedError) {
+      if (playbackToken !== trackSwitchToken) return false;
       lastPlaybackError = preResolvedError;
       preResolvedUrl = '';
       console.warn('[LXImportedNativeHandoffUrl]', preResolvedError);
     }
   }
   for (var sourceAttempt = 0; !preResolvedUrl && sourceAttempt < installedSourceCount; sourceAttempt++) {
+    if (playbackToken !== trackSwitchToken) return false;
+    var pendingCrossPlatformMatch = null;
     try {
-      var audioUrl = await resolveImportedLxAudio(song, excludedResolvers, {
+      var resolvedAudio = await resolveImportedLxAudio(song, excludedResolvers, {
         allowCrossPlatformFallback:false,
         maxResolvers:sourceAttempt === 0 ? 4 : 3,
-        timeoutMs:25000
+        timeoutMs:25000,
+        playbackToken:playbackToken
       });
+      if (playbackToken !== trackSwitchToken) return false;
+      pendingCrossPlatformMatch = resolvedAudio && typeof resolvedAudio === 'object' ? resolvedAudio : null;
+      var audioUrl = pendingCrossPlatformMatch ? pendingCrossPlatformMatch.url : resolvedAudio;
       if (!audioUrl) throw new Error('音源未返回播放地址');
       if (attemptedAudioUrls.indexOf(audioUrl) >= 0) throw new Error('备用音源返回了相同的失效地址');
       attemptedAudioUrls.push(audioUrl);
-      await startImportedAudioUrl(audioUrl, {
+      var sourceStarted = await startImportedAudioUrl(audioUrl, {
         resumeSeconds:runtimeResumeSeconds,
         playbackToken:playbackToken,
         fade:recovering || opts.nativeHandoff ? false : undefined
       });
+      if (playbackToken !== trackSwitchToken) return false;
+      if (!sourceStarted) throw new Error('音源地址无法播放');
+      if (pendingCrossPlatformMatch) commitCrossPlatformAudioFallback(song, pendingCrossPlatformMatch, { preservePresentation:recovering });
       if (sourceAttempt > 0) {
         showSourceFallbackNotice('已自动切换音源', '原音源无法播放，已改用：' + (song._lastLxResolver || '备用音源'));
       }
       lastPlaybackError = null;
       break;
     } catch (e) {
+      if (playbackToken !== trackSwitchToken) return false;
       lastPlaybackError = e;
       invalidateLxResolvedAudioCache(song);
+      if (pendingCrossPlatformMatch && pendingCrossPlatformMatch.resolver && excludedResolvers.indexOf(pendingCrossPlatformMatch.resolver) < 0) {
+        excludedResolvers.push(pendingCrossPlatformMatch.resolver);
+      }
       var failedResolver = String(song._lastLxResolver || '');
       if (failedResolver && excludedResolvers.indexOf(failedResolver) < 0) excludedResolvers.push(failedResolver);
       if (sourceAttempt < installedSourceCount - 1) {
@@ -32391,27 +32423,34 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
     }
   }
   if (lastPlaybackError) {
+    if (playbackToken !== trackSwitchToken) return false;
     try {
       showSourceFallbackNotice('正在跨平台换源', '当前平台的音源均不可用，正在匹配其他平台版本…');
-      var crossPlatformUrl = await resolveCrossPlatformAudioFallback(
+      var crossPlatformMatch = await resolveCrossPlatformAudioFallback(
         song,
         normalizeLxSourceName(song.source || song.provider),
         excludedResolvers,
-        { preservePresentation:recovering }
+        { playbackToken:playbackToken }
       );
-      if (crossPlatformUrl && attemptedAudioUrls.indexOf(crossPlatformUrl) < 0) {
-        await startImportedAudioUrl(crossPlatformUrl, {
+      if (playbackToken !== trackSwitchToken) return false;
+      if (crossPlatformMatch && attemptedAudioUrls.indexOf(crossPlatformMatch.url) < 0) {
+        var crossPlatformStarted = await startImportedAudioUrl(crossPlatformMatch.url, {
           resumeSeconds:runtimeResumeSeconds,
           playbackToken:playbackToken,
           fade:recovering || opts.nativeHandoff ? false : undefined
         });
+        if (playbackToken !== trackSwitchToken) return false;
+        if (!crossPlatformStarted) throw new Error('备用平台音频无法播放');
+        commitCrossPlatformAudioFallback(song, crossPlatformMatch, { preservePresentation:recovering });
         lastPlaybackError = null;
       }
     } catch (crossPlatformError) {
+      if (playbackToken !== trackSwitchToken) return false;
       lastPlaybackError = crossPlatformError;
       console.warn('[LXImportedCrossPlatformFallback]', crossPlatformError);
     }
   }
+  if (playbackToken !== trackSwitchToken) return false;
   if (lastPlaybackError) throw lastPlaybackError;
   loadBeatMapForEveryTrack(song, (audio && audio.src) || attemptedAudioUrls[attemptedAudioUrls.length - 1] || '', playbackToken)
     .catch(function(error){ console.warn('[EveryTrackBeatLoad]', song && (song.name || song.title), error); });
@@ -32440,6 +32479,7 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
   }
   function handleImportedRuntimeError(){
     if (playbackToken !== trackSwitchToken || runtimeRetry >= 3) return;
+    if (audio.__mrExplicitPause === true) return;
     if (window.MineradioMobile && typeof window.MineradioMobile.isNativeAudioOwned === 'function' && window.MineradioMobile.isNativeAudioOwned()) return;
     var failedSource = String(audio.currentSrc || audio.src || '');
     var resumeSeconds = Math.max(0, Number(audio.currentTime) || 0);
@@ -32458,8 +32498,9 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
         audio.onerror = handleImportedRuntimeError;
         return;
       }
-      if (audio.paused && !playing) {
-        // A deliberate pause is not a transport failure.
+      if (audio.__mrExplicitPause === true) {
+        // Only a user-initiated pause suppresses recovery. A media error can
+        // itself set paused=true and playing=false, so those flags are not proof.
         audio.onerror = handleImportedRuntimeError;
         return;
       }
@@ -35255,21 +35296,29 @@ async function playQueueAt(idx, opts) {
     showToast(playbackFailureToastText(setupErr));
   }
 }
-function waitForMediaPlayPromise(playPromise, timeoutMs) {
+var mediaPlayAttemptSerial = 0;
+function waitForMediaPlayPromise(playPromise, timeoutMs, media, isCurrentAttempt) {
   timeoutMs = Math.max(1500, Number(timeoutMs) || 9000);
+  var initialPosition = Math.max(0, Number(media.currentTime) || 0);
   return new Promise(function(resolve, reject){
     var settled = false;
     var timer = setTimeout(function(){
       if (settled) return;
       settled = true;
-      try { if (audio) audio.pause(); } catch (_error) {}
+      if (!isCurrentAttempt()) { reject(new Error('播放请求已被新歌曲替代')); return; }
+      if (!media.paused && !media.ended && Number(media.currentTime) > initialPosition + 0.18) {
+        resolve(true);
+        return;
+      }
+      try { media.pause(); } catch (_error) {}
       reject(new Error('音频启动超时'));
     }, timeoutMs);
     Promise.resolve(playPromise).then(function(value){
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve(value);
+      if (isCurrentAttempt()) resolve(value);
+      else reject(new Error('播放请求已被新歌曲替代'));
     }, function(error){
       if (settled) return;
       settled = true;
@@ -35280,20 +35329,33 @@ function waitForMediaPlayPromise(playPromise, timeoutMs) {
 }
 async function attemptAudioPlay(opts) {
   opts = opts || {};
+  var playMedia = audio;
+  var playSource = playMedia && playMedia.src;
+  var playToken = opts.playbackToken;
+  var playAttempt = ++mediaPlayAttemptSerial;
+  function isCurrentAttempt() {
+    return playMedia && audio === playMedia && playMedia.src === playSource && playAttempt === mediaPlayAttemptSerial &&
+      (playToken == null || playToken === trackSwitchToken);
+  }
   try {
-      if (!audio) return false;
+      if (!playMedia) return false;
       if (window.MineradioMobile && window.MineradioMobile.activateAudio) await window.MineradioMobile.activateAudio();
+      if (!isCurrentAttempt()) return false;
       if (!audioReady) initAudio();
+      playMedia.__mrExplicitPause = false;
       if (opts.fade !== false) preparePlaybackFadeIn();
       if (opts.manual) {
-        var manualPlay = audio.play();
+        var manualPlay = playMedia.play();
         await resumeAudioAnalysis();
-        await waitForMediaPlayPromise(manualPlay, opts.playTimeoutMs);
+        if (!isCurrentAttempt()) return false;
+        await waitForMediaPlayPromise(manualPlay, opts.playTimeoutMs, playMedia, isCurrentAttempt);
       } else {
         await resumeAudioAnalysis();
-        await waitForMediaPlayPromise(audio.play(), opts.playTimeoutMs);
+        if (!isCurrentAttempt()) return false;
+        await waitForMediaPlayPromise(playMedia.play(), opts.playTimeoutMs, playMedia, isCurrentAttempt);
       }
       await resumeAudioAnalysis();
+      if (!isCurrentAttempt()) return false;
       switchPlaybackVisualToEmily();
       playing = true; setPlayIcon(true);
     if (opts.fade !== false) startPlaybackFadeIn();
@@ -35302,6 +35364,7 @@ async function attemptAudioPlay(opts) {
     hideLoading();
     return true;
   } catch (err) {
+    if (!isCurrentAttempt()) return false;
     console.warn('Audio play blocked:', err && (err.message || err));
     restorePlaybackGain();
     playing = false; setPlayIcon(false);
@@ -35336,6 +35399,7 @@ async function togglePlay() {
       var resumed = await attemptAudioPlay({ manual: true });
       if (resumed) syncLxDualControl('play');
     } else {
+      audio.__mrExplicitPause = true;
       await fadeOutAndPauseAudio();
       syncLxDualControl('pause');
       playing = false;
