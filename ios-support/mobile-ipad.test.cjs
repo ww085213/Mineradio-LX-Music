@@ -115,15 +115,23 @@ test('foreground return does not reactivate a playing stream and resumes only an
 });
 test('native Now Playing provides track commands without starting another player', async () => {
   const app = boot();
+  app.window.Capacitor.nativePromise = (plugin, method, value) => {
+    app.calls.push({ plugin, method, value });
+    return Promise.resolve({ officialNowPlaying:true });
+  };
   app.mobile.syncNowPlaying({ title:'喜欢', artist:'阿肆', cover:'https://music.example/cover.jpg', playing:true });
   await new Promise(resolve => setTimeout(resolve, 150));
   const sync = app.calls.find(c => c.method === 'syncNowPlaying');
   assert.equal(sync.value.title, '喜欢');
   assert.equal(sync.value.cover, 'https://music.example/cover.jpg');
   assert.equal(app.mobile.nativeNowPlayingCommands, true);
-  app.mobile.remoteTrackCommand('previous'); app.mobile.remoteTrackCommand('next');
+  assert.equal(app.mobile.officialNowPlaying, true);
+  app.mobile.remoteSystemCommand('previous'); app.mobile.remoteSystemCommand('next');
+  app.window.dispatchSystemPlaybackCommand = command => app.calls.push({ method:'playbackCommand', command });
+  app.mobile.remoteSystemCommand('play'); app.mobile.remoteSystemCommand('pause');
   assert.equal(app.calls.filter(c => c.method === 'prevTrack').length, 1);
   assert.equal(app.calls.filter(c => c.method === 'nextTrack').length, 1);
+  assert.deepEqual(app.calls.filter(c => c.method === 'playbackCommand').map(c => c.command), ['play', 'pause']);
   assert.equal(app.calls.filter(c => c.method === 'configureSystemMediaSessionControls').length, 0);
   assert.equal(app.calls.filter(c => c.method === 'syncAudio').length, 0);
 });
@@ -161,6 +169,9 @@ test('native metadata and commands cannot start the retired second background pl
   assert.match(swift, /commands\.nextTrackCommand\.isEnabled = true/);
   assert.match(swift, /MPMediaItemPropertyArtwork/);
   assert.match(swift, /MPNowPlayingInfoPropertyPlaybackQueueCount/);
+  assert.match(swift, /MediaSession<MineradioOfficialNowPlayingModel>/);
+  assert.match(swift, /requestToBecomeSystemPrimary\(\)/);
+  assert.match(swift, /guard !audioSessionActivated else \{ return \}/);
   assert.match(swift, /setCategory\(\.playback/);
   assert.match(code, /backgroundPlaybackMode = 'system-media-session'/);
   assert.match(code, /mobile\.isNativeAudioOwned = function \(\) \{ return false; \}/);

@@ -83,4 +83,9 @@ test('missing playlist cover is resolved and republished to the system card', ()
   context.trackSwitchToken += 1;
   context.updateSystemMediaSessionMetadata();
   assert.match(states[3].cover, /\/api\/image-proxy\?url=/);
+  context.window.MineradioMobile.officialNowPlaying = true;
+  const webMetadataCount = metadata.length;
+  context.updateSystemMediaSessionMetadata();
+  assert.equal(states.length, 5);
+  assert.equal(metadata.length, webMetadataCount, 'native system session must not compete with WebKit metadata');
 });

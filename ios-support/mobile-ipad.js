@@ -23,6 +23,7 @@
   var nowPlayingTimer = 0;
   var pendingNowPlaying = null;
   mobile.nativeNowPlayingCommands = false;
+  mobile.officialNowPlaying = false;
   mobile.activateAudio = function () {
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (_error) {}
     return native('activateAudio').catch(function (error) { console.warn('[iOS audio session]', error.message); });
@@ -44,6 +45,10 @@
     else if (command === 'previous' && typeof window.prevTrack === 'function') window.prevTrack();
     else if (command === 'next' && typeof window.nextTrack === 'function') window.nextTrack();
   };
+  mobile.remoteSystemCommand = function (command) {
+    if (command === 'previous' || command === 'next') mobile.remoteTrackCommand(command);
+    else if (typeof window.dispatchSystemPlaybackCommand === 'function') window.dispatchSystemPlaybackCommand(command);
+  };
   mobile.syncNowPlaying = function (state) {
     pendingNowPlaying = state;
     if (nowPlayingTimer) clearTimeout(nowPlayingTimer);
@@ -52,8 +57,9 @@
       if (!pendingNowPlaying) return;
       var snapshot = pendingNowPlaying;
       pendingNowPlaying = null;
-      native('syncNowPlaying', snapshot).then(function () {
+      native('syncNowPlaying', snapshot).then(function (result) {
         mobile.nativeNowPlayingCommands = true;
+        mobile.officialNowPlaying = !!(result && result.officialNowPlaying);
       }).catch(function (error) { console.warn('[iOS Now Playing]', error && error.message || error); });
     }, 120);
   };

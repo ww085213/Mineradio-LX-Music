@@ -39089,6 +39089,7 @@ function updateSystemMediaSessionMetadata() {
       queueIndex:currentIdx
     });
   }
+  if (window.MineradioMobile && window.MineradioMobile.officialNowPlaying) return;
   if (!('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') return;
   try {
     navigator.mediaSession.metadata = new MediaMetadata({
@@ -39106,6 +39107,7 @@ function updateSystemMediaSessionMetadata() {
  */
 function updateSystemMediaSessionPlaybackState(reason) {
   updateSystemMediaSessionMetadata();
+  if (window.MineradioMobile && window.MineradioMobile.officialNowPlaying) return;
   if (!('mediaSession' in navigator)) return;
   try {
     navigator.mediaSession.playbackState = audio && audio.src
@@ -39119,6 +39121,7 @@ function updateSystemMediaSessionPlaybackState(reason) {
  * @returns {void}
  */
 function updateSystemMediaSessionPosition() {
+  if (window.MineradioMobile && window.MineradioMobile.officialNowPlaying) return;
   if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState || !audio) return;
   var duration = getPlaybackDurationSeconds();
   if (!isFinite(duration) || duration <= 0) return;
@@ -39165,6 +39168,10 @@ function configureSystemMediaSessionControls() {
       audio.currentTime = Math.max(0, Math.min(duration || details.seekTime, details.seekTime));
       savePlaybackSession(true);
     }
+  };
+  window.dispatchSystemPlaybackCommand = function(command) {
+    if (command === 'play') handlers.play();
+    else if (command === 'pause') handlers.pause();
   };
   Object.keys(handlers).forEach(function(action){
     try {
