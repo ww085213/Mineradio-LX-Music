@@ -41,6 +41,9 @@ class MineradioViewController: CAPBridgeViewController {
 @Observable
 @MainActor
 final class MineradioOfficialNowPlayingModel: MediaSessionRepresentable {
+    // UIKit imports a non-generic KeyPath symbol; Observation's generated
+    // registrar needs Swift's generic key-path type in this scope.
+    typealias KeyPath<Root, Value> = Swift.KeyPath<Root, Value>
     let id = "com.ww085213.mineradio.mobile.music"
     var trackID = ""
     var title = "Mineradio"
@@ -187,16 +190,20 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func publishNowPlaying() {
         if #available(iOS 27.0, *) {
-            let official: MineradioOfficialNowPlaying
-            if let current = officialNowPlaying as? MineradioOfficialNowPlaying {
-                official = current
-            } else {
-                official = MineradioOfficialNowPlaying { [weak self] command in
-                    self?.webView?.evaluateJavaScript("window.MineradioMobile && window.MineradioMobile.remoteSystemCommand('\(command)')", completionHandler: nil)
+            // All call sites arrive on DispatchQueue.main (plugin call or cover
+            // completion), so the observable session is updated on its actor.
+            MainActor.assumeIsolated {
+                let official: MineradioOfficialNowPlaying
+                if let current = officialNowPlaying as? MineradioOfficialNowPlaying {
+                    official = current
+                } else {
+                    official = MineradioOfficialNowPlaying { [weak self] command in
+                        self?.webView?.evaluateJavaScript("window.MineradioMobile && window.MineradioMobile.remoteSystemCommand('\(command)')", completionHandler: nil)
+                    }
+                    officialNowPlaying = official
                 }
-                officialNowPlaying = official
+                official.update(nowPlayingState, coverData: coverImageData)
             }
-            official.update(nowPlayingState, coverData: coverImageData)
             return
         }
         var info: [String: Any] = [
