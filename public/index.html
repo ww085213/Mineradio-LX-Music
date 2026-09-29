@@ -31079,8 +31079,8 @@ function lxQueueSong(item, playlistIndex, songIndex) {
     artist:item.singer || '',
     singer:item.singer || '',
     album:item.albumName || '',
-    cover:item.picUrl || '',
-    picUrl:item.picUrl || '',
+    cover:songCoverSrc(item, 360) || '',
+    picUrl:item.picUrl || item.cover || '',
     source:item.source || '',
     lxPlaylistIndex:playlistIndex,
     lxSongIndex:songIndex
@@ -39043,13 +39043,22 @@ function systemMediaSessionArtwork(meta) {
  * @returns {void}
  */
 function updateSystemMediaSessionMetadata() {
-  if (!('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') return;
   var meta = currentDesktopSongMeta();
   syncWindowNowPlayingTitle(meta);
+  if (window.MineradioMobile && typeof window.MineradioMobile.syncNowPlaying === 'function' && audio && audio.src) {
+    var art = systemMediaSessionArtwork(meta);
+    window.MineradioMobile.syncNowPlaying({
+      title:meta.title || 'Mineradio', artist:meta.artist || '',
+      cover:art.length ? art[0].src : '',
+      duration:getPlaybackDurationSeconds(), position:getPlaybackCurrentSeconds(),
+      playing:!audio.paused && !audio.ended
+    });
+  }
+  if (!('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') return;
   try {
     navigator.mediaSession.metadata = new MediaMetadata({
       title: meta.title || 'Mineradio',
-      artist: meta.artist ? (meta.artist + ' · Mineradio') : 'Mineradio',
+      artist: iosSystemMediaPlaybackMode() ? (meta.artist || 'Mineradio') : (meta.artist ? (meta.artist + ' · Mineradio') : 'Mineradio'),
       album: 'Mineradio 正在播放',
       artwork: systemMediaSessionArtwork(meta)
     });
@@ -39061,12 +39070,12 @@ function updateSystemMediaSessionMetadata() {
  * @returns {void}
  */
 function updateSystemMediaSessionPlaybackState(reason) {
+  updateSystemMediaSessionMetadata();
   if (!('mediaSession' in navigator)) return;
   try {
     navigator.mediaSession.playbackState = audio && audio.src
       ? (audio.paused || audio.ended ? 'paused' : 'playing')
       : 'none';
-    updateSystemMediaSessionMetadata();
     updateSystemMediaSessionPosition();
   } catch (e) {}
 }
@@ -39118,7 +39127,9 @@ function configureSystemMediaSessionControls() {
     try {
       // Music controls on iPad should be previous / play-pause / next. Do not
       // advertise podcast-style ±10 second commands to the system UI.
-      var handler = iosMusicControls && (action === 'seekbackward' || action === 'seekforward') ? null : handlers[action];
+      var nativeTrackControls = iosMusicControls && window.MineradioMobile && window.MineradioMobile.nativeNowPlayingCommands;
+      var handler = iosMusicControls && (action === 'seekbackward' || action === 'seekforward' ||
+        (nativeTrackControls && (action === 'previoustrack' || action === 'nexttrack'))) ? null : handlers[action];
       navigator.mediaSession.setActionHandler(action, handler);
     } catch (e) {}
   });

@@ -8,6 +8,7 @@ const code = fs.readFileSync(path.join(__dirname, 'mobile-ipad.js'), 'utf8');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function boot() {
   const calls = [], events = [], listeners = new Map(), raf = new Map(), stored = new Map();
+  const windowListeners = new Map(), documentListeners = new Map();
   let sequence = 0, domReady, now = 10000;
   const canvas = { addEventListener(name, fn) { listeners.set(name, fn); }, dispatchEvent(event) { events.push(event); } };
   const mobile = { getServerUrl: () => 'http://localhost:3000', diagnostics: {} };
@@ -25,10 +26,14 @@ function boot() {
       calls.push({ plugin, method, value });
       return Promise.resolve({});
     } },
-    addEventListener() {}, applyRendererPowerMode() { calls.push({ method: 'resize' }); }
+    addEventListener(name, fn) { windowListeners.set(name, fn); },
+    attemptAudioPlay: async options => { calls.push({ method:'attemptAudioPlay', options }); media.paused = false; return true; },
+    configureSystemMediaSessionControls() { calls.push({ method:'configureSystemMediaSessionControls' }); },
+    nextTrack() { calls.push({ method:'nextTrack' }); }, prevTrack() { calls.push({ method:'prevTrack' }); },
+    applyRendererPowerMode() { calls.push({ method: 'resize' }); }
   };
   const document = { hidden: false, head: { appendChild() {} }, getElementById: () => null, querySelector: () => null,
-    createElement: () => ({}), addEventListener(name, fn) { if (name === 'DOMContentLoaded') domReady = fn; } };
+    createElement: () => ({}), addEventListener(name, fn) { documentListeners.set(name, fn); if (name === 'DOMContentLoaded') domReady = fn; } };
   const context = vm.createContext({ window, document, navigator: {}, console, innerWidth: 1180, innerHeight: 820,
     localStorage: { getItem: key => stored.get(key), setItem: (key, value) => stored.set(key, value) },
     requestAnimationFrame(fn) { raf.set(++sequence, fn); return sequence; }, cancelAnimationFrame(id) { raf.delete(id); },
@@ -37,7 +42,8 @@ function boot() {
     WheelEvent: class { constructor(type, values) { Object.assign(this, { type }, values); } }
   });
   vm.runInContext(code, context); domReady();
-  return { mobile, media, calls, events, listeners, raf, mediaListeners, window, setNow: value => { now = value; } };
+  return { mobile, media, calls, events, listeners, raf, mediaListeners, window, document,
+    windowListeners, documentListeners, setNow: value => { now = value; } };
 }
 test('touch movement is coalesced to one event per rendered frame', () => {
   const app = boot();
@@ -80,6 +86,47 @@ test('audio session activation is explicit and the playing event does not reacti
   assert.equal(app.calls.filter(c => c.method === 'syncAudio').length, 0);
   assert.equal(app.mediaListeners.has('playing'), false);
 });
+test('foreground return does not reactivate a playing stream and resumes only an unintended pause', async () => {
+  const app = boot();
+  const visibility = app.documentListeners.get('visibilitychange');
+  app.document.hidden = true; visibility();
+  app.document.hidden = false; visibility();
+  await tick();
+  assert.equal(app.calls.filter(c => c.method === 'activateAudio').length, 0);
+  assert.equal(app.calls.filter(c => c.method === 'attemptAudioPlay').length, 0);
+  app.document.hidden = true; visibility();
+  app.media.paused = true;
+  app.document.hidden = false; visibility();
+  await tick();
+  assert.equal(app.calls.filter(c => c.method === 'attemptAudioPlay').length, 1);
+  assert.equal(app.media.paused, false);
+  // iOS may pause the element just before it reports that the page is hidden.
+  app.mediaListeners.get('play')();
+  app.media.paused = true;
+  app.document.hidden = true; visibility();
+  app.document.hidden = false; visibility();
+  await tick();
+  assert.equal(app.calls.filter(c => c.method === 'attemptAudioPlay').length, 2);
+  app.document.hidden = true; visibility();
+  app.media.paused = true; app.media.__mrExplicitPause = true;
+  app.document.hidden = false; visibility();
+  await tick();
+  assert.equal(app.calls.filter(c => c.method === 'attemptAudioPlay').length, 2);
+});
+test('native Now Playing provides track commands without starting another player', async () => {
+  const app = boot();
+  app.mobile.syncNowPlaying({ title:'喜欢', artist:'阿肆', cover:'https://music.example/cover.jpg', playing:true });
+  await new Promise(resolve => setTimeout(resolve, 150));
+  const sync = app.calls.find(c => c.method === 'syncNowPlaying');
+  assert.equal(sync.value.title, '喜欢');
+  assert.equal(sync.value.cover, 'https://music.example/cover.jpg');
+  assert.equal(app.mobile.nativeNowPlayingCommands, true);
+  app.mobile.remoteTrackCommand('previous'); app.mobile.remoteTrackCommand('next');
+  assert.equal(app.calls.filter(c => c.method === 'prevTrack').length, 1);
+  assert.equal(app.calls.filter(c => c.method === 'nextTrack').length, 1);
+  assert.equal(app.calls.filter(c => c.method === 'configureSystemMediaSessionControls').length, 1);
+  assert.equal(app.calls.filter(c => c.method === 'syncAudio').length, 0);
+});
 test('adaptive resolution reduces pixel cost under load, with hysteresis', () => {
   const app = boot();
   app.mobile.updatePerformance(40); app.mobile.updatePerformance(40);
@@ -101,13 +148,17 @@ test('cover proxy functions use existing backend route; FPS supports tap', () =>
   assert.match(html, /\[LXImportedTransportResume\]/);
   assert.match(html, /stillAdvancing/);
   assert.match(html, /preservePresentation:recovering/);
-  assert.match(html, /action === 'seekbackward' \|\| action === 'seekforward'/);
+  assert.match(html, /nativeTrackControls && \(action === 'previoustrack' \|\| action === 'nexttrack'\)/);
+  assert.match(html, /window\.MineradioMobile\.syncNowPlaying/);
   assert.match(html, /raw\.lyricGlowStrength == null/);
 });
 
-test('native lifecycle cannot start the retired second background player', () => {
+test('native metadata and commands cannot start the retired second background player', () => {
   const swift = fs.readFileSync(path.join(__dirname, 'AppDelegate.swift'), 'utf8');
-  assert.doesNotMatch(swift, /AVPlayer|MPRemoteCommand|syncAudio|takeOver\(|resumeWebAudio|finishWebAudioResume/);
+  assert.doesNotMatch(swift, /AVPlayer|syncAudio|takeOver\(|resumeWebAudio|finishWebAudioResume/);
+  assert.match(swift, /commands\.skipForwardCommand\.isEnabled = false/);
+  assert.match(swift, /commands\.nextTrackCommand\.isEnabled = true/);
+  assert.match(swift, /MPMediaItemPropertyArtwork/);
   assert.match(swift, /setCategory\(\.playback/);
   assert.match(code, /backgroundPlaybackMode = 'system-media-session'/);
   assert.match(code, /mobile\.isNativeAudioOwned = function \(\) \{ return false; \}/);

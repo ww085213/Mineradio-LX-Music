@@ -19,6 +19,10 @@
   };
   var native = function (method, data) { return window.Capacitor.nativePromise('MineradioNative', method, data || {}); };
   var boundAudio = null;
+  var wasPlayingWhenHidden = false;
+  var nowPlayingTimer = 0;
+  var pendingNowPlaying = null;
+  mobile.nativeNowPlayingCommands = false;
   mobile.activateAudio = function () {
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (_error) {}
     return native('activateAudio').catch(function (error) { console.warn('[iOS audio session]', error.message); });
@@ -28,11 +32,31 @@
     if (media.__ipadBound) return;
     media.__ipadBound = true;
     media.setAttribute('playsinline', '');
+    media.addEventListener('play', function () { wasPlayingWhenHidden = true; });
     // One media element owns playback in both foreground and background. iOS
     // publishes its Media Session to Control Center; no second AVPlayer is
     // started and no source/cover/playhead handoff occurs.
     // attemptAudioPlay activates the session before play(). Reconfiguring it
     // again on every playing event can disturb an already audible stream.
+  };
+  mobile.remoteTrackCommand = function (command) {
+    if (command === 'previous' && typeof window.prevTrack === 'function') window.prevTrack();
+    if (command === 'next' && typeof window.nextTrack === 'function') window.nextTrack();
+  };
+  mobile.syncNowPlaying = function (state) {
+    pendingNowPlaying = state;
+    if (nowPlayingTimer) clearTimeout(nowPlayingTimer);
+    nowPlayingTimer = setTimeout(function () {
+      nowPlayingTimer = 0;
+      if (!pendingNowPlaying) return;
+      var snapshot = pendingNowPlaying;
+      pendingNowPlaying = null;
+      native('syncNowPlaying', snapshot).then(function () {
+        if (mobile.nativeNowPlayingCommands) return;
+        mobile.nativeNowPlayingCommands = true;
+        if (typeof window.configureSystemMediaSessionControls === 'function') window.configureSystemMediaSessionControls();
+      }).catch(function (error) { console.warn('[iOS Now Playing]', error && error.message || error); });
+    }, 120);
   };
   mobile.backgroundPlaybackMode = 'system-media-session';
   mobile.enterBackgroundAudio = function () {};
@@ -40,14 +64,22 @@
   mobile.isNativeAudioOwned = function () { return false; };
   var resuming = false;
   mobile.resumeForegroundAudio = async function () {
-    if (!boundAudio || resuming) return;
+    if (!boundAudio || resuming || document.hidden) return;
     resuming = true;
     try {
-      await mobile.activateAudio();
+      // A currently playing element already owns the audio session. Calling
+      // setActive again on each focus/visibility event can interrupt it.
+      if (boundAudio.paused && !boundAudio.ended && wasPlayingWhenHidden && !boundAudio.__mrExplicitPause && boundAudio.src &&
+          typeof window.attemptAudioPlay === 'function') {
+        await window.attemptAudioPlay({ manual: true, silent: true, fade: false });
+      }
       if (typeof window.resumeAudioAnalysis === 'function') await window.resumeAudioAnalysis();
     } catch (error) {
       console.warn('[iOS system media resume]', error && error.message || error);
-    } finally { resuming = false; }
+    } finally {
+      if (!boundAudio.paused || boundAudio.__mrExplicitPause) wasPlayingWhenHidden = false;
+      resuming = false;
+    }
   };
 
   var style = document.createElement('style');
@@ -179,7 +211,11 @@
     bindGestures(window.renderer && window.renderer.domElement);
     if (window.audio) mobile.bindAudio(window.audio);
     window.addEventListener('focus', function () { mobile.resumeForegroundAudio(); });
-    document.addEventListener('visibilitychange', function () { if (!document.hidden) mobile.resumeForegroundAudio(); });
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden && boundAudio && boundAudio.__mrExplicitPause) wasPlayingWhenHidden = false;
+      else if (document.hidden && boundAudio && boundAudio.src && !boundAudio.paused && !boundAudio.ended) wasPlayingWhenHidden = true;
+      else mobile.resumeForegroundAudio();
+    });
     var resizeTimer;
     if (window.visualViewport) window.visualViewport.addEventListener('resize', function () {
       clearTimeout(resizeTimer);

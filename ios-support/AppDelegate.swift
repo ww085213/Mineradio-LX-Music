@@ -2,6 +2,7 @@ import UIKit
 import WebKit
 import Capacitor
 import AVFoundation
+import MediaPlayer
 import CryptoKit
 import Security
 
@@ -38,9 +39,16 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
     let jsName = "MineradioNative"
     let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "activateAudio", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "syncNowPlaying", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "secure", returnType: CAPPluginReturnPromise)
     ]
     private var playbackCategoryConfigured = false
+    private var remoteTargets: [(MPRemoteCommand, Any)] = []
+    private var nowPlayingState: [String: Any] = [:]
+    private var coverKey = ""
+    private var coverGeneration = 0
+    private var coverTask: URLSessionDataTask?
+    private var coverArtwork: MPMediaItemArtwork?
 
     private func activateSession() throws {
         let session = AVAudioSession.sharedInstance()
@@ -55,6 +63,99 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async {
             do { try self.activateSession(); call.resolve() }
             catch { call.reject("无法激活 iOS 播放会话") }
+        }
+    }
+
+    // The WKWebView audio element remains the only player. Native code only
+    // publishes music metadata and routes track buttons back to that element.
+    private func installTrackCommands() {
+        let commands = MPRemoteCommandCenter.shared()
+        commands.skipBackwardCommand.isEnabled = false
+        commands.skipForwardCommand.isEnabled = false
+        commands.seekBackwardCommand.isEnabled = false
+        commands.seekForwardCommand.isEnabled = false
+        guard remoteTargets.isEmpty else { return }
+        commands.previousTrackCommand.isEnabled = true
+        commands.nextTrackCommand.isEnabled = true
+        let previous = commands.previousTrackCommand.addTarget { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.webView?.evaluateJavaScript("window.MineradioMobile && window.MineradioMobile.remoteTrackCommand('previous')", completionHandler: nil)
+            }
+            return .success
+        }
+        let next = commands.nextTrackCommand.addTarget { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.webView?.evaluateJavaScript("window.MineradioMobile && window.MineradioMobile.remoteTrackCommand('next')", completionHandler: nil)
+            }
+            return .success
+        }
+        remoteTargets = [(commands.previousTrackCommand, previous), (commands.nextTrackCommand, next)]
+    }
+
+    private func publishNowPlaying() {
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: nowPlayingState["title"] as? String ?? "Mineradio",
+            MPMediaItemPropertyArtist: nowPlayingState["artist"] as? String ?? "",
+            MPNowPlayingInfoPropertyPlaybackRate: (nowPlayingState["playing"] as? Bool == true) ? 1.0 : 0.0
+        ]
+        let duration = nowPlayingState["duration"] as? Double ?? 0
+        let position = nowPlayingState["position"] as? Double ?? 0
+        if duration.isFinite && duration > 0 {
+            info[MPMediaItemPropertyPlaybackDuration] = duration
+            info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = min(duration, max(0, position))
+        }
+        if let artwork = coverArtwork { info[MPMediaItemPropertyArtwork] = artwork }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    private func applyCover(_ image: UIImage, key: String, generation: Int) {
+        guard generation == coverGeneration && key == coverKey else { return }
+        coverArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        publishNowPlaying()
+    }
+
+    private func loadCover(_ text: String) {
+        guard text != coverKey else { return }
+        coverTask?.cancel()
+        coverKey = text
+        coverGeneration += 1
+        coverArtwork = nil
+        let generation = coverGeneration
+        guard !text.isEmpty else { publishNowPlaying(); return }
+        if text.hasPrefix("data:"), let comma = text.firstIndex(of: ","),
+           text[..<comma].contains(";base64"),
+           let data = Data(base64Encoded: String(text[text.index(after: comma)...])),
+           let image = UIImage(data: data) {
+            applyCover(image, key: text, generation: generation)
+            return
+        }
+        guard let url = URL(string: text), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+            publishNowPlaying(); return
+        }
+        var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 12)
+        request.setValue("image/avif,image/webp,image/jpeg,image/png,image/*;q=0.8", forHTTPHeaderField: "Accept")
+        coverTask = URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
+            guard let data = data, data.count < 8 * 1024 * 1024,
+                  let response = response as? HTTPURLResponse, (200...299).contains(response.statusCode),
+                  let image = UIImage(data: data) else { return }
+            DispatchQueue.main.async { self?.applyCover(image, key: text, generation: generation) }
+        }
+        coverTask?.resume()
+    }
+
+    @objc func syncNowPlaying(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.nowPlayingState = [
+                "title": call.getString("title") ?? "Mineradio",
+                "artist": call.getString("artist") ?? "",
+                "duration": (call.options["duration"] as? NSNumber)?.doubleValue ?? 0,
+                "position": (call.options["position"] as? NSNumber)?.doubleValue ?? 0,
+                "playing": call.options["playing"] as? Bool ?? false
+            ]
+            self.installTrackCommands()
+            self.loadCover(call.getString("cover") ?? "")
+            self.publishNowPlaying()
+            call.resolve()
         }
     }
 
