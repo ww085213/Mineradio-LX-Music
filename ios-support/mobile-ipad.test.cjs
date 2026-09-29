@@ -124,7 +124,7 @@ test('native Now Playing provides track commands without starting another player
   app.mobile.remoteTrackCommand('previous'); app.mobile.remoteTrackCommand('next');
   assert.equal(app.calls.filter(c => c.method === 'prevTrack').length, 1);
   assert.equal(app.calls.filter(c => c.method === 'nextTrack').length, 1);
-  assert.equal(app.calls.filter(c => c.method === 'configureSystemMediaSessionControls').length, 1);
+  assert.equal(app.calls.filter(c => c.method === 'configureSystemMediaSessionControls').length, 0);
   assert.equal(app.calls.filter(c => c.method === 'syncAudio').length, 0);
 });
 test('adaptive resolution reduces pixel cost under load, with hysteresis', () => {
@@ -148,7 +148,8 @@ test('cover proxy functions use existing backend route; FPS supports tap', () =>
   assert.match(html, /\[LXImportedTransportResume\]/);
   assert.match(html, /stillAdvancing/);
   assert.match(html, /preservePresentation:recovering/);
-  assert.match(html, /nativeTrackControls && \(action === 'previoustrack' \|\| action === 'nexttrack'\)/);
+  assert.match(html, /previoustrack: function\(\)\{ systemTrackCommand\('previous'\); \}/);
+  assert.match(html, /nexttrack: function\(\)\{ systemTrackCommand\('next'\); \}/);
   assert.match(html, /window\.MineradioMobile\.syncNowPlaying/);
   assert.match(html, /raw\.lyricGlowStrength == null/);
 });
@@ -159,6 +160,7 @@ test('native metadata and commands cannot start the retired second background pl
   assert.match(swift, /commands\.skipForwardCommand\.isEnabled = false/);
   assert.match(swift, /commands\.nextTrackCommand\.isEnabled = true/);
   assert.match(swift, /MPMediaItemPropertyArtwork/);
+  assert.match(swift, /MPNowPlayingInfoPropertyPlaybackQueueCount/);
   assert.match(swift, /setCategory\(\.playback/);
   assert.match(code, /backgroundPlaybackMode = 'system-media-session'/);
   assert.match(code, /mobile\.isNativeAudioOwned = function \(\) \{ return false; \}/);

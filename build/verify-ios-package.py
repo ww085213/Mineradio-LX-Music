@@ -24,7 +24,7 @@ def verify(target, repo):
 
         info = plistlib.loads(read('Info.plist'))
         assert info['CFBundleShortVersionString'] == '1.6.1'
-        assert info['CFBundleVersion'] == '8', 'Wrong iOS build number'
+        assert info['CFBundleVersion'] == '9', 'Wrong iOS build number'
         assert info['CFBundleIdentifier'] == 'com.ww085213.mineradio.mobile'
         executable = read(info['CFBundleExecutable'])
         assert b'MineradioNativePlugin' in executable, 'Missing native audio/Keychain plugin'
@@ -64,14 +64,14 @@ def verify(target, repo):
             expected = (repo / source).read_bytes().replace(b'\r\n', b'\n')
             assert actual == expected, 'Stale/missing packaged source: ' + packed
         bridge = read('public/mobile-bridge.js')
-        assert b'1.6.1-ipad-8' in bridge and b'CapacitorHttp' in bridge
+        assert b'1.6.1-ipad-9' in bridge and b'CapacitorHttp' in bridge
         assert b'syncNowPlaying' in executable and b'MPRemoteCommandCenter' in executable, 'Missing native music controls'
         assert read('public/mobile-app-icon.png') == (repo / 'build/icon.png').read_bytes()
         assert b'mineradio-local-engine' in read('public/nodejs/server.js')
         assert json.loads(read('public/nodejs/package.json'))['version'] == '1.6.1'
         assert read('public/nodejs/node_modules/qrcode/package.json')
         assert not exists('public/nodejs/builtin-source.json'), 'iOS package must not contain a built-in audio source'
-        print('PASS: build 8; single player; native previous/next and artwork; resilient proxy; no built-in source; exact UI/source match')
+        print('PASS: build 9; single player; native previous/next and artwork; resilient proxy; no built-in source; exact UI/source match')
         if archive:
             print('SHA256: ' + hashlib.sha256(target.read_bytes()).hexdigest())
     finally:

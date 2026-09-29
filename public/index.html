@@ -17517,6 +17517,7 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
   coverToggleRealCanvas = cv;
   coverPickerCanvas = cv;
   uniforms.uHasCover.value = 1;
+  if (window.MineradioMobile) captureSystemMediaSessionCover(cv);
   if (cachedDepth && cachedDepth.canvas) {
     coverEdgeTex.image = cachedDepth.canvas;
     coverEdgeTex.needsUpdate = true;
@@ -39025,10 +39026,29 @@ function smartDjProgressTick(){
  * @param {{cover?: string}} meta 当前播放元数据。
  * @returns {Array<{src:string,sizes:string,type:string}>} Media Session artwork 列表。
  */
+var iosSystemCoverSnapshot = { trackToken:-1, src:'' };
+function captureSystemMediaSessionCover(canvas) {
+  if (!window.MineradioMobile || !canvas) return;
+  try {
+    var thumbnail = document.createElement('canvas');
+    thumbnail.width = thumbnail.height = 256;
+    thumbnail.getContext('2d').drawImage(canvas, 0, 0, 256, 256);
+    iosSystemCoverSnapshot = { trackToken:trackSwitchToken, src:thumbnail.toDataURL('image/jpeg', 0.85) };
+    if (audio && audio.src) updateSystemMediaSessionMetadata();
+  } catch (_error) {
+    iosSystemCoverSnapshot = { trackToken:-1, src:'' };
+  }
+}
 function systemMediaSessionArtwork(meta) {
   var cover = meta && meta.cover ? String(meta.cover) : '';
-  if (isProxyableCoverUrl(cover)) cover = coverProxySrc(coverUrlWithSize(cover, 512), false) || cover;
-  if (!cover) cover = '/tray-icon.png';
+  if (iosSystemMediaPlaybackMode() && iosSystemCoverSnapshot.trackToken === trackSwitchToken && iosSystemCoverSnapshot.src) {
+    cover = iosSystemCoverSnapshot.src;
+  } else if (isProxyableCoverUrl(cover)) {
+    cover = coverProxySrc(coverUrlWithSize(cover, 512), false) || cover;
+  }
+  if (!cover) cover = iosSystemMediaPlaybackMode()
+    ? buildLxFallbackCover({ name:meta && meta.title, singer:meta && meta.artist })
+    : '/tray-icon.png';
   try {
     if (!/^data:|^blob:/i.test(cover)) cover = new URL(cover, window.location.href).href;
   } catch (_e) {}
@@ -39045,13 +39065,28 @@ function systemMediaSessionArtwork(meta) {
 function updateSystemMediaSessionMetadata() {
   var meta = currentDesktopSongMeta();
   syncWindowNowPlayingTitle(meta);
+  if (window.MineradioMobile && audio && audio.src && !meta.cover && currentIdx >= 0 && playQueue[currentIdx]) {
+    var coverSong = playQueue[currentIdx];
+    var coverToken = trackSwitchToken;
+    if (!coverSong.__mrSystemCoverLookupPending) {
+      coverSong.__mrSystemCoverLookupPending = true;
+      requestMissingSongCover(coverSong, function(resolvedCover){
+        delete coverSong.__mrSystemCoverLookupPending;
+        if (resolvedCover && coverToken === trackSwitchToken && playQueue[currentIdx] === coverSong) {
+          updateSystemMediaSessionMetadata();
+        }
+      });
+    }
+  }
   if (window.MineradioMobile && typeof window.MineradioMobile.syncNowPlaying === 'function' && audio && audio.src) {
     var art = systemMediaSessionArtwork(meta);
     window.MineradioMobile.syncNowPlaying({
       title:meta.title || 'Mineradio', artist:meta.artist || '',
       cover:art.length ? art[0].src : '',
       duration:getPlaybackDurationSeconds(), position:getPlaybackCurrentSeconds(),
-      playing:!audio.paused && !audio.ended
+      playing:!audio.paused && !audio.ended,
+      queueCount:playQueue && playQueue.length || 0,
+      queueIndex:currentIdx
     });
   }
   if (!('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') return;
@@ -39100,11 +39135,19 @@ function updateSystemMediaSessionPosition() {
 function configureSystemMediaSessionControls() {
   if (!('mediaSession' in navigator) || !navigator.mediaSession.setActionHandler) return;
   var iosMusicControls = iosSystemMediaPlaybackMode();
+  function systemTrackCommand(command) {
+    var now = Date.now();
+    if (iosMusicControls && lastIosSystemTrackCommand.name === command && now - lastIosSystemTrackCommand.at < 300) return;
+    lastIosSystemTrackCommand = { name:command, at:now };
+    if (command === 'previous') prevTrack();
+    else nextTrack();
+  }
+  window.dispatchSystemTrackCommand = systemTrackCommand;
   var handlers = {
     play: function(){ if (!audio || audio.paused || audio.ended) togglePlay(); },
     pause: function(){ if (audio && !audio.paused && !audio.ended) togglePlay(); },
-    previoustrack: prevTrack,
-    nexttrack: nextTrack,
+    previoustrack: function(){ systemTrackCommand('previous'); },
+    nexttrack: function(){ systemTrackCommand('next'); },
     seekbackward: function(details){
       if (!audio) return;
       audio.currentTime = Math.max(0, getPlaybackCurrentSeconds() - (details && details.seekOffset || 10));
@@ -39127,13 +39170,12 @@ function configureSystemMediaSessionControls() {
     try {
       // Music controls on iPad should be previous / play-pause / next. Do not
       // advertise podcast-style ±10 second commands to the system UI.
-      var nativeTrackControls = iosMusicControls && window.MineradioMobile && window.MineradioMobile.nativeNowPlayingCommands;
-      var handler = iosMusicControls && (action === 'seekbackward' || action === 'seekforward' ||
-        (nativeTrackControls && (action === 'previoustrack' || action === 'nexttrack'))) ? null : handlers[action];
+      var handler = iosMusicControls && (action === 'seekbackward' || action === 'seekforward') ? null : handlers[action];
       navigator.mediaSession.setActionHandler(action, handler);
     } catch (e) {}
   });
 }
+var lastIosSystemTrackCommand = { name:'', at:0 };
 configureSystemMediaSessionControls();
 var wallpaperCoverToggle = document.getElementById('control-cover');
 if (wallpaperCoverToggle) {

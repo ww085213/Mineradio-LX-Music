@@ -100,6 +100,12 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
         ]
         let duration = nowPlayingState["duration"] as? Double ?? 0
         let position = nowPlayingState["position"] as? Double ?? 0
+        let queueCount = nowPlayingState["queueCount"] as? Int ?? 0
+        let queueIndex = nowPlayingState["queueIndex"] as? Int ?? -1
+        if queueCount > 0 {
+            info[MPNowPlayingInfoPropertyPlaybackQueueCount] = queueCount
+            info[MPNowPlayingInfoPropertyPlaybackQueueIndex] = max(0, min(queueCount - 1, queueIndex))
+        }
         if duration.isFinite && duration > 0 {
             info[MPMediaItemPropertyPlaybackDuration] = duration
             info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = min(duration, max(0, position))
@@ -132,13 +138,30 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
         guard let url = URL(string: text), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
             publishNowPlaying(); return
         }
-        var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 12)
+        var candidates = [url]
+        if url.path == "/api/image-proxy",
+           let original = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "url" })?.value,
+           let fallback = URL(string: original), ["http", "https"].contains(fallback.scheme?.lowercased() ?? "") {
+            candidates.append(fallback)
+        }
+        fetchCover(candidates, index: 0, key: text, generation: generation)
+    }
+
+    private func fetchCover(_ candidates: [URL], index: Int, key: String, generation: Int) {
+        guard generation == coverGeneration && key == coverKey && index < candidates.count else { return }
+        var request = URLRequest(url: candidates[index], cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 12)
         request.setValue("image/avif,image/webp,image/jpeg,image/png,image/*;q=0.8", forHTTPHeaderField: "Accept")
         coverTask = URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
-            guard let data = data, data.count < 8 * 1024 * 1024,
-                  let response = response as? HTTPURLResponse, (200...299).contains(response.statusCode),
-                  let image = UIImage(data: data) else { return }
-            DispatchQueue.main.async { self?.applyCover(image, key: text, generation: generation) }
+            DispatchQueue.main.async {
+                guard let self = self, generation == self.coverGeneration && key == self.coverKey else { return }
+                if let data = data, data.count < 8 * 1024 * 1024,
+                   let response = response as? HTTPURLResponse, (200...299).contains(response.statusCode),
+                   let image = UIImage(data: data) {
+                    self.applyCover(image, key: key, generation: generation)
+                } else {
+                    self.fetchCover(candidates, index: index + 1, key: key, generation: generation)
+                }
+            }
         }
         coverTask?.resume()
     }
@@ -150,7 +173,9 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
                 "artist": call.getString("artist") ?? "",
                 "duration": (call.options["duration"] as? NSNumber)?.doubleValue ?? 0,
                 "position": (call.options["position"] as? NSNumber)?.doubleValue ?? 0,
-                "playing": call.options["playing"] as? Bool ?? false
+                "playing": call.options["playing"] as? Bool ?? false,
+                "queueCount": (call.options["queueCount"] as? NSNumber)?.intValue ?? 0,
+                "queueIndex": (call.options["queueIndex"] as? NSNumber)?.intValue ?? -1
             ]
             self.installTrackCommands()
             self.loadCover(call.getString("cover") ?? "")

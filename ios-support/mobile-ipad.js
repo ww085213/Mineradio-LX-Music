@@ -40,8 +40,9 @@
     // again on every playing event can disturb an already audible stream.
   };
   mobile.remoteTrackCommand = function (command) {
-    if (command === 'previous' && typeof window.prevTrack === 'function') window.prevTrack();
-    if (command === 'next' && typeof window.nextTrack === 'function') window.nextTrack();
+    if (typeof window.dispatchSystemTrackCommand === 'function') window.dispatchSystemTrackCommand(command);
+    else if (command === 'previous' && typeof window.prevTrack === 'function') window.prevTrack();
+    else if (command === 'next' && typeof window.nextTrack === 'function') window.nextTrack();
   };
   mobile.syncNowPlaying = function (state) {
     pendingNowPlaying = state;
@@ -52,9 +53,7 @@
       var snapshot = pendingNowPlaying;
       pendingNowPlaying = null;
       native('syncNowPlaying', snapshot).then(function () {
-        if (mobile.nativeNowPlayingCommands) return;
         mobile.nativeNowPlayingCommands = true;
-        if (typeof window.configureSystemMediaSessionControls === 'function') window.configureSystemMediaSessionControls();
       }).catch(function (error) { console.warn('[iOS Now Playing]', error && error.message || error); });
     }, 120);
   };
