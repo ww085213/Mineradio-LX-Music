@@ -176,6 +176,7 @@ jobs:
 
       - name: Smoke test app launch in iPadOS simulator
         shell: bash
+        timeout-minutes: 15
         run: |
           set -euo pipefail
           xcrun simctl list devices available
@@ -198,11 +199,15 @@ jobs:
             build
           APP_PATH=$(find "$RUNNER_TEMP/mineradio-simulator/Build/Products/Release-iphonesimulator" -maxdepth 1 -name '*.app' -print -quit)
           test -n "$APP_PATH"
+          echo 'STAGE: simulator build complete'
           xcrun simctl boot "$SIMULATOR_ID"
           xcrun simctl bootstatus "$SIMULATOR_ID" -b
+          echo 'STAGE: simulator boot complete'
           xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
+          echo 'STAGE: simulator install complete'
           LAUNCH_OUTPUT=$(xcrun simctl launch "$SIMULATOR_ID" com.ww085213.mineradio.mobile)
           echo "$LAUNCH_OUTPUT"
+          echo 'STAGE: simulator launch returned'
           APP_PID=${LAUNCH_OUTPUT##*: }
           sleep 12
           xcrun simctl spawn "$SIMULATOR_ID" log show --last 1m --style compact --predicate 'process == "App" OR eventMessage CONTAINS "com.ww085213.mineradio.mobile"' | tail -n 160 || true
