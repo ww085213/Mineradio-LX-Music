@@ -2,6 +2,11 @@ name: Build standalone iOS IPA
 
 on:
   workflow_dispatch:
+    inputs:
+      simulator_smoke_test:
+        description: Run the iPadOS simulator startup check before packaging
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -175,6 +180,7 @@ jobs:
           PY
 
       - name: Smoke test app launch in iPadOS simulator
+        if: inputs.simulator_smoke_test == true
         shell: bash
         timeout-minutes: 15
         run: |
