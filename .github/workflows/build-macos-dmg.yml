@@ -181,10 +181,20 @@ jobs:
           xcrun simctl boot "$SIMULATOR_ID"
           xcrun simctl bootstatus "$SIMULATOR_ID" -b
           xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
-          xcrun simctl launch "$SIMULATOR_ID" com.ww085213.mineradio.mobile
+          LAUNCH_OUTPUT=$(xcrun simctl launch "$SIMULATOR_ID" com.ww085213.mineradio.mobile)
+          echo "$LAUNCH_OUTPUT"
+          APP_PID=${LAUNCH_OUTPUT##*: }
           sleep 12
-          xcrun simctl spawn "$SIMULATOR_ID" log show --last 1m --style compact --predicate 'process == "Mineradio" OR eventMessage CONTAINS "com.ww085213.mineradio.mobile"' | tail -n 120 || true
-          xcrun simctl spawn "$SIMULATOR_ID" launchctl list | grep com.ww085213.mineradio.mobile
+          xcrun simctl spawn "$SIMULATOR_ID" log show --last 1m --style compact --predicate 'process == "App" OR eventMessage CONTAINS "com.ww085213.mineradio.mobile"' | tail -n 160 || true
+          for REPORT_ROOT in "$HOME/Library/Logs/DiagnosticReports" "$HOME/Library/Developer/CoreSimulator/Devices/$SIMULATOR_ID/data/Library/Logs/DiagnosticReports"; do
+            if [[ -d "$REPORT_ROOT" ]]; then
+              find "$REPORT_ROOT" -maxdepth 1 -type f \( -name 'App*.ips' -o -name 'App*.crash' \) -mmin -15 -print -exec head -n 160 '{}' \;
+            fi
+          done
+          if ! kill -0 "$APP_PID" 2>/dev/null; then
+            echo "Mineradio process $APP_PID exited during startup" >&2
+            exit 1
+          fi
 
       - name: Build unsigned standalone device app
         shell: bash
