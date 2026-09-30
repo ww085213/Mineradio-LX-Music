@@ -152,7 +152,27 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Mineradio" "$PLIST"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.6.1" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 10" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 11" "$PLIST"
+          python3 - "$PLIST" <<'PY'
+          import plistlib
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          with path.open('rb') as source:
+              info = plistlib.load(source)
+          info['UIApplicationSceneManifest'] = {
+              'UIApplicationSupportsMultipleScenes': False,
+              'UISceneConfigurations': {
+                  'UIWindowSceneSessionRoleApplication': [{
+                      'UISceneConfigurationName': 'Default Configuration',
+                      'UISceneDelegateClassName': '$(PRODUCT_MODULE_NAME).MineradioSceneDelegate',
+                  }],
+              },
+          }
+          with path.open('wb') as destination:
+              plistlib.dump(info, destination)
+          PY
 
       - name: Smoke test app launch in iPadOS simulator
         shell: bash
@@ -219,16 +239,16 @@ jobs:
           mkdir -p "$RUNNER_TEMP/ipa/Payload"
           cp -R "$APP_PATH" "$RUNNER_TEMP/ipa/Payload/Mineradio.app"
           cd "$RUNNER_TEMP/ipa"
-          zip -qry Mineradio-1.6.1-ipad-10.ipa Payload
-          python3 "$GITHUB_WORKSPACE/build/verify-ios-package.py" Mineradio-1.6.1-ipad-10.ipa --repo "$GITHUB_WORKSPACE"
-          shasum -a 256 Mineradio-1.6.1-ipad-10.ipa > Mineradio-1.6.1-ipad-10.SHA256.txt
+          zip -qry Mineradio-1.6.1-ipad-11.ipa Payload
+          python3 "$GITHUB_WORKSPACE/build/verify-ios-package.py" Mineradio-1.6.1-ipad-11.ipa --repo "$GITHUB_WORKSPACE"
+          shasum -a 256 Mineradio-1.6.1-ipad-11.ipa > Mineradio-1.6.1-ipad-11.SHA256.txt
 
       - name: Upload standalone unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Mineradio-iOS-ipad-10
+          name: Mineradio-iOS-ipad-11
           if-no-files-found: error
           retention-days: 30
           path: |
-            ${{ runner.temp }}/ipa/Mineradio-1.6.1-ipad-10.ipa
-            ${{ runner.temp }}/ipa/Mineradio-1.6.1-ipad-10.SHA256.txt
+            ${{ runner.temp }}/ipa/Mineradio-1.6.1-ipad-11.ipa
+            ${{ runner.temp }}/ipa/Mineradio-1.6.1-ipad-11.SHA256.txt

@@ -6,7 +6,7 @@
   // differently when talking to the embedded Node service.
   var LOCAL_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000'];
   var LOCAL_ORIGIN = LOCAL_ORIGINS[0];
-  var BRIDGE_VERSION = '1.6.1-ipad-10';
+  var BRIDGE_VERSION = '1.6.1-ipad-11';
   var nodeStartupError = '';
   var engineResolve;
   var engineReject;
