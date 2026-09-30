@@ -75,7 +75,7 @@ def verify(target, repo):
         assert json.loads(read('public/nodejs/package.json'))['version'] == '1.6.1'
         assert read('public/nodejs/node_modules/qrcode/package.json')
         assert not exists('public/nodejs/builtin-source.json'), 'iOS package must not contain a built-in audio source'
-        print('PASS: build 12; scene lifecycle; single player; iPadOS 27 Now Playing commands and artwork; resilient proxy; no built-in source; exact UI/source match')
+        print('PASS: build 13; scene lifecycle; single player; native music track commands and artwork; resilient proxy; no built-in source; exact UI/source match')
         if archive:
             print('SHA256: ' + hashlib.sha256(target.read_bytes()).hexdigest())
     finally:
