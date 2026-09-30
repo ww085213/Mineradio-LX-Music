@@ -3,8 +3,6 @@ import WebKit
 import Capacitor
 import AVFoundation
 import MediaPlayer
-import NowPlaying
-import Observation
 import CryptoKit
 import Security
 
@@ -60,85 +58,6 @@ class MineradioViewController: CAPBridgeViewController {
     }
 }
 
-// iPadOS 27 provides one explicit system Now Playing session. The WKWebView
-// audio element is still the only decoder; these commands return to its queue.
-@available(iOS 27.0, *)
-@Observable
-@MainActor
-final class MineradioOfficialNowPlayingModel: MediaSessionRepresentable {
-    // UIKit imports a non-generic KeyPath symbol; Observation's generated
-    // registrar needs Swift's generic key-path type in this scope.
-    typealias KeyPath<Root, Value> = Swift.KeyPath<Root, Value>
-    let id = "com.ww085213.mineradio.mobile.music"
-    var trackID = ""
-    var title = "Mineradio"
-    var artist = ""
-    var duration: TimeInterval = 0
-    var position: TimeInterval = 0
-    var isPlaying = false
-    var artworkData: Data?
-    var artworkRevision = 0
-    @ObservationIgnored var onCommand: ((String) -> Void)?
-
-    var content: (any MediaContentRepresentable)? {
-        guard !trackID.isEmpty else { return nil }
-        let artwork: Artwork? = artworkData.map { data in
-            Artwork(id: "\(trackID)#\(artworkRevision)") { _ in
-                try ArtworkRepresentation(data: data)
-            }
-        }
-        return MusicContent(id: trackID, songTitle: title, artistName: artist,
-                            albumName: "", type: .audio,
-                            duration: duration > 0 ? .finite(duration) : nil,
-                            artwork: artwork)
-    }
-
-    var playbackSnapshot: MediaPlaybackSnapshot? {
-        guard !trackID.isEmpty else { return nil }
-        return MediaPlaybackSnapshot(state: isPlaying ? .playing(rate: 1.0) : .paused,
-                                     elapsedTime: max(0, position), timestamp: .now)
-    }
-
-    var commands: [MediaCommand] {
-        [
-            .play { self.onCommand?("play") },
-            .pause { self.onCommand?("pause") },
-            .previous { self.onCommand?("previous") },
-            .next { self.onCommand?("next") }
-        ]
-    }
-
-    func update(_ state: [String: Any], coverData: Data?) {
-        let newTitle = state["title"] as? String ?? "Mineradio"
-        let newArtist = state["artist"] as? String ?? ""
-        let index = state["queueIndex"] as? Int ?? -1
-        let newTrackID = "\(index):\(newTitle):\(newArtist)"
-        if trackID != newTrackID { trackID = newTrackID; artworkRevision += 1 }
-        title = newTitle
-        artist = newArtist
-        duration = state["duration"] as? Double ?? 0
-        position = state["position"] as? Double ?? 0
-        isPlaying = state["playing"] as? Bool ?? false
-        if artworkData != coverData { artworkData = coverData; artworkRevision += 1 }
-    }
-}
-
-@available(iOS 27.0, *)
-@MainActor
-final class MineradioOfficialNowPlaying {
-    let model = MineradioOfficialNowPlayingModel()
-    let session: MediaSession<MineradioOfficialNowPlayingModel>
-
-    init(onCommand: @escaping (String) -> Void) {
-        model.onCommand = onCommand
-        session = MediaSession(model)
-    }
-
-    func update(_ state: [String: Any], coverData: Data?) {
-        model.update(state, coverData: coverData)
-    }
-}
-
 @objc(MineradioNativePlugin)
 class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
     let identifier = "MineradioNativePlugin"
@@ -157,8 +76,6 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
     private var coverGeneration = 0
     private var coverTask: URLSessionDataTask?
     private var coverArtwork: MPMediaItemArtwork?
-    private var coverImageData: Data?
-    private var officialNowPlaying: AnyObject?
 
     private func activateSession() throws {
         let session = AVAudioSession.sharedInstance()
@@ -189,15 +106,16 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
     // The WKWebView audio element remains the only player. Native code only
     // publishes music metadata and routes track buttons back to that element.
     private func installTrackCommands() {
-        if #available(iOS 27.0, *) { return }
         let commands = MPRemoteCommandCenter.shared()
         commands.skipBackwardCommand.isEnabled = false
         commands.skipForwardCommand.isEnabled = false
         commands.seekBackwardCommand.isEnabled = false
         commands.seekForwardCommand.isEnabled = false
-        guard remoteTargets.isEmpty else { return }
         commands.previousTrackCommand.isEnabled = true
         commands.nextTrackCommand.isEnabled = true
+        commands.playCommand.isEnabled = true
+        commands.pauseCommand.isEnabled = true
+        guard remoteTargets.isEmpty else { return }
         let previous = commands.previousTrackCommand.addTarget { [weak self] _ in
             DispatchQueue.main.async {
                 self?.webView?.evaluateJavaScript("window.MineradioMobile && window.MineradioMobile.remoteTrackCommand('previous')", completionHandler: nil)
@@ -210,27 +128,23 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
             }
             return .success
         }
-        remoteTargets = [(commands.previousTrackCommand, previous), (commands.nextTrackCommand, next)]
+        let play = commands.playCommand.addTarget { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.webView?.evaluateJavaScript("window.MineradioMobile && window.MineradioMobile.remoteSystemCommand('play')", completionHandler: nil)
+            }
+            return .success
+        }
+        let pause = commands.pauseCommand.addTarget { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.webView?.evaluateJavaScript("window.MineradioMobile && window.MineradioMobile.remoteSystemCommand('pause')", completionHandler: nil)
+            }
+            return .success
+        }
+        remoteTargets = [(commands.previousTrackCommand, previous), (commands.nextTrackCommand, next),
+                         (commands.playCommand, play), (commands.pauseCommand, pause)]
     }
 
     private func publishNowPlaying() {
-        if #available(iOS 27.0, *) {
-            // All call sites arrive on DispatchQueue.main (plugin call or cover
-            // completion), so the observable session is updated on its actor.
-            MainActor.assumeIsolated {
-                let official: MineradioOfficialNowPlaying
-                if let current = officialNowPlaying as? MineradioOfficialNowPlaying {
-                    official = current
-                } else {
-                    official = MineradioOfficialNowPlaying { [weak self] command in
-                        self?.webView?.evaluateJavaScript("window.MineradioMobile && window.MineradioMobile.remoteSystemCommand('\(command)')", completionHandler: nil)
-                    }
-                    officialNowPlaying = official
-                }
-                official.update(nowPlayingState, coverData: coverImageData)
-            }
-            return
-        }
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: nowPlayingState["title"] as? String ?? "Mineradio",
             MPMediaItemPropertyArtist: nowPlayingState["artist"] as? String ?? "",
@@ -254,10 +168,7 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func applyCover(_ image: UIImage, key: String, generation: Int) {
         guard generation == coverGeneration && key == coverKey else { return }
-        coverImageData = image.jpegData(compressionQuality: 0.88)
-        if #unavailable(iOS 27.0) {
-            coverArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-        }
+        coverArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
         publishNowPlaying()
     }
 
@@ -267,7 +178,6 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
         coverKey = text
         coverGeneration += 1
         coverArtwork = nil
-        coverImageData = nil
         let generation = coverGeneration
         guard !text.isEmpty else { publishNowPlaying(); return }
         if text.hasPrefix("data:"), let comma = text.firstIndex(of: ","),
@@ -322,22 +232,7 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
             self.installTrackCommands()
             self.loadCover(call.getString("cover") ?? "")
             self.publishNowPlaying()
-            if #available(iOS 27.0, *), let official = self.officialNowPlaying as? MineradioOfficialNowPlaying {
-                if UIApplication.shared.applicationState == .active && !official.session.isSystemPrimary {
-                    Task { @MainActor in
-                        do {
-                            try await official.session.requestToBecomeSystemPrimary()
-                            call.resolve(["officialNowPlaying": official.session.isSystemPrimary])
-                        } catch {
-                            call.resolve(["officialNowPlaying": false])
-                        }
-                    }
-                } else {
-                    call.resolve(["officialNowPlaying": official.session.isSystemPrimary])
-                }
-            } else {
-                call.resolve(["officialNowPlaying": false])
-            }
+            call.resolve(["officialNowPlaying": true])
         }
     }
 

@@ -42,7 +42,7 @@ async function main() {
       const errors = [];
       page.on('pageerror', error => errors.push(error.message));
       await page.goto('http://127.0.0.1:' + server.address().port, { waitUntil: 'domcontentloaded' });
-      await page.waitForFunction(() => window.renderer && window.toggleRenderFpsHud && window.MineradioMobile?.build === '1.6.1-ipad-12');
+      await page.waitForFunction(() => window.renderer && window.toggleRenderFpsHud && window.MineradioMobile?.build === '1.6.1-ipad-13');
       await page.evaluate(() => {
         document.body.classList.remove('splash-active', 'splash-revealing', 'immersive-mode');
         document.body.classList.add('empty-home-active');

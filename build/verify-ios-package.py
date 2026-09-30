@@ -24,7 +24,7 @@ def verify(target, repo):
 
         info = plistlib.loads(read('Info.plist'))
         assert info['CFBundleShortVersionString'] == '1.6.1'
-        assert info['CFBundleVersion'] == '12', 'Wrong iOS build number'
+        assert info['CFBundleVersion'] == '13', 'Wrong iOS build number'
         scene_manifest = info.get('UIApplicationSceneManifest', {})
         scene_configs = scene_manifest.get('UISceneConfigurations', {}).get('UIWindowSceneSessionRoleApplication', [])
         assert any(config.get('UISceneDelegateClassName') == 'App.MineradioSceneDelegate'
@@ -68,7 +68,7 @@ def verify(target, repo):
             expected = (repo / source).read_bytes().replace(b'\r\n', b'\n')
             assert actual == expected, 'Stale/missing packaged source: ' + packed
         bridge = read('public/mobile-bridge.js')
-        assert b'1.6.1-ipad-12' in bridge and b'CapacitorHttp' in bridge
+        assert b'1.6.1-ipad-13' in bridge and b'CapacitorHttp' in bridge
         assert b'syncNowPlaying' in executable and b'MPRemoteCommandCenter' in executable, 'Missing native music controls'
         assert read('public/mobile-app-icon.png') == (repo / 'build/icon.png').read_bytes()
         assert b'mineradio-local-engine' in read('public/nodejs/server.js')

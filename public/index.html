@@ -17837,8 +17837,9 @@ function scheduleBeatAnalysis(songId, audioUrl, token, song) {
 
 function beatMapSongKey(song) {
   if (!song) return '';
-  if (song.type === 'local' && song.localKey) return BEAT_ANALYSIS_CACHE_VERSION + ':local:' + song.localKey;
-  if (song.id != null && song.id !== '') return BEAT_ANALYSIS_CACHE_VERSION + ':local-id:' + song.id;
+  var version = iosSystemMediaPlaybackMode() ? 'v3-ipad-spectrum' : BEAT_ANALYSIS_CACHE_VERSION;
+  if (song.type === 'local' && song.localKey) return version + ':local:' + song.localKey;
+  if (song.id != null && song.id !== '') return version + ':local-id:' + song.id;
   var signature = [
     String(song.source || song.provider || song.type || 'track'),
     String(song.songmid || song.hash || song.copyrightId || ''),
@@ -17852,7 +17853,7 @@ function beatMapSongKey(song) {
     hash ^= signature.charCodeAt(i);
     hash = Math.imul(hash, 16777619);
   }
-  return BEAT_ANALYSIS_CACHE_VERSION + ':track:' + (hash >>> 0).toString(16);
+  return version + ':track:' + (hash >>> 0).toString(16);
 }
 
 async function loadBeatMapForEveryTrack(song, audioUrl, switchToken) {
@@ -17872,7 +17873,8 @@ async function loadBeatMapForEveryTrack(song, audioUrl, switchToken) {
 
 function localBeatDiskKey(localKey, mode) {
   if (!localKey) return '';
-  return BEAT_ANALYSIS_CACHE_VERSION + ':local:' + localKey + ':' + (mode === 'dj' ? 'dj' : 'mr');
+  var version = iosSystemMediaPlaybackMode() ? 'v3-ipad-spectrum' : BEAT_ANALYSIS_CACHE_VERSION;
+  return version + ':local:' + localKey + ':' + (mode === 'dj' ? 'dj' : 'mr');
 }
 
 function updateBeatDiskCacheStatus(data) {
@@ -18164,6 +18166,27 @@ async function analyzeAudioBeats(audioUrl, durationSec, token, options) {
     var bodyRef = Math.max(0.0008, percentile(bodyEnergy, 0.86));
     var vocalRef = Math.max(0.0008, percentile(vocalEnergy, 0.86));
     var snapRef = Math.max(0.0008, percentile(snapEnergy, 0.86));
+    // iPad keeps its audible media element outside Web Audio so background
+    // playback survives. Reuse this existing offline decode to retain a small
+    // audio-derived visual envelope without creating another player/output.
+    var iosSpectrumFrames = null;
+    if (iosSystemMediaPlaybackMode()) {
+      iosSpectrumFrames = [];
+      var spectrumSources = [energy, bodyEnergy, vocalEnergy, snapEnergy];
+      var spectrumRefs = [lowRef, bodyRef, vocalRef, snapRef];
+      for (var spectrumFrame = 0; spectrumFrame < nFrames; spectrumFrame += 5) {
+        for (var spectrumBand = 0; spectrumBand < 4; spectrumBand++) {
+          var spectrumSum = 0;
+          var spectrumCount = Math.min(5, nFrames - spectrumFrame);
+          for (var spectrumOffset = 0; spectrumOffset < spectrumCount; spectrumOffset++) {
+            spectrumSum += spectrumSources[spectrumBand][spectrumFrame + spectrumOffset] || 0;
+          }
+          var relativeLevel = spectrumSum / Math.max(1, spectrumCount) / spectrumRefs[spectrumBand];
+          iosSpectrumFrames.push(relativeLevel < 0.005 ? 0 :
+            Math.max(0, Math.min(255, Math.round(74 + Math.pow(relativeLevel, 0.62) * 150))));
+        }
+      }
+    }
 
     // 计算 onset (能量正向差分), 然后取峰
     function makeOnset(arr) {
@@ -18792,7 +18815,7 @@ async function analyzeAudioBeats(audioUrl, durationSec, token, options) {
     if (token !== beatMapToken) { hideBeatChip(); return null; }
     if (options.prefetch) hideBeatChip();
     else showBeatChip('节奏缓冲中…');
-    return { kicks: kicks, beats: beats, pulseBeats: pulseBeats, cameraBeats: cameraBeats, gridStep: gridStep, tempoSource: musicTempoBeats.length >= 4 ? 'music-tempo' : 'local', analysisProfile: analysisProfile.id || 'default', duration: buffer.duration, visualBeatCount: visualBeatCount, analyzedAt: Date.now() };
+    return { kicks: kicks, beats: beats, pulseBeats: pulseBeats, cameraBeats: cameraBeats, gridStep: gridStep, tempoSource: musicTempoBeats.length >= 4 ? 'music-tempo' : 'local', analysisProfile: analysisProfile.id || 'default', duration: buffer.duration, visualBeatCount: visualBeatCount, analyzedAt: Date.now(), spectrumStep:iosSpectrumFrames ? 0.05 : 0, spectrumFrames:iosSpectrumFrames };
   } catch (e) {
     console.warn('beat analysis failed:', e);
     hideBeatChip();
@@ -19715,6 +19738,8 @@ function packLocalBeatMap(map) {
     analyzedAt: map.analyzedAt || Date.now(),
     partial: !!map.partial,
     partialUntilSec: map.partialUntilSec || 0,
+    spectrumStep: map.spectrumStep || 0,
+    spectrumFrames: map.spectrumFrames || null,
     cameraBeats: camera,
     pulseBeats: pulse
   };
@@ -19736,7 +19761,9 @@ function unpackLocalBeatMap(stored) {
     visualBeatCount: stored.visualBeatCount || camera.length,
     analyzedAt: stored.analyzedAt || Date.now(),
     partial: !!stored.partial,
-    partialUntilSec: stored.partialUntilSec || 0
+    partialUntilSec: stored.partialUntilSec || 0,
+    spectrumStep: stored.spectrumStep || 0,
+    spectrumFrames: Array.isArray(stored.spectrumFrames) ? stored.spectrumFrames : null
   };
 }
 function readLocalBeatPrefs() {
@@ -33792,6 +33819,55 @@ function tickSpatialAudio(dt) {
   else spatialPannerNode.setPosition(x,0,z);
   if(orbitStereoPannerNode&&orbitStereoPannerNode.pan)orbitStereoPannerNode.pan.setTargetAtTime(enabled?Math.sin(spatialOrbitPhase)*Math.min(1,width*.72):0,now,.025);
 }
+function createIosVisualAnalyser() {
+  var sampleRate = 48000;
+  var fftSize = FFT_SIZE;
+  function levelsAtPlaybackTime() {
+    if (!audio || audio.paused || audio.ended) return [0, 0, 0, 0];
+    var map = djMode.active && currentDjBeatMap ? currentDjBeatMap : currentBeatMap;
+    if (!map) return [0, 0, 0, 0];
+    var t = Math.max(0, Number(audio.currentTime) || 0);
+    var frames = map.spectrumFrames;
+    if (frames && frames.length >= 4 && map.spectrumStep > 0) {
+      var frame = Math.min(Math.floor(frames.length / 4) - 1, Math.floor(t / map.spectrumStep)) * 4;
+      return [frames[frame] || 0, frames[frame + 1] || 0, frames[frame + 2] || 0, frames[frame + 3] || 0];
+    }
+    // Older local beat maps still give a small, audio-derived pulse until
+    // their full four-band envelope is recalculated and cached.
+    var beats = map.pulseBeats || map.cameraBeats || [];
+    var lo = 0, hi = beats.length;
+    while (lo < hi) {
+      var center = (lo + hi) >> 1;
+      var beatTime = Number(typeof beats[center] === 'number' ? beats[center] : beats[center].time) || 0;
+      if (beatTime <= t) lo = center + 1;
+      else hi = center;
+    }
+    var beat = beats[lo - 1];
+    if (!beat) return [0, 0, 0, 0];
+    var elapsed = t - (Number(typeof beat === 'number' ? beat : beat.time) || 0);
+    if (elapsed < 0 || elapsed > 0.55) return [0, 0, 0, 0];
+    var strength = Math.max(0, Math.min(1, Number(beat.strength) || 0.5));
+    var pulse = Math.exp(-elapsed * 9) * strength;
+    return [Math.round(195 * pulse), Math.round(142 * pulse), Math.round(105 * pulse), Math.round(82 * pulse)];
+  }
+  return {
+    fftSize:fftSize, minDecibels:-100, maxDecibels:-30,
+    getByteFrequencyData:function(out) {
+      var levels = levelsAtPlaybackTime();
+      for (var i = 0; i < out.length; i++) {
+        var hz = i * sampleRate / fftSize;
+        var band = hz < 155 ? 0 : (hz < 420 ? 1 : (hz < 2600 ? 2 : 3));
+        var texture = 0.78 + 0.22 * Math.sin(i * 0.23 + band * 1.7);
+        out[i] = Math.max(0, Math.min(255, Math.round(levels[band] * texture)));
+      }
+    },
+    getByteTimeDomainData:function(out) {
+      var levels = levelsAtPlaybackTime();
+      var amplitude = Math.min(62, (levels[0] + levels[1] + levels[2] + levels[3]) * 0.13);
+      for (var i = 0; i < out.length; i++) out[i] = Math.round(128 + Math.sin(i * 0.39) * amplitude);
+    }
+  };
+}
 function initAudio() {
   if (audioReady) return;
   if (iosSystemMediaPlaybackMode()) {
@@ -33802,6 +33878,7 @@ function initAudio() {
     configurePlaybackAudioElement(audio);
     audioReady = true;
     applyVolumeToAudio();
+    analyser = createIosVisualAnalyser();
     frequencyData.fill(0);
     beatFrequencyData.fill(0);
     beatTimeDomainData.fill(128);
@@ -39115,7 +39192,9 @@ function updateSystemMediaSessionMetadata() {
       queueIndex:currentIdx
     });
   }
-  if (window.MineradioMobile && window.MineradioMobile.officialNowPlaying) return;
+  // iOS has one native Now Playing publisher. WebKit's media-session publisher
+  // can replace music next/previous with podcast-style ten-second controls.
+  if (iosSystemMediaPlaybackMode()) return;
   if (!('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') return;
   try {
     navigator.mediaSession.metadata = new MediaMetadata({
@@ -39133,7 +39212,7 @@ function updateSystemMediaSessionMetadata() {
  */
 function updateSystemMediaSessionPlaybackState(reason) {
   updateSystemMediaSessionMetadata();
-  if (window.MineradioMobile && window.MineradioMobile.officialNowPlaying) return;
+  if (iosSystemMediaPlaybackMode()) return;
   if (!('mediaSession' in navigator)) return;
   try {
     navigator.mediaSession.playbackState = audio && audio.src
@@ -39147,7 +39226,7 @@ function updateSystemMediaSessionPlaybackState(reason) {
  * @returns {void}
  */
 function updateSystemMediaSessionPosition() {
-  if (window.MineradioMobile && window.MineradioMobile.officialNowPlaying) return;
+  if (iosSystemMediaPlaybackMode()) return;
   if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState || !audio) return;
   var duration = getPlaybackDurationSeconds();
   if (!isFinite(duration) || duration <= 0) return;
@@ -39162,7 +39241,6 @@ function updateSystemMediaSessionPosition() {
  * @returns {void}
  */
 function configureSystemMediaSessionControls() {
-  if (!('mediaSession' in navigator) || !navigator.mediaSession.setActionHandler) return;
   var iosMusicControls = iosSystemMediaPlaybackMode();
   function systemTrackCommand(command) {
     var now = Date.now();
@@ -39199,12 +39277,10 @@ function configureSystemMediaSessionControls() {
     if (command === 'play') handlers.play();
     else if (command === 'pause') handlers.pause();
   };
+  if (iosMusicControls || !('mediaSession' in navigator) || !navigator.mediaSession.setActionHandler) return;
   Object.keys(handlers).forEach(function(action){
     try {
-      // Music controls on iPad should be previous / play-pause / next. Do not
-      // advertise podcast-style ±10 second commands to the system UI.
-      var handler = iosMusicControls && (action === 'seekbackward' || action === 'seekforward') ? null : handlers[action];
-      navigator.mediaSession.setActionHandler(action, handler);
+      navigator.mediaSession.setActionHandler(action, handlers[action]);
     } catch (e) {}
   });
 }

@@ -13,7 +13,7 @@ function section(start, end) {
   return html.slice(first, last);
 }
 
-test('iPad keeps usable web track handlers alongside native buttons and rejects duplicate taps', () => {
+test('iPad uses only native system handlers and rejects duplicate track taps', () => {
   const handlers = {};
   const calls = [];
   let now = 1000;
@@ -25,17 +25,38 @@ test('iPad keeps usable web track handlers alongside native buttons and rejects 
     prevTrack() { calls.push('previous'); }, nextTrack() { calls.push('next'); }
   });
   vm.runInContext(section('function configureSystemMediaSessionControls()', 'var wallpaperCoverToggle'), context);
-  assert.equal(typeof handlers.previoustrack, 'function');
-  assert.equal(typeof handlers.nexttrack, 'function');
-  assert.equal(handlers.seekbackward, null);
-  assert.equal(handlers.seekforward, null);
-  handlers.previoustrack();
+  assert.deepEqual(handlers, {});
+  context.window.dispatchSystemTrackCommand('previous');
   context.window.dispatchSystemTrackCommand('previous');
   assert.deepEqual(calls, ['previous']);
   now += 301;
-  handlers.nexttrack();
+  context.window.dispatchSystemTrackCommand('next');
   context.window.dispatchSystemTrackCommand('next');
   assert.deepEqual(calls, ['previous', 'next']);
+});
+
+test('iPad visual analysis follows song time without routing the audible element through Web Audio', () => {
+  const context = vm.createContext({
+    FFT_SIZE:2048,
+    audio:{ currentTime:0.01, paused:false, ended:false },
+    currentBeatMap:{ spectrumStep:0.05, spectrumFrames:[80, 90, 100, 110, 180, 190, 200, 210] },
+    currentDjBeatMap:null,
+    djMode:{ active:false },
+    Math, Number
+  });
+  vm.runInContext(section('function createIosVisualAnalyser()', 'function initAudio()'), context);
+  const analyser = context.createIosVisualAnalyser();
+  const first = new Uint8Array(1024);
+  const second = new Uint8Array(1024);
+  const paused = new Uint8Array(1024);
+  analyser.getByteFrequencyData(first);
+  context.audio.currentTime = 0.08;
+  analyser.getByteFrequencyData(second);
+  assert.ok(second[4] > first[4]);
+  context.audio.paused = true;
+  analyser.getByteFrequencyData(paused);
+  assert.equal(paused[4], 0);
+  assert.doesNotMatch(section('function createIosVisualAnalyser()', 'function initAudio()'), /createMediaElementSource|\.connect\(/);
 });
 
 test('missing playlist cover is resolved and republished to the system card', () => {
@@ -78,12 +99,10 @@ test('missing playlist cover is resolved and republished to the system card', ()
   context.captureSystemMediaSessionCover({});
   assert.equal(states.length, 3);
   assert.equal(states[2].cover, 'data:image/jpeg;base64,Y292ZXI=');
-  assert.equal(metadata.at(-1).artwork[0].src, states[2].cover);
-  assert.equal(metadata.at(-1).artist, '尹美莱');
+  assert.equal(metadata.length, 0, 'WebKit must not compete with native Now Playing');
   context.trackSwitchToken += 1;
   context.updateSystemMediaSessionMetadata();
   assert.match(states[3].cover, /\/api\/image-proxy\?url=/);
-  context.window.MineradioMobile.officialNowPlaying = true;
   const webMetadataCount = metadata.length;
   context.updateSystemMediaSessionMetadata();
   assert.equal(states.length, 5);

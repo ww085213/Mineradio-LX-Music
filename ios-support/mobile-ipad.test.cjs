@@ -186,8 +186,10 @@ test('native metadata and commands cannot start the retired second background pl
   assert.match(swift, /commands\.nextTrackCommand\.isEnabled = true/);
   assert.match(swift, /MPMediaItemPropertyArtwork/);
   assert.match(swift, /MPNowPlayingInfoPropertyPlaybackQueueCount/);
-  assert.match(swift, /MediaSession<MineradioOfficialNowPlayingModel>/);
-  assert.match(swift, /requestToBecomeSystemPrimary\(\)/);
+  assert.doesNotMatch(swift, /import NowPlaying|MediaSession<MineradioOfficialNowPlayingModel>/);
+  assert.match(swift, /commands\.previousTrackCommand\.isEnabled = true/);
+  assert.match(swift, /commands\.playCommand\.addTarget/);
+  assert.match(swift, /commands\.pauseCommand\.addTarget/);
   assert.match(swift, /guard !audioSessionActivated else \{ return \}/);
   assert.match(swift, /setCategory\(\.playback/);
   assert.match(code, /backgroundPlaybackMode = 'system-media-session'/);
