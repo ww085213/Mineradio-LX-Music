@@ -23,7 +23,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 }
 
-@objc(MineradioSceneDelegate)
 class MineradioSceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
 
