@@ -32342,14 +32342,14 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
     }
     if (list && list.songs && list.songs.length) {
       var next = playMode === 'shuffle' ? Math.floor(Math.random() * list.songs.length) : (songIndex + 1) % list.songs.length;
-      playLxMirrorSong(playlistIndex, next);
+      playLxMirrorSong(playlistIndex, next, null, { autoAdvance:true });
       return;
     }
     if (!playQueue.length) return;
     var nextQueueIndex = playMode === 'shuffle'
       ? Math.floor(Math.random() * playQueue.length)
       : (currentIdx + 1) % playQueue.length;
-    playQueueAt(nextQueueIndex);
+    playQueueAt(nextQueueIndex, { autoAdvance:true });
   };
   var excludedResolvers = Array.isArray(opts.excludedResolvers) ? opts.excludedResolvers.slice() : [];
   // Source status can still be loading when the user presses play. Previously
@@ -32368,7 +32368,7 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
       var preResolvedStarted = await startImportedAudioUrl(preResolvedUrl, {
         resumeSeconds:runtimeResumeSeconds,
         playbackToken:playbackToken,
-        fade:opts.nativeHandoff ? false : undefined
+        fade:opts.nativeHandoff || opts.autoAdvance ? false : undefined
       });
       if (playbackToken !== trackSwitchToken) return false;
       if (!preResolvedStarted) throw new Error('预解析音频无法播放');
@@ -32398,7 +32398,7 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
       var sourceStarted = await startImportedAudioUrl(audioUrl, {
         resumeSeconds:runtimeResumeSeconds,
         playbackToken:playbackToken,
-        fade:recovering || opts.nativeHandoff ? false : undefined
+        fade:recovering || opts.nativeHandoff || opts.autoAdvance ? false : undefined
       });
       if (playbackToken !== trackSwitchToken) return false;
       if (!sourceStarted) throw new Error('音源地址无法播放');
@@ -32438,7 +32438,7 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
         var crossPlatformStarted = await startImportedAudioUrl(crossPlatformMatch.url, {
           resumeSeconds:runtimeResumeSeconds,
           playbackToken:playbackToken,
-          fade:recovering || opts.nativeHandoff ? false : undefined
+          fade:recovering || opts.nativeHandoff || opts.autoAdvance ? false : undefined
         });
         if (playbackToken !== trackSwitchToken) return false;
         if (!crossPlatformStarted) throw new Error('备用平台音频无法播放');
@@ -32578,7 +32578,10 @@ function ensureLxSongLocation(song) {
 }
 async function playLxMirrorSong(playlistIndex, songIndex, directSong, opts) {
   opts = opts || {};
-  primeOnlineAudioForUserGesture();
+  // The silent gesture-unlock clip is only for a user-initiated selection.
+  // Starting it after an ended event replaces the live media source just as
+  // WebKit is entering the background and can suspend the real next song.
+  if (!opts.autoAdvance) primeOnlineAudioForUserGesture();
   if (directSong) {
     var location = ensureLxSongLocation(directSong);
     playlistIndex = location.playlistIndex;
@@ -34066,6 +34069,12 @@ window.finishNativeForegroundHandoff = finishNativeForegroundHandoff;
 window.syncIosAudioRoute = syncIosAudioRoute;
 function fadeOutAndPauseAudio() {
   if (!audio || audio.paused) return Promise.resolve(false);
+  if (iosSystemMediaPlaybackMode() && document.hidden) {
+    audioFadeSerial++;
+    clearAudioFadeTimers();
+    audio.pause();
+    return Promise.resolve(true);
+  }
   var serial = ++audioFadeSerial;
   rampAudioOutputGain(0, AUDIO_FADE_OUT_MS);
   return new Promise(function(resolve) {
@@ -35342,9 +35351,26 @@ async function attemptAudioPlay(opts) {
       if (!playMedia) return false;
       if (window.MineradioMobile && window.MineradioMobile.activateAudio) await window.MineradioMobile.activateAudio();
       if (!isCurrentAttempt()) return false;
+      if (iosSystemMediaPlaybackMode() && !document.hidden && window.MineradioMobile && window.MineradioMobile.claimOfficialNowPlaying) {
+        var earlyMeta = currentDesktopSongMeta();
+        var earlyArt = systemMediaSessionArtwork(earlyMeta);
+        var officialClaim = window.MineradioMobile.claimOfficialNowPlaying({
+          title:earlyMeta.title || 'Mineradio', artist:earlyMeta.artist || '',
+          cover:earlyArt.length ? earlyArt[0].src : '',
+          duration:getPlaybackDurationSeconds(), position:getPlaybackCurrentSeconds(),
+          playing:false, queueCount:playQueue && playQueue.length || 0, queueIndex:currentIdx
+        });
+        // A delayed beta-system claim must never hold the actual play() call.
+        await Promise.race([officialClaim, new Promise(function(resolve){ setTimeout(resolve, 1000); })]);
+      }
+      if (!isCurrentAttempt()) return false;
       if (!audioReady) initAudio();
       playMedia.__mrExplicitPause = false;
-      if (opts.fade !== false) preparePlaybackFadeIn();
+      // requestAnimationFrame fades stop advancing when the iPad is locked.
+      // Never leave the newly selected media element at zero volume there.
+      var useFade = opts.fade !== false && !(iosSystemMediaPlaybackMode() && document.hidden);
+      if (useFade) preparePlaybackFadeIn();
+      else restorePlaybackGain();
       if (opts.manual) {
         var manualPlay = playMedia.play();
         await resumeAudioAnalysis();
@@ -35359,7 +35385,7 @@ async function attemptAudioPlay(opts) {
       if (!isCurrentAttempt()) return false;
       switchPlaybackVisualToEmily();
       playing = true; setPlayIcon(true);
-    if (opts.fade !== false) startPlaybackFadeIn();
+    if (useFade) startPlaybackFadeIn();
     else restorePlaybackGain();
     forcePlaybackControlsInteractive();
     hideLoading();

@@ -89,3 +89,27 @@ test('missing playlist cover is resolved and republished to the system card', ()
   assert.equal(states.length, 5);
   assert.equal(metadata.length, webMetadataCount, 'native system session must not compete with WebKit metadata');
 });
+
+test('iPad auto-next skips the silent gesture clip and never waits for a background fade', async () => {
+  const calls = [];
+  const media = { src:'https://example.test/next.mp3', paused:true, ended:false,
+    play() { calls.push('play'); this.paused = false; return Promise.resolve(); } };
+  const context = vm.createContext({
+    window:{ MineradioMobile:{ platform:'ios', activateAudio:() => Promise.resolve(true) } },
+    document:{ hidden:true }, navigator:{}, audio:media, audioReady:true,
+    trackSwitchToken:5, playing:false,
+    iosSystemMediaPlaybackMode:() => true,
+    resumeAudioAnalysis:() => Promise.resolve(),
+    preparePlaybackFadeIn() { calls.push('fade-to-zero'); },
+    startPlaybackFadeIn() { calls.push('fade-in'); },
+    restorePlaybackGain() { calls.push('restore-volume'); },
+    switchPlaybackVisualToEmily() {}, setPlayIcon() {},
+    forcePlaybackControlsInteractive() {}, hideLoading() {},
+    console, setTimeout, clearTimeout
+  });
+  vm.runInContext(section('var mediaPlayAttemptSerial', 'async function playAudio'), context);
+  assert.equal(await context.attemptAudioPlay({ manual:true, silent:true, playbackToken:5 }), true);
+  assert.deepEqual(calls, ['restore-volume', 'play', 'restore-volume']);
+  assert.match(html, /playLxMirrorSong\(playlistIndex, next, null, \{ autoAdvance:true \}\)/);
+  assert.match(html, /if \(!opts\.autoAdvance\) primeOnlineAudioForUserGesture\(\)/);
+});

@@ -81,10 +81,27 @@ test('system media mode keeps one player and never performs native handoff', asy
 test('audio session activation is explicit and the playing event does not reactivate it', async () => {
   const app = boot();
   await app.mobile.activateAudio();
+  await app.mobile.activateAudio();
   await tick();
   assert.equal(app.calls.filter(c => c.method === 'activateAudio').length, 1);
   assert.equal(app.calls.filter(c => c.method === 'syncAudio').length, 0);
   assert.equal(app.mediaListeners.has('playing'), false);
+  await app.mobile.activateAudio(true);
+  assert.equal(app.calls.filter(c => c.method === 'activateAudio').length, 2);
+});
+test('official music session is claimed before playback without waiting for the metadata timer', async () => {
+  const app = boot();
+  app.window.Capacitor.nativePromise = (plugin, method, value) => {
+    app.calls.push({ plugin, method, value });
+    return Promise.resolve({ officialNowPlaying:true });
+  };
+  const state = { title:'下一首', artist:'歌手', playing:false };
+  assert.equal(await app.mobile.claimOfficialNowPlaying(state), true);
+  assert.equal(app.mobile.officialNowPlaying, true);
+  assert.equal(app.calls.filter(c => c.method === 'syncNowPlaying').length, 1);
+  assert.equal(app.calls.find(c => c.method === 'syncNowPlaying').value, state);
+  assert.equal(await app.mobile.claimOfficialNowPlaying(state), true);
+  assert.equal(app.calls.filter(c => c.method === 'syncNowPlaying').length, 1);
 });
 test('foreground return does not reactivate a playing stream and resumes only an unintended pause', async () => {
   const app = boot();

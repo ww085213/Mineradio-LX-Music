@@ -22,11 +22,20 @@
   var wasPlayingWhenHidden = false;
   var nowPlayingTimer = 0;
   var pendingNowPlaying = null;
+  var audioActivation = null;
   mobile.nativeNowPlayingCommands = false;
   mobile.officialNowPlaying = false;
-  mobile.activateAudio = function () {
+  mobile.activateAudio = function (force) {
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (_error) {}
-    return native('activateAudio').catch(function (error) { console.warn('[iOS audio session]', error.message); });
+    // An already active session needs no Capacitor round trip. In the
+    // background that round trip can be held until WebKit returns to the UI.
+    if (audioActivation && !force) return audioActivation;
+    audioActivation = native('activateAudio').catch(function (error) {
+      audioActivation = null;
+      console.warn('[iOS audio session]', error && error.message || error);
+      return false;
+    });
+    return audioActivation;
   };
   mobile.bindAudio = function (media) {
     boundAudio = media;
@@ -63,6 +72,19 @@
       }).catch(function (error) { console.warn('[iOS Now Playing]', error && error.message || error); });
     }, 120);
   };
+  mobile.claimOfficialNowPlaying = function (state) {
+    if (mobile.officialNowPlaying || document.hidden) return Promise.resolve(mobile.officialNowPlaying);
+    if (nowPlayingTimer) { clearTimeout(nowPlayingTimer); nowPlayingTimer = 0; }
+    pendingNowPlaying = null;
+    return native('syncNowPlaying', state).then(function (result) {
+      mobile.nativeNowPlayingCommands = true;
+      mobile.officialNowPlaying = !!(result && result.officialNowPlaying);
+      return mobile.officialNowPlaying;
+    }).catch(function (error) {
+      console.warn('[iOS Now Playing]', error && error.message || error);
+      return false;
+    });
+  };
   mobile.backgroundPlaybackMode = 'system-media-session';
   mobile.enterBackgroundAudio = function () {};
   mobile.nativeBackgroundAudioDidStart = function () {};
@@ -76,6 +98,7 @@
       // setActive again on each focus/visibility event can interrupt it.
       if (boundAudio.paused && !boundAudio.ended && wasPlayingWhenHidden && !boundAudio.__mrExplicitPause && boundAudio.src &&
           typeof window.attemptAudioPlay === 'function') {
+        await mobile.activateAudio(true);
         await window.attemptAudioPlay({ manual: true, silent: true, fade: false });
       }
       if (typeof window.resumeAudioAnalysis === 'function') await window.resumeAudioAnalysis();

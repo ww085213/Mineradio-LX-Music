@@ -27,6 +27,7 @@ function playbackHarness() {
   const context = vm.createContext({
     audio:media, audioReady:true, trackSwitchToken:1, playing:false,
     window:{}, console:{ warn() {} },
+    document:{ hidden:false }, iosSystemMediaPlaybackMode:() => false,
     setTimeout(fn) { const id = ++nextTimer; timers.set(id, fn); return id; },
     clearTimeout(id) { timers.delete(id); },
     preparePlaybackFadeIn() {}, resumeAudioAnalysis:async () => {},
