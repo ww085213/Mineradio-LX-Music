@@ -108,6 +108,19 @@ test('native audio facade forwards play, seek, volume and end without WebKit pla
   audio.pause();
   assert.ok(app.calls.every(c => c.method !== 'syncAudio'));
 });
+test('native song time advances smoothly between updates and freezes while buffering', async () => {
+  const app = boot();
+  const audio = app.mobile.createAudio();
+  audio.src = 'http://localhost:3000/api/audio?url=song';
+  await audio.play();
+  app.mobile.nativePlaybackEvent({ url:audio.src, event:'timeupdate', position:7, duration:180, playing:true });
+  app.setNow(10250);
+  assert.ok(Math.abs(audio.currentTime - 7.25) < 0.001);
+  app.mobile.nativePlaybackEvent({ url:audio.src, event:'timeupdate', position:7.25, duration:180, playing:false });
+  app.setNow(11000);
+  assert.equal(audio.currentTime, 7.25);
+  assert.equal(audio.paused, false, 'buffering must not be presented as a user pause');
+});
 test('audio session activation is explicit and the playing event does not reactivate it', async () => {
   const app = boot();
   await app.mobile.activateAudio();

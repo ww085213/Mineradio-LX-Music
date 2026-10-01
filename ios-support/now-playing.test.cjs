@@ -132,3 +132,23 @@ test('iPad auto-next skips the silent gesture clip and never waits for a backgro
   assert.match(html, /playLxMirrorSong\(playlistIndex, next, null, \{ autoAdvance:true \}\)/);
   assert.match(html, /if \(!opts\.autoAdvance\) primeOnlineAudioForUserGesture\(\)/);
 });
+
+test('iPad online playback uses cached beats without downloading the full song mid-play', async () => {
+  const calls = [];
+  const context = vm.createContext({
+    beatMapToken:3, trackSwitchToken:7, beatMapCache:{},
+    beatMapSongKey:() => 'online-song',
+    showBeatChip:() => calls.push('show'), hideBeatChip:() => calls.push('hide'),
+    readBeatDiskCache:async () => null,
+    applyBeatMapCacheForCurrent:() => { calls.push('cache'); return true; },
+    iosSystemMediaPlaybackMode:() => true,
+    scheduleBeatAnalysis:() => calls.push('analyze')
+  });
+  vm.runInContext(section('async function loadBeatMapForEveryTrack(', 'function localBeatDiskKey('), context);
+  assert.equal(await context.loadBeatMapForEveryTrack({}, 'https://example.test/song', 7), false);
+  assert.deepEqual(calls, ['show', 'hide']);
+  context.beatMapCache['online-song'] = { beats:[1, 2] };
+  assert.equal(await context.loadBeatMapForEveryTrack({}, 'https://example.test/song', 7), true);
+  assert.equal(calls.at(-1), 'cache');
+  assert.ok(!calls.includes('analyze'));
+});

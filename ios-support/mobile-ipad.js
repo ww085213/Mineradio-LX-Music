@@ -49,8 +49,8 @@
     if (nativeAudio) return nativeAudio;
     var listeners = Object.create(null);
     var media = {
-      _mrNativeAudio:true, _src:'', _position:0, _duration:NaN,
-      _paused:true, _ended:false, _readyState:0, _error:null,
+      _mrNativeAudio:true, _src:'', _position:0, _positionAt:Date.now(), _duration:NaN,
+      _paused:true, _advancing:false, _ended:false, _readyState:0, _error:null,
       _volume:1, _muted:false, _rate:1, _loop:false,
       crossOrigin:'anonymous', defaultPlaybackRate:1,
       addEventListener:function (name, callback) {
@@ -88,6 +88,8 @@
             self._emit('loadedmetadata'); self._emit('durationchange');
           }
           if (self._paused) { self._paused = false; self._emit('play'); }
+          self._advancing = !!(state && state.playing);
+          self._positionAt = Date.now();
           self._readyState = 4; self._ended = false; self._error = null;
           self._emit('playing'); self._emit('canplay'); self._emit('loadeddata');
         }).catch(function (error) {
@@ -99,7 +101,10 @@
         });
       },
       pause:function () {
-        if (!this._paused) { this._paused = true; this._emit('pause'); }
+        if (!this._paused) {
+          this._position = this.currentTime; this._positionAt = Date.now();
+          this._paused = true; this._advancing = false; this._emit('pause');
+        }
         native('pauseAudio').catch(function (error) { console.warn('[iOS pause]', error); });
       }
     };
@@ -108,15 +113,22 @@
         var next = String(value || '');
         if (next === this._src) return;
         var previous = this._src;
-        this._src = next; this._position = 0; this._duration = NaN;
+        this._src = next; this._position = 0; this._positionAt = Date.now(); this._duration = NaN;
+        this._advancing = false;
         this._readyState = 0; this._paused = true; this._ended = false; this._error = null;
         this._emit('emptied');
         if (!next) native('stopAudio', { url:previous }).catch(function () {});
       } },
       currentSrc:{ get:function () { return this._src; } },
-      currentTime:{ get:function () { return this._position; }, set:function (value) {
+      currentTime:{ get:function () {
+        var position = this._position;
+        if (!this._paused && this._advancing) {
+          position += Math.max(0, Date.now() - this._positionAt) / 1000 * this._rate;
+        }
+        return isFinite(this._duration) && this._duration > 0 ? Math.min(this._duration, position) : position;
+      }, set:function (value) {
         var target = Math.max(0, Number(value) || 0);
-        this._position = target;
+        this._position = target; this._positionAt = Date.now();
         native('seekAudio', { url:this._src, position:target }).catch(function () {});
         this._emit('seeked'); this._emit('timeupdate');
       } },
@@ -163,7 +175,8 @@
       media._duration = duration; media._emit('loadedmetadata'); media._emit('durationchange');
     }
     var position = Number(state.position);
-    if (position >= 0 && isFinite(position)) media._position = position;
+    if (position >= 0 && isFinite(position)) { media._position = position; media._positionAt = Date.now(); }
+    media._advancing = !!state.playing;
     if (state.event === 'seeked') media._emit('seeked');
     if (state.event === 'error') {
       media._paused = true; media._error = { code:4, message:String(state.message || '播放失败') };

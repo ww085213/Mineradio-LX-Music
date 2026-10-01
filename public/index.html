@@ -17867,6 +17867,10 @@ async function loadBeatMapForEveryTrack(song, audioUrl, switchToken) {
   var diskMap = await readBeatDiskCache(key);
   if (analysisToken !== beatMapToken || switchToken !== trackSwitchToken) return false;
   if (diskMap) return applyBeatMapCacheForCurrent(key, diskMap, analysisToken, '逐曲鼓点磁盘缓存命中:');
+  // The iPad's native AVPlayer and a full-song fetch share the same online
+  // proxy. Starting this decode 6-8 seconds into playback can starve the live
+  // stream, so use cached beat maps only while playing online on iOS.
+  if (iosSystemMediaPlaybackMode()) { hideBeatChip(); return false; }
   scheduleBeatAnalysis(key, audioUrl, analysisToken, song);
   return true;
 }

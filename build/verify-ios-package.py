@@ -24,7 +24,7 @@ def verify(target, repo):
 
         info = plistlib.loads(read('Info.plist'))
         assert info['CFBundleShortVersionString'] == '1.6.1'
-        assert info['CFBundleVersion'] == '15', 'Wrong iOS build number'
+        assert info['CFBundleVersion'] == '16', 'Wrong iOS build number'
         scene_manifest = info.get('UIApplicationSceneManifest', {})
         scene_configs = scene_manifest.get('UISceneConfigurations', {}).get('UIWindowSceneSessionRoleApplication', [])
         assert any(config.get('UISceneDelegateClassName') == 'App.MineradioSceneDelegate'
@@ -68,14 +68,14 @@ def verify(target, repo):
             expected = (repo / source).read_bytes().replace(b'\r\n', b'\n')
             assert actual == expected, 'Stale/missing packaged source: ' + packed
         bridge = read('public/mobile-bridge.js')
-        assert b'1.6.1-ipad-15' in bridge and b'CapacitorHttp' in bridge
+        assert b'1.6.1-ipad-16' in bridge and b'CapacitorHttp' in bridge
         assert all(symbol in executable for symbol in (b'playAudio', b'syncNowPlaying', b'MPRemoteCommandCenter')), 'Missing native music playback and controls'
         assert read('public/mobile-app-icon.png') == (repo / 'build/icon.png').read_bytes()
         assert b'mineradio-local-engine' in read('public/nodejs/server.js')
         assert json.loads(read('public/nodejs/package.json'))['version'] == '1.6.1'
         assert read('public/nodejs/node_modules/qrcode/package.json')
         assert not exists('public/nodejs/builtin-source.json'), 'iOS package must not contain a built-in audio source'
-        print('PASS: build 15; scene lifecycle; native AVPlayer, track and seek commands; artwork; resilient proxy; no built-in source; exact UI/source match')
+        print('PASS: build 16; scene lifecycle; native AVPlayer, track and seek commands; artwork; resilient proxy; no built-in source; exact UI/source match')
         if archive:
             print('SHA256: ' + hashlib.sha256(target.read_bytes()).hexdigest())
     finally:
