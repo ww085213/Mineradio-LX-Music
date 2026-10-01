@@ -10254,12 +10254,12 @@ function beatBandRms(data, sampleRate, fftSize, hz0, hz1) {
 }
 
 function processRealtimeBeatEngine(dt) {
-  if (!beatAnalyser || !audioCtx || !audio || audio.paused) return null;
+  if (!beatAnalyser || !audio || audio.paused) return null;
   dt = Math.max(0.001, Math.min(0.080, dt || 0.016));
   var dj = djMode.active;
   beatAnalyser.getByteFrequencyData(beatFrequencyData);
   beatAnalyser.getByteTimeDomainData(beatTimeDomainData);
-  var sr = audioCtx.sampleRate || 44100;
+  var sr = audioCtx && audioCtx.sampleRate || 48000;
   var sub = beatBandRms(beatFrequencyData, sr, beatAnalyser.fftSize, 38, 74);
   var kick = beatBandRms(beatFrequencyData, sr, beatAnalyser.fftSize, 52, 165);
   var body = beatBandRms(beatFrequencyData, sr, beatAnalyser.fftSize, 165, 420);
@@ -33831,6 +33831,10 @@ function createIosVisualAnalyser() {
   var fftSize = FFT_SIZE;
   function levelsAtPlaybackTime() {
     if (!audio || audio.paused || audio.ended) return [0, 0, 0, 0];
+    // Prefer the native player's decoded PCM. No full-song fetch or WebKit
+    // audio session is needed, even for a song without a cached beat map.
+    var live = window.MineradioMobile && window.MineradioMobile.visualLevels;
+    if (live && live.url === audio.src && Date.now() - live.at < 400) return live.levels;
     var map = djMode.active && currentDjBeatMap ? currentDjBeatMap : currentBeatMap;
     if (!map) return [0, 0, 0, 0];
     var t = Math.max(0, Number(audio.currentTime) || 0);
@@ -33884,6 +33888,7 @@ function initAudio() {
     audioReady = true;
     applyVolumeToAudio();
     analyser = createIosVisualAnalyser();
+    beatAnalyser = analyser;
     frequencyData.fill(0);
     beatFrequencyData.fill(0);
     beatTimeDomainData.fill(128);

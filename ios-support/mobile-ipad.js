@@ -50,7 +50,7 @@
     var listeners = Object.create(null);
     var media = {
       _mrNativeAudio:true, _src:'', _position:0, _positionAt:Date.now(), _duration:NaN,
-      _paused:true, _advancing:false, _ended:false, _readyState:0, _error:null,
+      _paused:true, _advancing:false, _ended:false, _readyState:0, _error:null, _bufferedStart:0, _bufferedEnd:0,
       _volume:1, _muted:false, _rate:1, _loop:false,
       crossOrigin:'anonymous', defaultPlaybackRate:1,
       addEventListener:function (name, callback) {
@@ -90,7 +90,8 @@
           if (self._paused) { self._paused = false; self._emit('play'); }
           self._advancing = !!(state && state.playing);
           self._positionAt = Date.now();
-          self._readyState = 4; self._ended = false; self._error = null;
+          self._readyState = state && state.playing ? 4 : 2;
+          self._ended = false; self._error = null;
           self._emit('playing'); self._emit('canplay'); self._emit('loadeddata');
         }).catch(function (error) {
           if (source === self._src) {
@@ -116,6 +117,7 @@
         this._src = next; this._position = 0; this._positionAt = Date.now(); this._duration = NaN;
         this._advancing = false;
         this._readyState = 0; this._paused = true; this._ended = false; this._error = null;
+        this._bufferedStart = 0; this._bufferedEnd = 0;
         this._emit('emptied');
         if (!next) native('stopAudio', { url:previous }).catch(function () {});
       } },
@@ -138,8 +140,9 @@
       readyState:{ get:function () { return this._readyState; } },
       error:{ get:function () { return this._error; } },
       buffered:{ get:function () {
-        var end = this._readyState >= 2 ? Math.max(this._position + 20, Number(this._duration) || 0) : 0;
-        return { length:end > 0 ? 1 : 0, start:function () { return 0; }, end:function () { return end; } };
+        var start = Math.max(0, Number(this._bufferedStart) || 0);
+        var end = Math.max(0, Number(this._bufferedEnd) || 0);
+        return { length:end > start ? 1 : 0, start:function () { return start; }, end:function () { return end; } };
       } },
       volume:{ get:function () { return this._volume; }, set:function (value) {
         this._volume = Math.max(0, Math.min(1, Number(value) || 0)); scheduleSettings();
@@ -176,6 +179,10 @@
     }
     var position = Number(state.position);
     if (position >= 0 && isFinite(position)) { media._position = position; media._positionAt = Date.now(); }
+    var bufferedEnd = Number(state.bufferedEnd);
+    if (bufferedEnd >= 0 && isFinite(bufferedEnd)) media._bufferedEnd = bufferedEnd;
+    var bufferedStart = Number(state.bufferedStart);
+    if (bufferedStart >= 0 && isFinite(bufferedStart)) media._bufferedStart = bufferedStart;
     media._advancing = !!state.playing;
     if (state.event === 'seeked') media._emit('seeked');
     if (state.event === 'error') {
@@ -187,8 +194,17 @@
     }
     if (state.playing && media._paused) { media._paused = false; media._emit('play'); media._emit('playing'); }
     else if (state.event === 'pause' && !media._paused) { media._paused = true; media._emit('pause'); }
-    if (state.playing) media._readyState = 4;
+    if (state.event === 'buffering') { media._readyState = 2; media._emit('waiting'); }
+    else if (state.playing) media._readyState = 4;
     media._emit('timeupdate');
+  };
+  mobile.nativeVisualEvent = function (state) {
+    if (!nativeAudio || !state || state.url !== nativeAudio._src || !Array.isArray(state.levels)) return;
+    var levels = state.levels.slice(0, 4).map(function (value) {
+      return Math.max(0, Math.min(255, Number(value) || 0));
+    });
+    if (levels.length !== 4) return;
+    mobile.visualLevels = { levels:levels, at:Date.now(), url:state.url };
   };
   mobile.activateAudio = function (force) {
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (_error) {}

@@ -38,7 +38,9 @@ test('iPad uses only native system handlers and rejects duplicate track taps', (
 test('iPad visual analysis follows song time without routing the audible element through Web Audio', () => {
   const context = vm.createContext({
     FFT_SIZE:2048,
-    audio:{ currentTime:0.01, paused:false, ended:false },
+    audio:{ src:'https://example.test/song.mp3', currentTime:0.01, paused:false, ended:false },
+    window:{ MineradioMobile:{} },
+    Date:{ now:() => 1000 },
     currentBeatMap:{ spectrumStep:0.05, spectrumFrames:[80, 90, 100, 110, 180, 190, 200, 210] },
     currentDjBeatMap:null,
     djMode:{ active:false },
@@ -53,6 +55,17 @@ test('iPad visual analysis follows song time without routing the audible element
   context.audio.currentTime = 0.08;
   analyser.getByteFrequencyData(second);
   assert.ok(second[4] > first[4]);
+  context.currentBeatMap = null;
+  context.window.MineradioMobile.visualLevels = {
+    url:context.audio.src, levels:[125, 130, 135, 140], at:990
+  };
+  const live = new Uint8Array(1024);
+  analyser.getByteFrequencyData(live);
+  assert.ok(live[4] > 0, 'native PCM should drive visuals without a beat-map cache');
+  context.Date.now = () => 1500;
+  const stale = new Uint8Array(1024);
+  analyser.getByteFrequencyData(stale);
+  assert.equal(stale[4], 0, 'stale PCM must not animate a stalled stream');
   context.audio.paused = true;
   analyser.getByteFrequencyData(paused);
   assert.equal(paused[4], 0);

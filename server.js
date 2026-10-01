@@ -460,7 +460,10 @@ async function streamAudioWithReconnect(options) {
   const absoluteStart = contentStart == null
     ? (response.status === 206 ? audioRangeStart(originalRange) : 0)
     : contentStart;
-  const retryDelays = [120, 350, 800];
+  // iPad AVPlayer can continue from its forward buffer while a brief upstream
+  // outage is repaired. Keep the response and byte position instead of forcing
+  // the player to reopen the track; desktop retains its shorter retry budget.
+  const retryDelays = IS_MOBILE ? [120, 350, 800, 1500, 3000] : [120, 350, 800];
   let written = 0;
   let lastError = null;
 

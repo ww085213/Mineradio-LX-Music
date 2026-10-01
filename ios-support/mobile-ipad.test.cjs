@@ -108,18 +108,33 @@ test('native audio facade forwards play, seek, volume and end without WebKit pla
   audio.pause();
   assert.ok(app.calls.every(c => c.method !== 'syncAudio'));
 });
+test('native PCM visual levels are accepted only for the current song', () => {
+  const app = boot();
+  const audio = app.mobile.createAudio();
+  audio.src = 'http://localhost:3000/api/audio?url=one';
+  app.mobile.nativeVisualEvent({ url:audio.src, levels:[12, 34, 56, 78] });
+  assert.deepEqual(Array.from(app.mobile.visualLevels.levels), [12, 34, 56, 78]);
+  audio.src = 'http://localhost:3000/api/audio?url=two';
+  app.mobile.nativeVisualEvent({ url:'http://localhost:3000/api/audio?url=one', levels:[200, 200, 200, 200] });
+  assert.deepEqual(Array.from(app.mobile.visualLevels.levels), [12, 34, 56, 78]);
+});
 test('native song time advances smoothly between updates and freezes while buffering', async () => {
   const app = boot();
   const audio = app.mobile.createAudio();
   audio.src = 'http://localhost:3000/api/audio?url=song';
   await audio.play();
-  app.mobile.nativePlaybackEvent({ url:audio.src, event:'timeupdate', position:7, duration:180, playing:true });
+  app.mobile.nativePlaybackEvent({ url:audio.src, event:'timeupdate', position:7, duration:180, bufferedEnd:23, playing:true });
+  assert.equal(audio.buffered.end(0), 23, 'report AVPlayer buffer rather than pretending the whole song is cached');
   app.setNow(10250);
   assert.ok(Math.abs(audio.currentTime - 7.25) < 0.001);
-  app.mobile.nativePlaybackEvent({ url:audio.src, event:'timeupdate', position:7.25, duration:180, playing:false });
+  app.mobile.nativePlaybackEvent({ url:audio.src, event:'buffering', position:7.25, duration:180, bufferedEnd:7.25, playing:false });
   app.setNow(11000);
   assert.equal(audio.currentTime, 7.25);
   assert.equal(audio.paused, false, 'buffering must not be presented as a user pause');
+  assert.equal(audio.readyState, 2);
+  app.mobile.nativePlaybackEvent({ url:audio.src, event:'playing', position:7.25, duration:180, bufferedEnd:35, playing:true });
+  assert.equal(audio.readyState, 4);
+  assert.equal(audio.buffered.end(0), 35);
 });
 test('audio session activation is explicit and the playing event does not reactivate it', async () => {
   const app = boot();

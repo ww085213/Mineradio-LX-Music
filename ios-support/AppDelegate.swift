@@ -3,8 +3,99 @@ import WebKit
 import Capacitor
 import AVFoundation
 import MediaPlayer
+import MediaToolbox
+import AudioToolbox
 import CryptoKit
 import Security
+
+// Observe the PCM that AVPlayer is already decoding. The tap never changes the
+// samples or downloads a second copy of the song for visual analysis.
+private final class MineradioVisualMeter {
+    private let lock = NSLock()
+    private var format = AudioStreamBasicDescription()
+    private var levels = [Int](repeating: 0, count: 4)
+    private var updatedAt: CFAbsoluteTime = 0
+    private var timedLevels: [(time: Double, levels: [Int])] = []
+    private var low = 0.0
+    private var lowMid = 0.0
+    private var highMid = 0.0
+
+    func prepare(_ value: AudioStreamBasicDescription) {
+        format = value
+        low = 0
+        lowMid = 0
+        highMid = 0
+    }
+
+    func sample(_ buffers: UnsafeMutablePointer<AudioBufferList>, frames: Int, assetTime: Double) {
+        guard format.mFormatID == kAudioFormatLinearPCM, frames > 0 else { return }
+        let isFloat = (format.mFormatFlags & kAudioFormatFlagIsFloat) != 0 && format.mBitsPerChannel == 32
+        let isInt16 = (format.mFormatFlags & kAudioFormatFlagIsSignedInteger) != 0 && format.mBitsPerChannel == 16
+        guard isFloat || isInt16 else { return }
+        let first = UnsafeMutableAudioBufferListPointer(buffers).first
+        guard let buffer = first, let bytes = buffer.mData else { return }
+        let channels = max(1, Int(format.mChannelsPerFrame))
+        let interleaved = (format.mFormatFlags & kAudioFormatFlagIsNonInterleaved) == 0
+        let stride = interleaved ? channels : 1
+        let available = Int(buffer.mDataByteSize) / (isFloat ? 4 : 2) / stride
+        let count = min(frames, available)
+        guard count > 0 else { return }
+        let floats = isFloat ? bytes.assumingMemoryBound(to: Float.self) : nil
+        let integers = isInt16 ? bytes.assumingMemoryBound(to: Int16.self) : nil
+        let rate = max(8000, format.mSampleRate)
+        let a0 = min(1, 2 * Double.pi * 145 / rate)
+        let a1 = min(1, 2 * Double.pi * 490 / rate)
+        let a2 = min(1, 2 * Double.pi * 2600 / rate)
+        var powers = [Double](repeating: 0, count: 4)
+        for index in 0..<count {
+            let offset = index * stride
+            let x: Double
+            if let floats = floats { x = Double(floats[offset]) }
+            else { x = Double(integers![offset]) / 32768 }
+            low += a0 * (x - low)
+            lowMid += a1 * (x - lowMid)
+            highMid += a2 * (x - highMid)
+            powers[0] += low * low
+            let midBass = lowMid - low
+            powers[1] += midBass * midBass
+            let mid = highMid - lowMid
+            powers[2] += mid * mid
+            let treble = x - highMid
+            powers[3] += treble * treble
+        }
+        // Compress dynamic range for quiet tracks; UI applies its own smoothing.
+        let gains = [820.0, 920.0, 1050.0, 1250.0]
+        let result = (0..<4).map { band in
+            min(255, max(0, Int(sqrt(powers[band] / Double(count)) * gains[band])))
+        }
+        lock.lock()
+        levels = result
+        updatedAt = CFAbsoluteTimeGetCurrent()
+        if assetTime.isFinite && assetTime >= 0 {
+            timedLevels.append((assetTime, result))
+            if timedLevels.count > 1500 { timedLevels.removeFirst(300) }
+        }
+        lock.unlock()
+    }
+
+    func currentLevels(at position: Double) -> [Int]? {
+        lock.lock()
+        var result: [Int]? = nil
+        var distance = 0.18
+        for frame in timedLevels.reversed() {
+            let difference = abs(frame.time - position)
+            if difference < distance {
+                distance = difference
+                result = frame.levels
+            }
+        }
+        if result == nil && timedLevels.isEmpty && CFAbsoluteTimeGetCurrent() - updatedAt < 0.5 {
+            result = levels
+        }
+        lock.unlock()
+        return result
+    }
+}
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -95,6 +186,70 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
     private var requestedRate: Float = 1
     private var repeatCurrentItem = false
     private var nativeEnded = false
+    private var visualMeter: MineradioVisualMeter?
+    private var visualTimer: Timer?
+
+    private func startVisualUpdates() {
+        guard visualTimer == nil else { return }
+        visualTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
+            guard let self = self, UIApplication.shared.applicationState == .active,
+                  let player = self.musicPlayer, player.timeControlStatus == .playing,
+                  let levels = self.visualMeter?.currentLevels(at: self.finiteSeconds(player.currentTime())) else { return }
+            let state: [String: Any] = ["url": self.playbackURL, "levels": levels]
+            guard let data = try? JSONSerialization.data(withJSONObject: state),
+                  let json = String(data: data, encoding: .utf8) else { return }
+            self.webView?.evaluateJavaScript("window.MineradioMobile && window.MineradioMobile.nativeVisualEvent(\(json))", completionHandler: nil)
+        }
+    }
+
+    private func installVisualTap(on item: AVPlayerItem, generation: Int) {
+        // audioMix supports remote file-based media such as MP3, but not HLS.
+        // Unsupported formats keep normal playback without visual sampling.
+        let meter = MineradioVisualMeter()
+        let pointer = Unmanaged.passRetained(meter).toOpaque()
+        var callbacks = MTAudioProcessingTapCallbacks(
+            version: kMTAudioProcessingTapCallbacksVersion_0,
+            clientInfo: pointer,
+            init: { _, clientInfo, storage in storage.pointee = clientInfo },
+            finalize: { tap in
+                Unmanaged<MineradioVisualMeter>.fromOpaque(MTAudioProcessingTapGetStorage(tap)).release()
+            },
+            prepare: { tap, _, format in
+                Unmanaged<MineradioVisualMeter>.fromOpaque(MTAudioProcessingTapGetStorage(tap)).takeUnretainedValue().prepare(format.pointee)
+            },
+            unprepare: { _ in },
+            process: { tap, frames, _, buffers, framesOut, flagsOut in
+                var assetRange = CMTimeRange(start: .zero, duration: .zero)
+                let status = MTAudioProcessingTapGetSourceAudio(tap, frames, buffers, flagsOut, &assetRange, framesOut)
+                if status == noErr && framesOut.pointee > 0 {
+                    let assetTime = CMTimeGetSeconds(assetRange.start)
+                    Unmanaged<MineradioVisualMeter>.fromOpaque(MTAudioProcessingTapGetStorage(tap)).takeUnretainedValue()
+                        .sample(buffers, frames: Int(framesOut.pointee), assetTime: assetTime)
+                }
+            }
+        )
+        var tap: MTAudioProcessingTap?
+        let result = MTAudioProcessingTapCreate(kCFAllocatorDefault, &callbacks,
+                                                kMTAudioProcessingTapCreationFlag_PostEffects, &tap)
+        guard result == noErr, let tap = tap else {
+            Unmanaged<MineradioVisualMeter>.fromOpaque(pointer).release()
+            return
+        }
+        item.asset.loadValuesAsynchronously(forKeys: ["tracks"]) { [weak self, weak item] in
+            DispatchQueue.main.async {
+                guard let self = self, let item = item,
+                      self.playbackGeneration == generation, self.musicItem === item,
+                      let track = item.asset.tracks(withMediaType: .audio).first else { return }
+                let parameters = AVMutableAudioMixInputParameters(track: track)
+                parameters.audioTapProcessor = tap
+                let mix = AVMutableAudioMix()
+                mix.inputParameters = [parameters]
+                item.audioMix = mix
+                self.visualMeter = meter
+                self.startVisualUpdates()
+            }
+        }
+    }
 
     private func finiteSeconds(_ time: CMTime) -> Double {
         let value = CMTimeGetSeconds(time)
@@ -104,8 +259,21 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
     private func playbackState(_ event: String, message: String = "") -> [String: Any] {
         let position = musicPlayer.map { finiteSeconds($0.currentTime()) } ?? 0
         let duration = musicItem.map { finiteSeconds($0.duration) } ?? 0
+        var bufferedStart = 0.0
+        var bufferedEnd = 0.0
+        for value in musicItem?.loadedTimeRanges ?? [] {
+            let range = value.timeRangeValue
+            let start = finiteSeconds(range.start)
+            let finish = finiteSeconds(CMTimeRangeGetEnd(range))
+            if start <= position + 0.5 && finish >= position {
+                bufferedStart = start
+                bufferedEnd = finish
+                break
+            }
+        }
         return ["event": event, "url": playbackURL, "position": position,
                 "duration": duration, "playing": musicPlayer?.timeControlStatus == .playing && !nativeEnded,
+                "bufferedStart": bufferedStart, "bufferedEnd": bufferedEnd,
                 "message": message]
     }
 
@@ -141,17 +309,38 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
         remoteSeekSerial += 1
         remoteSeekTarget = nil
         nativeEnded = false
+        visualMeter = nil
         itemStatusObserver = nil
         if let observer = itemEndObserver { NotificationCenter.default.removeObserver(observer) }
         itemEndObserver = nil
         let item = AVPlayerItem(url: url)
+        // Use AVPlayer's own forward buffer for online audio. This is a
+        // preference, not a second full-song download or a startup gate.
+        let localCache = url.isFileURL || url.path.hasPrefix("/api/mobile/audio-cache/")
+        item.preferredForwardBufferDuration = localCache ? 0 : 16
         musicItem = item
         playbackURL = source
+        let originalURL = URLComponents(string: source)?.queryItems?.first(where: { $0.name == "url" })?.value ?? source
+        if !originalURL.lowercased().contains(".m3u8") {
+            installVisualTap(on: item, generation: playbackGeneration)
+        }
         if musicPlayer == nil {
             musicPlayer = AVPlayer()
             musicPlayer?.automaticallyWaitsToMinimizeStalling = true
             playerStatusObserver = musicPlayer?.observe(\.timeControlStatus, options: [.new]) { [weak self] _, _ in
-                DispatchQueue.main.async { self?.publishNowPlaying() }
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+                    guard let item = self.musicItem, self.musicPlayer?.currentItem === item else {
+                        self.publishNowPlaying()
+                        return
+                    }
+                    guard let status = self.musicPlayer?.timeControlStatus else { return }
+                    switch status {
+                    case .waitingToPlayAtSpecifiedRate: self.emitPlaybackState("buffering")
+                    case .playing: self.emitPlaybackState("playing")
+                    default: self.publishNowPlaying()
+                    }
+                }
             }
         }
         musicPlayer?.replaceCurrentItem(with: item)
@@ -266,6 +455,7 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
             self.musicPlayer?.pause()
             self.musicPlayer?.replaceCurrentItem(with: nil)
             self.musicItem = nil
+            self.visualMeter = nil
             self.playbackURL = ""
             self.nativeEnded = false
             self.remoteSeekSerial += 1

@@ -53,7 +53,7 @@ function nonLoopbackAddress() {
 (async () => {
   const payload = crypto.randomBytes(768 * 1024);
   const icon = fs.readFileSync(path.resolve(__dirname, 'icon.png'));
-  let disconnectedOnce = false;
+  let prematureDisconnects = 0;
   let rangeReconnects = 0;
   const upstream = http.createServer((req, res) => {
     if (req.url === '/cover') {
@@ -72,9 +72,9 @@ function nonLoopbackAddress() {
       'ETag':'"mineradio-proxy-test"',
       ...(match ? { 'Content-Range':`bytes ${start}-${end}/${payload.length}` } : {}),
     });
-    if (!disconnectedOnce && !match) {
-      disconnectedOnce = true;
-      res.write(payload.subarray(0, 128 * 1024));
+    if (prematureDisconnects < 4) {
+      const partial = prematureDisconnects++ === 0 ? 128 * 1024 : 16 * 1024;
+      res.write(payload.subarray(start, Math.min(end + 1, start + partial)));
       setTimeout(() => res.socket.destroy(), 20);
       return;
     }
@@ -101,7 +101,7 @@ function nonLoopbackAddress() {
     assert.strictEqual(result.status, 200);
     assert.strictEqual(result.headers['x-mineradio-audio-proxy'], 'range-reconnect-v2');
     assert.deepStrictEqual(result.body, payload);
-    assert.ok(rangeReconnects >= 1, 'proxy did not issue a byte-range reconnect');
+    assert.ok(rangeReconnects >= 4, 'iPad proxy did not survive repeated byte-range reconnects');
     const rangeStart = 222222;
     const ranged = await fetchBuffer(`http://127.0.0.1:${appPort}/api/audio?url=${encodeURIComponent(target)}`, { Range:`bytes=${rangeStart}-` });
     assert.strictEqual(ranged.status, 206);
