@@ -86,8 +86,11 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
     private var itemStatusObserver: NSKeyValueObservation?
     private var itemEndObserver: NSObjectProtocol?
     private var timeObserver: Any?
+    private var playerStatusObserver: NSKeyValueObservation?
     private var playbackURL = ""
     private var playbackGeneration = 0
+    private var remoteSeekSerial = 0
+    private var remoteSeekTarget: Double?
     private var pendingPlayCall: CAPPluginCall?
     private var requestedRate: Float = 1
     private var repeatCurrentItem = false
@@ -113,7 +116,9 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
               let data = try? JSONSerialization.data(withJSONObject: state),
               let json = String(data: data, encoding: .utf8) else { return }
         webView?.evaluateJavaScript("window.MineradioMobile && window.MineradioMobile.nativePlaybackEvent(\(json))", completionHandler: nil)
-        publishNowPlaying()
+        // The system advances elapsed time from the published rate. Replacing
+        // Now Playing every half-second can fight a lock-screen scrub gesture.
+        if event != "timeupdate" { publishNowPlaying() }
     }
 
     private func finishPendingPlay(_ error: String? = nil) {
@@ -133,6 +138,8 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func prepareMusicPlayer(_ url: URL, source: String) {
         playbackGeneration += 1
+        remoteSeekSerial += 1
+        remoteSeekTarget = nil
         nativeEnded = false
         itemStatusObserver = nil
         if let observer = itemEndObserver { NotificationCenter.default.removeObserver(observer) }
@@ -143,6 +150,9 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
         if musicPlayer == nil {
             musicPlayer = AVPlayer()
             musicPlayer?.automaticallyWaitsToMinimizeStalling = true
+            playerStatusObserver = musicPlayer?.observe(\.timeControlStatus, options: [.new]) { [weak self] _, _ in
+                DispatchQueue.main.async { self?.publishNowPlaying() }
+            }
         }
         musicPlayer?.replaceCurrentItem(with: item)
         if timeObserver == nil, let player = musicPlayer {
@@ -258,6 +268,8 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
             self.musicItem = nil
             self.playbackURL = ""
             self.nativeEnded = false
+            self.remoteSeekSerial += 1
+            self.remoteSeekTarget = nil
             self.publishNowPlaying()
             call.resolve()
         }
@@ -291,6 +303,27 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
 
     // AVPlayer is the sole decoder. The web UI controls it through the facade;
     // WebKit never starts its own media session or ten-second skip controls.
+    private func seekFromSystem(_ requestedPosition: Double) {
+        guard let player = musicPlayer, let item = musicItem else { return }
+        let nativeDuration = finiteSeconds(item.duration)
+        let reportedDuration = nowPlayingState["duration"] as? Double ?? 0
+        let duration = nativeDuration > 0 ? nativeDuration : reportedDuration
+        let position = duration > 0 ? min(duration, requestedPosition) : requestedPosition
+        remoteSeekSerial += 1
+        let serial = remoteSeekSerial
+        let generation = playbackGeneration
+        remoteSeekTarget = position
+        publishNowPlaying()
+        player.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
+            DispatchQueue.main.async {
+                guard let self = self, self.playbackGeneration == generation, self.remoteSeekSerial == serial else { return }
+                self.remoteSeekTarget = nil
+                if finished { self.emitPlaybackState("seeked") }
+                else { self.publishNowPlaying() }
+            }
+        }
+    }
+
     private func installTrackCommands() {
         let commands = MPRemoteCommandCenter.shared()
         commands.skipBackwardCommand.isEnabled = false
@@ -299,6 +332,7 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
         commands.seekForwardCommand.isEnabled = false
         commands.previousTrackCommand.isEnabled = true
         commands.nextTrackCommand.isEnabled = true
+        commands.changePlaybackPositionCommand.isEnabled = true
         commands.playCommand.isEnabled = true
         commands.pauseCommand.isEnabled = true
         guard remoteTargets.isEmpty else { return }
@@ -312,6 +346,13 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
             DispatchQueue.main.async {
                 self?.webView?.evaluateJavaScript("window.MineradioMobile && window.MineradioMobile.remoteTrackCommand('next')", completionHandler: nil)
             }
+            return .success
+        }
+        let seek = commands.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let positionEvent = event as? MPChangePlaybackPositionCommandEvent,
+                  positionEvent.positionTime.isFinite, positionEvent.positionTime >= 0 else { return .commandFailed }
+            let position = positionEvent.positionTime
+            DispatchQueue.main.async { self?.seekFromSystem(position) }
             return .success
         }
         let play = commands.playCommand.addTarget { [weak self] _ in
@@ -329,6 +370,7 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
             return .success
         }
         remoteTargets = [(commands.previousTrackCommand, previous), (commands.nextTrackCommand, next),
+                         (commands.changePlaybackPositionCommand, seek),
                          (commands.playCommand, play), (commands.pauseCommand, pause)]
     }
 
@@ -339,8 +381,10 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
             MPMediaItemPropertyArtist: nowPlayingState["artist"] as? String ?? "",
             MPNowPlayingInfoPropertyPlaybackRate: nativePlaying ? Double(requestedRate) : 0.0
         ]
-        let duration = musicItem.map { finiteSeconds($0.duration) } ?? (nowPlayingState["duration"] as? Double ?? 0)
-        let position = musicPlayer.map { finiteSeconds($0.currentTime()) } ?? (nowPlayingState["position"] as? Double ?? 0)
+        let nativeDuration = musicItem.map { finiteSeconds($0.duration) } ?? 0
+        let reportedDuration = nowPlayingState["duration"] as? Double ?? 0
+        let duration = nativeDuration > 0 ? nativeDuration : reportedDuration
+        let position = remoteSeekTarget ?? (musicPlayer.map { finiteSeconds($0.currentTime()) } ?? (nowPlayingState["position"] as? Double ?? 0))
         let queueCount = nowPlayingState["queueCount"] as? Int ?? 0
         let queueIndex = nowPlayingState["queueIndex"] as? Int ?? -1
         if queueCount > 0 {

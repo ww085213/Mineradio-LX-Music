@@ -164,6 +164,7 @@
     }
     var position = Number(state.position);
     if (position >= 0 && isFinite(position)) media._position = position;
+    if (state.event === 'seeked') media._emit('seeked');
     if (state.event === 'error') {
       media._paused = true; media._error = { code:4, message:String(state.message || '播放失败') };
       media._emit('error'); return;

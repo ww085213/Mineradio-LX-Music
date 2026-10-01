@@ -88,7 +88,7 @@ test('native audio facade forwards play, seek, volume and end without WebKit pla
   };
   const audio = app.mobile.createAudio();
   const seen = [];
-  ['play', 'playing', 'loadedmetadata', 'timeupdate', 'ended'].forEach(name => audio.addEventListener(name, () => seen.push(name)));
+  ['play', 'playing', 'loadedmetadata', 'timeupdate', 'seeked', 'ended'].forEach(name => audio.addEventListener(name, () => seen.push(name)));
   audio.src = 'http://localhost:3000/api/audio?url=test';
   audio.currentTime = 12;
   audio.volume = 0.6;
@@ -99,6 +99,9 @@ test('native audio facade forwards play, seek, volume and end without WebKit pla
   assert.ok(seen.includes('playing'));
   app.mobile.nativePlaybackEvent({ url:audio.src, event:'timeupdate', position:42, duration:210, playing:true });
   assert.equal(audio.currentTime, 42);
+  app.mobile.nativePlaybackEvent({ url:audio.src, event:'seeked', position:98, duration:210, playing:true });
+  assert.equal(audio.currentTime, 98);
+  assert.ok(seen.includes('seeked'));
   app.mobile.nativePlaybackEvent({ url:audio.src, event:'ended', position:210, duration:210, playing:false });
   assert.equal(audio.ended, true);
   assert.ok(seen.includes('ended'));
@@ -213,6 +216,10 @@ test('native AVPlayer is the sole system player with music controls and artwork'
   assert.doesNotMatch(swift, /syncAudio|takeOver\(|resumeWebAudio|finishWebAudioResume/);
   assert.match(swift, /commands\.skipForwardCommand\.isEnabled = false/);
   assert.match(swift, /commands\.nextTrackCommand\.isEnabled = true/);
+  assert.match(swift, /commands\.changePlaybackPositionCommand\.isEnabled = true/);
+  assert.match(swift, /event as\? MPChangePlaybackPositionCommandEvent/);
+  assert.match(swift, /self\?\.seekFromSystem\(position\)/);
+  assert.match(swift, /if event != "timeupdate" \{ publishNowPlaying\(\) \}/);
   assert.match(swift, /MPMediaItemPropertyArtwork/);
   assert.match(swift, /MPNowPlayingInfoPropertyPlaybackQueueCount/);
   assert.doesNotMatch(swift, /import NowPlaying|MediaSession<MineradioOfficialNowPlayingModel>/);
