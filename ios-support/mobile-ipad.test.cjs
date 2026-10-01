@@ -66,7 +66,7 @@ test('pinch produces zoom, not an unintended song click', () => {
   assert.ok(app.events.some(e => e.type === 'wheel' && e.deltaY < 0));
   assert.equal(app.events.filter(e => e.type === 'click').length, 0);
 });
-test('system media mode keeps one player and never performs native handoff', async () => {
+test('system media mode uses one native player and never performs audio handoff', async () => {
   const app = boot();
   app.mobile.enterBackgroundAudio();
   assert.equal(app.media.paused, false);
@@ -76,7 +76,34 @@ test('system media mode keeps one player and never performs native handoff', asy
   assert.equal(app.calls.filter(c => ['syncAudio', 'resumeWebAudio', 'finishWebAudioResume'].includes(c.method)).length, 0);
   assert.equal(app.media.paused, false);
   assert.equal(app.mobile.isNativeAudioOwned(), false);
-  assert.equal(app.mobile.backgroundPlaybackMode, 'system-media-session');
+  app.mobile.createAudio();
+  assert.equal(app.mobile.isNativeAudioOwned(), true);
+  assert.equal(app.mobile.backgroundPlaybackMode, 'native-avplayer');
+});
+test('native audio facade forwards play, seek, volume and end without WebKit playback', async () => {
+  const app = boot();
+  app.window.Capacitor.nativePromise = (plugin, method, value) => {
+    app.calls.push({ plugin, method, value });
+    return Promise.resolve(method === 'playAudio' ? { duration:210 } : {});
+  };
+  const audio = app.mobile.createAudio();
+  const seen = [];
+  ['play', 'playing', 'loadedmetadata', 'timeupdate', 'ended'].forEach(name => audio.addEventListener(name, () => seen.push(name)));
+  audio.src = 'http://localhost:3000/api/audio?url=test';
+  audio.currentTime = 12;
+  audio.volume = 0.6;
+  await audio.play();
+  assert.equal(audio.paused, false);
+  assert.equal(audio.duration, 210);
+  assert.equal(app.calls.find(c => c.method === 'playAudio').value.position, 12);
+  assert.ok(seen.includes('playing'));
+  app.mobile.nativePlaybackEvent({ url:audio.src, event:'timeupdate', position:42, duration:210, playing:true });
+  assert.equal(audio.currentTime, 42);
+  app.mobile.nativePlaybackEvent({ url:audio.src, event:'ended', position:210, duration:210, playing:false });
+  assert.equal(audio.ended, true);
+  assert.ok(seen.includes('ended'));
+  audio.pause();
+  assert.ok(app.calls.every(c => c.method !== 'syncAudio'));
 });
 test('audio session activation is explicit and the playing event does not reactivate it', async () => {
   const app = boot();
@@ -179,9 +206,11 @@ test('cover proxy functions use existing backend route; FPS supports tap', () =>
   assert.match(html, /raw\.lyricGlowStrength == null/);
 });
 
-test('native metadata and commands cannot start the retired second background player', () => {
+test('native AVPlayer is the sole system player with music controls and artwork', () => {
   const swift = fs.readFileSync(path.join(__dirname, 'AppDelegate.swift'), 'utf8');
-  assert.doesNotMatch(swift, /AVPlayer|syncAudio|takeOver\(|resumeWebAudio|finishWebAudioResume/);
+  assert.match(swift, /private var musicPlayer: AVPlayer\?/);
+  assert.match(swift, /CAPPluginMethod\(name: "playAudio"/);
+  assert.doesNotMatch(swift, /syncAudio|takeOver\(|resumeWebAudio|finishWebAudioResume/);
   assert.match(swift, /commands\.skipForwardCommand\.isEnabled = false/);
   assert.match(swift, /commands\.nextTrackCommand\.isEnabled = true/);
   assert.match(swift, /MPMediaItemPropertyArtwork/);
@@ -192,7 +221,7 @@ test('native metadata and commands cannot start the retired second background pl
   assert.match(swift, /commands\.pauseCommand\.addTarget/);
   assert.match(swift, /guard !audioSessionActivated else \{ return \}/);
   assert.match(swift, /setCategory\(\.playback/);
-  assert.match(code, /backgroundPlaybackMode = 'system-media-session'/);
-  assert.match(code, /mobile\.isNativeAudioOwned = function \(\) \{ return false; \}/);
+  assert.match(code, /backgroundPlaybackMode = 'native-avplayer'/);
+  assert.match(code, /mobile\.isNativeAudioOwned = function \(\) \{ return !!nativeAudio; \}/);
   assert.doesNotMatch(code, /native\('syncAudio'/);
 });

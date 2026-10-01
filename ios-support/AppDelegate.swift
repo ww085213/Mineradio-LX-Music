@@ -64,6 +64,11 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
     let jsName = "MineradioNative"
     let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "activateAudio", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "playAudio", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pauseAudio", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "seekAudio", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setAudioSettings", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stopAudio", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "syncNowPlaying", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "secure", returnType: CAPPluginReturnPromise)
     ]
@@ -76,6 +81,187 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
     private var coverGeneration = 0
     private var coverTask: URLSessionDataTask?
     private var coverArtwork: MPMediaItemArtwork?
+    private var musicPlayer: AVPlayer?
+    private var musicItem: AVPlayerItem?
+    private var itemStatusObserver: NSKeyValueObservation?
+    private var itemEndObserver: NSObjectProtocol?
+    private var timeObserver: Any?
+    private var playbackURL = ""
+    private var playbackGeneration = 0
+    private var pendingPlayCall: CAPPluginCall?
+    private var requestedRate: Float = 1
+    private var repeatCurrentItem = false
+    private var nativeEnded = false
+
+    private func finiteSeconds(_ time: CMTime) -> Double {
+        let value = CMTimeGetSeconds(time)
+        return value.isFinite && value >= 0 ? value : 0
+    }
+
+    private func playbackState(_ event: String, message: String = "") -> [String: Any] {
+        let position = musicPlayer.map { finiteSeconds($0.currentTime()) } ?? 0
+        let duration = musicItem.map { finiteSeconds($0.duration) } ?? 0
+        return ["event": event, "url": playbackURL, "position": position,
+                "duration": duration, "playing": musicPlayer?.timeControlStatus == .playing && !nativeEnded,
+                "message": message]
+    }
+
+    private func emitPlaybackState(_ event: String, message: String = "") {
+        let state = playbackState(event, message: message)
+        notifyListeners("audioState", data: state)
+        guard JSONSerialization.isValidJSONObject(state),
+              let data = try? JSONSerialization.data(withJSONObject: state),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView?.evaluateJavaScript("window.MineradioMobile && window.MineradioMobile.nativePlaybackEvent(\(json))", completionHandler: nil)
+        publishNowPlaying()
+    }
+
+    private func finishPendingPlay(_ error: String? = nil) {
+        guard let call = pendingPlayCall else { return }
+        pendingPlayCall = nil
+        if let error = error { call.reject(error) }
+        else { call.resolve(playbackState("ready")) }
+    }
+
+    private func applyNativeAudioSettings(_ call: CAPPluginCall) {
+        requestedRate = Float(max(0.5, min(2, (call.options["rate"] as? NSNumber)?.doubleValue ?? Double(requestedRate))))
+        repeatCurrentItem = call.options["loop"] as? Bool ?? repeatCurrentItem
+        musicPlayer?.volume = Float(max(0, min(1, (call.options["volume"] as? NSNumber)?.doubleValue ?? Double(musicPlayer?.volume ?? 1))))
+        musicPlayer?.isMuted = call.options["muted"] as? Bool ?? musicPlayer?.isMuted ?? false
+        if musicPlayer?.timeControlStatus == .playing { musicPlayer?.rate = requestedRate }
+    }
+
+    private func prepareMusicPlayer(_ url: URL, source: String) {
+        playbackGeneration += 1
+        nativeEnded = false
+        itemStatusObserver = nil
+        if let observer = itemEndObserver { NotificationCenter.default.removeObserver(observer) }
+        itemEndObserver = nil
+        let item = AVPlayerItem(url: url)
+        musicItem = item
+        playbackURL = source
+        if musicPlayer == nil {
+            musicPlayer = AVPlayer()
+            musicPlayer?.automaticallyWaitsToMinimizeStalling = true
+        }
+        musicPlayer?.replaceCurrentItem(with: item)
+        if timeObserver == nil, let player = musicPlayer {
+            timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { [weak self] _ in
+                guard let self = self, self.musicPlayer?.currentItem === self.musicItem else { return }
+                self.emitPlaybackState("timeupdate")
+            }
+        }
+        itemEndObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self, weak item] _ in
+            guard let self = self, self.musicItem === item else { return }
+            if self.repeatCurrentItem {
+                self.musicPlayer?.seek(to: .zero) { [weak self] _ in self?.musicPlayer?.play() }
+            } else {
+                self.nativeEnded = true
+                self.emitPlaybackState("ended")
+            }
+        }
+        let generation = playbackGeneration
+        itemStatusObserver = item.observe(\.status, options: [.initial, .new]) { [weak self, weak item] observed, _ in
+            DispatchQueue.main.async {
+                guard let self = self, self.playbackGeneration == generation, self.musicItem === item else { return }
+                if observed.status == .failed {
+                    let message = observed.error?.localizedDescription ?? "系统播放器无法读取音频"
+                    self.finishPendingPlay(message)
+                    self.emitPlaybackState("error", message: message)
+                } else if observed.status == .readyToPlay {
+                    self.startPreparedMusic()
+                }
+            }
+        }
+    }
+
+    private var requestedStartPosition: Double = 0
+    private func startPreparedMusic() {
+        guard pendingPlayCall != nil, let player = musicPlayer else { return }
+        let position = requestedStartPosition
+        requestedStartPosition = 0
+        let start = { [weak self] in
+            guard let self = self else { return }
+            player.play()
+            player.rate = self.requestedRate
+            self.finishPendingPlay()
+            self.emitPlaybackState("playing")
+        }
+        if position > 0.35 {
+            player.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+                DispatchQueue.main.async(execute: start)
+            }
+        } else { start() }
+    }
+
+    @objc func playAudio(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            let source = call.getString("url") ?? ""
+            let clientSource = call.getString("clientUrl") ?? source
+            guard let url = URL(string: source), ["http", "https", "file"].contains(url.scheme?.lowercased() ?? "") else {
+                call.reject("系统播放器不支持此音频地址")
+                return
+            }
+            do { try self.activateSession() }
+            catch { call.reject("无法激活 iOS 播放会话"); return }
+            self.finishPendingPlay("已切换歌曲")
+            self.pendingPlayCall = call
+            self.requestedStartPosition = max(0, (call.options["position"] as? NSNumber)?.doubleValue ?? 0)
+            if clientSource != self.playbackURL || self.musicItem == nil || self.musicItem?.status == .failed {
+                self.prepareMusicPlayer(url, source: clientSource)
+            } else if self.musicItem?.status == .readyToPlay {
+                let current = self.musicPlayer.map { self.finiteSeconds($0.currentTime()) } ?? 0
+                if abs(current - self.requestedStartPosition) < 1 { self.requestedStartPosition = 0 }
+                self.nativeEnded = false
+                self.startPreparedMusic()
+            }
+            self.applyNativeAudioSettings(call)
+            let generation = self.playbackGeneration
+            DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
+                guard let self = self, self.playbackGeneration == generation, self.pendingPlayCall === call else { return }
+                self.finishPendingPlay("系统播放器加载超时")
+                self.emitPlaybackState("error", message: "系统播放器加载超时")
+            }
+        }
+    }
+
+    @objc func pauseAudio(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.musicPlayer?.pause()
+            self.emitPlaybackState("pause")
+            call.resolve()
+        }
+    }
+
+    @objc func seekAudio(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            let source = call.getString("url") ?? ""
+            guard source == self.playbackURL, let player = self.musicPlayer else { call.resolve(); return }
+            let position = max(0, (call.options["position"] as? NSNumber)?.doubleValue ?? 0)
+            player.seek(to: CMTime(seconds: position, preferredTimescale: 600)) { _ in
+                DispatchQueue.main.async { self.emitPlaybackState("timeupdate"); call.resolve() }
+            }
+        }
+    }
+
+    @objc func setAudioSettings(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { self.applyNativeAudioSettings(call); call.resolve() }
+    }
+
+    @objc func stopAudio(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            let source = call.getString("url") ?? ""
+            guard source.isEmpty || source == self.playbackURL else { call.resolve(); return }
+            self.finishPendingPlay("已停止播放")
+            self.musicPlayer?.pause()
+            self.musicPlayer?.replaceCurrentItem(with: nil)
+            self.musicItem = nil
+            self.playbackURL = ""
+            self.nativeEnded = false
+            self.publishNowPlaying()
+            call.resolve()
+        }
+    }
 
     private func activateSession() throws {
         let session = AVAudioSession.sharedInstance()
@@ -103,8 +289,8 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    // The WKWebView audio element remains the only player. Native code only
-    // publishes music metadata and routes track buttons back to that element.
+    // AVPlayer is the sole decoder. The web UI controls it through the facade;
+    // WebKit never starts its own media session or ten-second skip controls.
     private func installTrackCommands() {
         let commands = MPRemoteCommandCenter.shared()
         commands.skipBackwardCommand.isEnabled = false
@@ -130,13 +316,15 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
         }
         let play = commands.playCommand.addTarget { [weak self] _ in
             DispatchQueue.main.async {
-                self?.webView?.evaluateJavaScript("window.MineradioMobile && window.MineradioMobile.remoteSystemCommand('play')", completionHandler: nil)
+                self?.musicPlayer?.play()
+                self?.emitPlaybackState("playing")
             }
             return .success
         }
         let pause = commands.pauseCommand.addTarget { [weak self] _ in
             DispatchQueue.main.async {
-                self?.webView?.evaluateJavaScript("window.MineradioMobile && window.MineradioMobile.remoteSystemCommand('pause')", completionHandler: nil)
+                self?.musicPlayer?.pause()
+                self?.emitPlaybackState("pause")
             }
             return .success
         }
@@ -145,13 +333,14 @@ class MineradioNativePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func publishNowPlaying() {
+        let nativePlaying = musicPlayer?.timeControlStatus == .playing && !nativeEnded
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: nowPlayingState["title"] as? String ?? "Mineradio",
             MPMediaItemPropertyArtist: nowPlayingState["artist"] as? String ?? "",
-            MPNowPlayingInfoPropertyPlaybackRate: (nowPlayingState["playing"] as? Bool == true) ? 1.0 : 0.0
+            MPNowPlayingInfoPropertyPlaybackRate: nativePlaying ? Double(requestedRate) : 0.0
         ]
-        let duration = nowPlayingState["duration"] as? Double ?? 0
-        let position = nowPlayingState["position"] as? Double ?? 0
+        let duration = musicItem.map { finiteSeconds($0.duration) } ?? (nowPlayingState["duration"] as? Double ?? 0)
+        let position = musicPlayer.map { finiteSeconds($0.currentTime()) } ?? (nowPlayingState["position"] as? Double ?? 0)
         let queueCount = nowPlayingState["queueCount"] as? Int ?? 0
         let queueIndex = nowPlayingState["queueIndex"] as? Int ?? -1
         if queueCount > 0 {

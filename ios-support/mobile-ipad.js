@@ -25,6 +25,157 @@
   var audioActivation = null;
   mobile.nativeNowPlayingCommands = false;
   mobile.officialNowPlaying = false;
+  var nativeAudio = null;
+  var cachedNativeBlobUrls = Object.create(null);
+  function nativeReadableAudioUrl(source) {
+    if (!/^blob:/i.test(source)) return Promise.resolve(source);
+    if (cachedNativeBlobUrls[source]) return Promise.resolve(cachedNativeBlobUrls[source]);
+    return fetch(source).then(function (response) {
+      if (!response.ok) throw new Error('无法读取本地歌曲');
+      return response.blob();
+    }).then(function (body) {
+      return fetch('/api/mobile/audio-cache', {
+        method:'POST', headers:{ 'Content-Type':body.type || 'application/octet-stream' }, body:body
+      });
+    }).then(function (response) {
+      if (!response.ok) throw new Error('本地歌曲缓存失败：HTTP ' + response.status);
+      return response.json();
+    }).then(function (result) {
+      if (!result || !result.ok || !result.url) throw new Error(result && result.error || '本地歌曲缓存失败');
+      return (cachedNativeBlobUrls[source] = mobile.getServerUrl() + result.url);
+    });
+  }
+  mobile.createAudio = function () {
+    if (nativeAudio) return nativeAudio;
+    var listeners = Object.create(null);
+    var media = {
+      _mrNativeAudio:true, _src:'', _position:0, _duration:NaN,
+      _paused:true, _ended:false, _readyState:0, _error:null,
+      _volume:1, _muted:false, _rate:1, _loop:false,
+      crossOrigin:'anonymous', defaultPlaybackRate:1,
+      addEventListener:function (name, callback) {
+        if (typeof callback === 'function') (listeners[name] || (listeners[name] = [])).push(callback);
+      },
+      removeEventListener:function (name, callback) {
+        var list = listeners[name];
+        if (list) listeners[name] = list.filter(function (item) { return item !== callback; });
+      },
+      setAttribute:function () {},
+      removeAttribute:function (name) { if (name === 'src') this.src = ''; },
+      load:function () { if (this._src) this._emit('loadstart'); },
+      _emit:function (name) {
+        var event = { type:name, target:this, currentTarget:this };
+        var handler = this['on' + name];
+        if (typeof handler === 'function') { try { handler.call(this, event); } catch (error) { console.warn('[iOS audio event]', error); } }
+        (listeners[name] || []).slice().forEach(function (callback) {
+          try { callback.call(media, event); } catch (error) { console.warn('[iOS audio listener]', error); }
+        });
+      },
+      play:function () {
+        if (!this._src) return Promise.reject(new Error('没有播放地址'));
+        var source = this._src;
+        var self = this;
+        return nativeReadableAudioUrl(source).then(function (nativeUrl) {
+          if (source !== self._src) throw new Error('已切换歌曲');
+          return native('playAudio', {
+            url:nativeUrl, clientUrl:source, position:self._position, volume:self._volume,
+            muted:self._muted, rate:self._rate, loop:self._loop
+          });
+        }).then(function (state) {
+          if (source !== self._src) throw new Error('已切换歌曲');
+          if (state && Number(state.duration) > 0) {
+            self._duration = Number(state.duration);
+            self._emit('loadedmetadata'); self._emit('durationchange');
+          }
+          if (self._paused) { self._paused = false; self._emit('play'); }
+          self._readyState = 4; self._ended = false; self._error = null;
+          self._emit('playing'); self._emit('canplay'); self._emit('loadeddata');
+        }).catch(function (error) {
+          if (source === self._src) {
+            self._paused = true; self._error = { code:4, message:String(error && error.message || error) };
+            self._emit('error');
+          }
+          throw error;
+        });
+      },
+      pause:function () {
+        if (!this._paused) { this._paused = true; this._emit('pause'); }
+        native('pauseAudio').catch(function (error) { console.warn('[iOS pause]', error); });
+      }
+    };
+    Object.defineProperties(media, {
+      src:{ get:function () { return this._src; }, set:function (value) {
+        var next = String(value || '');
+        if (next === this._src) return;
+        var previous = this._src;
+        this._src = next; this._position = 0; this._duration = NaN;
+        this._readyState = 0; this._paused = true; this._ended = false; this._error = null;
+        this._emit('emptied');
+        if (!next) native('stopAudio', { url:previous }).catch(function () {});
+      } },
+      currentSrc:{ get:function () { return this._src; } },
+      currentTime:{ get:function () { return this._position; }, set:function (value) {
+        var target = Math.max(0, Number(value) || 0);
+        this._position = target;
+        native('seekAudio', { url:this._src, position:target }).catch(function () {});
+        this._emit('seeked'); this._emit('timeupdate');
+      } },
+      duration:{ get:function () { return this._duration; } },
+      paused:{ get:function () { return this._paused; } },
+      ended:{ get:function () { return this._ended; } },
+      readyState:{ get:function () { return this._readyState; } },
+      error:{ get:function () { return this._error; } },
+      buffered:{ get:function () {
+        var end = this._readyState >= 2 ? Math.max(this._position + 20, Number(this._duration) || 0) : 0;
+        return { length:end > 0 ? 1 : 0, start:function () { return 0; }, end:function () { return end; } };
+      } },
+      volume:{ get:function () { return this._volume; }, set:function (value) {
+        this._volume = Math.max(0, Math.min(1, Number(value) || 0)); scheduleSettings();
+      } },
+      muted:{ get:function () { return this._muted; }, set:function (value) {
+        this._muted = !!value; scheduleSettings();
+      } },
+      playbackRate:{ get:function () { return this._rate; }, set:function (value) {
+        this._rate = Math.max(0.5, Math.min(2, Number(value) || 1)); scheduleSettings();
+      } },
+      loop:{ get:function () { return this._loop; }, set:function (value) {
+        this._loop = !!value; scheduleSettings();
+      } }
+    });
+    var settingsTimer = 0;
+    function scheduleSettings() {
+      if (settingsTimer) return;
+      settingsTimer = setTimeout(function () {
+        settingsTimer = 0;
+        native('setAudioSettings', {
+          volume:media._volume, muted:media._muted, rate:media._rate, loop:media._loop
+        }).catch(function () {});
+      }, 60);
+    }
+    nativeAudio = media;
+    return media;
+  };
+  mobile.nativePlaybackEvent = function (state) {
+    var media = nativeAudio;
+    if (!media || !state || state.url !== media._src) return;
+    var duration = Number(state.duration);
+    if (duration > 0 && isFinite(duration) && duration !== media._duration) {
+      media._duration = duration; media._emit('loadedmetadata'); media._emit('durationchange');
+    }
+    var position = Number(state.position);
+    if (position >= 0 && isFinite(position)) media._position = position;
+    if (state.event === 'error') {
+      media._paused = true; media._error = { code:4, message:String(state.message || '播放失败') };
+      media._emit('error'); return;
+    }
+    if (state.event === 'ended') {
+      media._ended = true; media._paused = true; media._emit('timeupdate'); media._emit('ended'); return;
+    }
+    if (state.playing && media._paused) { media._paused = false; media._emit('play'); media._emit('playing'); }
+    else if (state.event === 'pause' && !media._paused) { media._paused = true; media._emit('pause'); }
+    if (state.playing) media._readyState = 4;
+    media._emit('timeupdate');
+  };
   mobile.activateAudio = function (force) {
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (_error) {}
     // An already active session needs no Capacitor round trip. In the
@@ -43,11 +194,8 @@
     media.__ipadBound = true;
     media.setAttribute('playsinline', '');
     media.addEventListener('play', function () { wasPlayingWhenHidden = true; });
-    // One media element owns playback in both foreground and background. iOS
-    // publishes its Media Session to Control Center; no second AVPlayer is
-    // started and no source/cover/playhead handoff occurs.
-    // attemptAudioPlay activates the session before play(). Reconfiguring it
-    // again on every playing event can disturb an already audible stream.
+    // This is a JS facade only. The native AVPlayer remains the sole audible
+    // decoder across foreground and background, with no WebKit media session.
   };
   mobile.remoteTrackCommand = function (command) {
     if (typeof window.dispatchSystemTrackCommand === 'function') window.dispatchSystemTrackCommand(command);
@@ -85,10 +233,10 @@
       return false;
     });
   };
-  mobile.backgroundPlaybackMode = 'system-media-session';
+  mobile.backgroundPlaybackMode = 'native-avplayer';
   mobile.enterBackgroundAudio = function () {};
   mobile.nativeBackgroundAudioDidStart = function () {};
-  mobile.isNativeAudioOwned = function () { return false; };
+  mobile.isNativeAudioOwned = function () { return !!nativeAudio; };
   var resuming = false;
   mobile.resumeForegroundAudio = async function () {
     if (!boundAudio || resuming || document.hidden) return;

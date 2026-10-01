@@ -30685,9 +30685,10 @@ function renderLxSongResults(songs, q) {
 }
 
 function primeOnlineAudioForUserGesture() {
+  if (iosSystemMediaPlaybackMode()) return;
   try {
     if (!audio) {
-      audio = new Audio();
+      audio = createPlaybackAudio();
       audio.crossOrigin = 'anonymous';
       configurePlaybackAudioElement(audio);
     }
@@ -32326,7 +32327,7 @@ async function playImportedLxInsideMineradio(song, playlistIndex, songIndex, opt
   // source replacement only after a candidate URL is ready.
   if (!recovering) pauseCurrentAudioForTrackSwitch();
   if (!audio) {
-    audio = new Audio();
+    audio = createPlaybackAudio();
     audio.crossOrigin = 'anonymous';
     configurePlaybackAudioElement(audio);
   }
@@ -33625,9 +33626,11 @@ function createEqChain(ctx) {
 function iosSystemMediaPlaybackMode() {
   return !!(window.MineradioMobile && window.MineradioMobile.platform === 'ios');
 }
-// Build 6 keeps one HTMLMediaElement for foreground and background playback.
-// The old AVPlayer handoff used a second decoder and could restart the request,
-// change resolver metadata, or pause during foreground/background transitions.
+function createPlaybackAudio() {
+  return iosSystemMediaPlaybackMode() && window.MineradioMobile.createAudio
+    ? window.MineradioMobile.createAudio() : new Audio();
+}
+// iOS uses one native AVPlayer, with a JS media facade for the existing UI.
 function iosNativeHandoffAudioMode() { return false; }
 function iosAudioEffectsActive() {
   if (!iosNativeHandoffAudioMode()) return true;
@@ -33871,10 +33874,8 @@ function createIosVisualAnalyser() {
 function initAudio() {
   if (audioReady) return;
   if (iosSystemMediaPlaybackMode()) {
-    // Keep iOS on the media element's native system-audio path. Routing the
-    // element through Web Audio makes WKWebView suspend its only audible output
-    // in the background. Visual analysis/effects yield to reliable background
-    // playback on iPad; the same element and playhead remain active throughout.
+    // The facade does not start WebKit media. Native AVPlayer is the sole
+    // audible decoder and sole owner of the system Now Playing card.
     configurePlaybackAudioElement(audio);
     audioReady = true;
     applyVolumeToAudio();
@@ -35094,7 +35095,7 @@ async function playLocalQueueItem(song, idx, opts, token, firstVisualPlay, bmKey
   var gaplessOutgoingAudio = opts.gaplessHandoff ? opts.gaplessOutgoingAudio : null;
   if (opts.gaplessHandoff && opts.preloadedAudio && typeof adoptOriginalGaplessAudio === 'function') {
     adoptOriginalGaplessAudio(opts.preloadedAudio, gaplessOutgoingAudio);
-  } else if (!audio) { audio = new Audio(); audio.crossOrigin = 'anonymous'; configurePlaybackAudioElement(audio); }
+  } else if (!audio) { audio = createPlaybackAudio(); audio.crossOrigin = 'anonymous'; configurePlaybackAudioElement(audio); }
   else {
     audioFadeSerial++;
     clearAudioFadeTimers();
