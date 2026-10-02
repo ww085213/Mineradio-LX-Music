@@ -311,6 +311,224 @@
   ].join('\n');
   document.head.appendChild(style);
 
+  // Phone-only layout. Keep the existing iPad shell and the single native
+  // player untouched; these rules only arrange the existing web controls.
+  var phoneStyle = document.createElement('style');
+  phoneStyle.textContent = `
+    body.phone-device #app-primary-nav,
+    body.phone-device #app-nav-edge-handle,
+    body.phone-device #top-right,
+    body.phone-device #bottom-handle,
+    body.phone-device #fx-fab,
+    body.phone-device #fx-fab-hide-btn { display:none!important; }
+    body.phone-device #phone-header {
+      position:fixed;z-index:24;top:calc(env(safe-area-inset-top) + 8px);
+      left:18px;right:74px;height:48px;display:flex;align-items:center;
+      color:#fff;font:800 22px/1.1 system-ui,sans-serif;letter-spacing:-.045em;
+      pointer-events:none;text-shadow:0 2px 18px rgba(0,0,0,.6);
+    }
+    body.phone-device #lx-source-top-right {
+      position:fixed!important;z-index:25!important;top:calc(env(safe-area-inset-top) + 9px)!important;
+      right:16px!important;left:auto!important;transform:none!important;
+    }
+    body.phone-device #lx-source-top-btn {width:46px!important;min-width:46px!important;height:46px!important;padding:0!important;justify-content:center!important;}
+    body.phone-device #lx-source-top-label,body.phone-device #lx-source-top-count {display:none!important;}
+    body.phone-device #phone-nav {
+      position:fixed;z-index:40;left:0;right:0;bottom:0;height:calc(65px + env(safe-area-inset-bottom));
+      box-sizing:border-box;padding:5px 10px calc(5px + env(safe-area-inset-bottom));
+      display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;
+      background:rgba(7,11,17,.83);border-top:1px solid rgba(255,255,255,.12);
+      -webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);
+    }
+    body.phone-device #phone-nav button {
+      display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+      min-width:0;min-height:48px;border:0;border-radius:13px;background:none;
+      color:rgba(255,255,255,.66);font:650 11px/1.1 system-ui,sans-serif;
+    }
+    body.phone-device #phone-nav button.active {color:#dffffa;background:rgba(0,245,212,.11);}
+    body.phone-device #phone-nav svg {width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;}
+    body.phone-device #empty-home {display:none!important;}
+    body.phone-device #phone-home {
+      position:fixed;z-index:8;left:12px;right:12px;
+      top:calc(env(safe-area-inset-top) + 68px);
+      bottom:calc(146px + env(safe-area-inset-bottom));
+      overflow-y:auto;overflow-x:hidden;touch-action:pan-y;-webkit-overflow-scrolling:touch;
+      color:#fff;scrollbar-width:none;
+    }
+    body.phone-device #phone-home::-webkit-scrollbar {display:none;}
+    body.phone-device #phone-home .phone-hero {
+      position:relative;overflow:hidden;min-height:174px;box-sizing:border-box;padding:23px 21px;
+      border:1px solid rgba(255,255,255,.15);border-radius:25px;
+      background:linear-gradient(130deg,rgba(20,55,67,.84),rgba(12,19,36,.92));
+    }
+    body.phone-device #phone-home .phone-hero::after {
+      content:'';position:absolute;right:-25px;top:-45px;width:190px;height:190px;border-radius:50%;
+      background:radial-gradient(circle,rgba(0,245,212,.22),transparent 67%);pointer-events:none;
+    }
+    body.phone-device #phone-home .phone-kicker {display:block;color:#9cf7e8;font:760 10px/1.2 system-ui,sans-serif;letter-spacing:.22em;}
+    body.phone-device #phone-home h1 {margin:12px 0 8px;font:780 clamp(27px,8vw,34px)/1.12 system-ui,sans-serif;letter-spacing:-.06em;}
+    body.phone-device #phone-home p {margin:0;color:rgba(255,255,255,.69);font:500 13px/1.5 system-ui,sans-serif;}
+    body.phone-device #phone-home .phone-hero button {
+      position:relative;z-index:1;margin-top:17px;min-height:43px;padding:0 18px;
+      border:1px solid rgba(156,247,232,.35);border-radius:999px;
+      background:rgba(0,245,212,.13);color:#eafffb;font:750 13px system-ui,sans-serif;
+    }
+    body.phone-device #phone-home .phone-home-label {margin:22px 4px 11px;color:rgba(255,255,255,.68);font:700 13px system-ui,sans-serif;}
+    body.phone-device #phone-home .phone-home-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+    body.phone-device #phone-home .phone-home-grid button {
+      min-width:0;min-height:96px;text-align:left;padding:15px 14px;
+      border:1px solid rgba(255,255,255,.12);border-radius:20px;
+      background:rgba(9,16,24,.86);color:#fff;font:750 16px system-ui,sans-serif;
+    }
+    body.phone-device #phone-home .phone-home-grid button span {display:block;margin-top:8px;color:rgba(255,255,255,.55);font:500 11px/1.4 system-ui,sans-serif;}
+    body.phone-device.phone-search-open #phone-home,
+    body.phone-device.secondary-view-active #phone-home,
+    body.phone-device.phone-player-open #phone-home {display:none!important;}
+    body.phone-device #app-secondary-view {
+      left:10px!important;right:10px!important;top:calc(env(safe-area-inset-top) + 64px)!important;
+      bottom:calc(78px + env(safe-area-inset-bottom))!important;width:auto!important;
+      height:auto!important;transform:none!important;
+    }
+    body.phone-device .secondary-shell {
+      border-radius:20px;background:#0b1018;
+      backdrop-filter:none;-webkit-backdrop-filter:none;
+    }
+    body.phone-device.secondary-view-active #lyric-viz-stage-host,
+    body.phone-device.secondary-view-active #hand-canvas {display:none!important;}
+    body.phone-device.secondary-view-active #canvas-container,
+    body.phone-device.phone-search-open #canvas-container {visibility:hidden!important;}
+    body.phone-device .secondary-head {padding:13px 15px 10px;gap:7px;}
+    body.phone-device .secondary-title {font-size:22px;}
+    body.phone-device .secondary-subtitle {display:none;}
+    body.phone-device .secondary-toolbar {padding:10px 12px 0;gap:7px;}
+    body.phone-device .secondary-action {min-height:42px;}
+    body.phone-device .secondary-content {padding:12px;}
+    body.phone-device #secondary-library-page .library-layout {display:flex;flex-direction:column;min-height:0;overflow-y:auto;}
+    body.phone-device #secondary-library-page .library-collection-grid {grid-template-columns:repeat(2,minmax(0,1fr));flex:0 0 auto;}
+    body.phone-device #secondary-library-page .library-detail {min-height:280px;flex:1 0 auto;}
+    body.phone-device #now-flow {
+      left:12px!important;right:12px!important;bottom:calc(74px + env(safe-area-inset-bottom))!important;
+      width:auto!important;height:62px!important;padding:6px 10px!important;
+      transform:translateY(10px)!important;box-sizing:border-box;
+    }
+    body.phone-device #now-flow.visible {transform:none!important;opacity:1!important;pointer-events:auto!important;}
+    body.phone-device #now-flow .now-flow-cover {width:46px;height:46px;flex-basis:46px;}
+    body.phone-device #now-flow .now-flow-main {min-width:0;padding:0;}
+    body.phone-device #now-flow .now-flow-artist {display:block;max-width:35%;}
+    body.phone-device #now-flow .now-flow-lyric-box,
+    body.phone-device #now-flow-progress,
+    body.phone-device #now-flow .now-flow-actions>*:not(#nf-play-btn),
+    body.phone-device #now-flow .now-flow-bars {display:none!important;}
+    body.phone-device #now-flow #nf-play-btn {display:grid!important;min-width:44px;min-height:44px;}
+    body.phone-device #bottom-bar {display:none!important;}
+    body.phone-device.phone-player-open #bottom-bar {
+      display:flex!important;position:fixed!important;z-index:1200!important;
+      inset:0!important;width:100vw!important;height:100dvh!important;max-height:none!important;
+      margin:0!important;box-sizing:border-box;padding:calc(env(safe-area-inset-top) + 65px) 16px calc(env(safe-area-inset-bottom) + 22px)!important;
+      transform:none!important;opacity:1!important;pointer-events:auto!important;
+      background:linear-gradient(180deg,rgba(5,8,13,.64),rgba(5,8,13,.12) 32%,rgba(5,8,13,.55) 70%,rgba(5,8,13,.90))!important;
+      backdrop-filter:none!important;-webkit-backdrop-filter:none!important;box-shadow:none!important;border-radius:0!important;
+    }
+    body.phone-device.phone-player-open.now-flow-only #bottom-bar,
+    body.phone-device.phone-player-open.now-flow-only #bottom-bar.visible,
+    body.phone-device.phone-player-open.now-flow-only #bottom-bar.soft-hidden {
+      opacity:1!important;pointer-events:auto!important;transform:none!important;
+    }
+    body.phone-device.phone-player-open #controls,
+    body.phone-device.phone-player-open.diy-mode #controls {
+      display:flex!important;flex-direction:column!important;justify-content:flex-end!important;
+      align-items:center!important;gap:6px!important;width:100%;height:100%;padding:0!important;
+    }
+    body.phone-device.phone-player-open .control-track {
+      position:absolute!important;top:calc(env(safe-area-inset-top) + 65px)!important;
+      left:20px!important;right:20px!important;display:flex!important;
+      flex-direction:column!important;align-items:center!important;gap:16px!important;
+    }
+    body.phone-device.phone-player-open #control-cover {
+      display:block!important;visibility:visible!important;opacity:1!important;
+      width:min(66vw,34dvh,320px)!important;height:auto!important;aspect-ratio:1!important;
+      border-radius:25px!important;flex:none!important;
+    }
+    body.phone-device.phone-player-open .control-meta {
+      display:flex!important;max-width:100%!important;width:100%;align-items:center;text-align:center;
+    }
+    body.phone-device.phone-player-open .control-kicker {font-size:11px;}
+    body.phone-device.phone-player-open .control-title {font-size:clamp(19px,5.4vw,27px);max-width:100%;}
+    body.phone-device.phone-player-open .control-artist {font-size:14px;max-width:100%;}
+    body.phone-device.phone-player-open .control-lyric-box {display:none!important;}
+    body.phone-device.phone-player-open #progress-bar {
+      display:flex!important;position:absolute!important;left:23px!important;right:23px!important;
+      top:auto!important;bottom:calc(184px + env(safe-area-inset-bottom))!important;
+      width:auto!important;height:24px!important;
+    }
+    body.phone-device.phone-player-open .control-cluster.transport {order:1!important;flex:0 0 65px;width:100%!important;justify-content:space-evenly!important;}
+    body.phone-device.phone-player-open .control-cluster.actions {order:2!important;flex:0 0 46px;width:100%!important;justify-content:center!important;}
+    body.phone-device.phone-player-open .control-cluster.modes {order:3!important;flex:0 0 47px;width:100%!important;justify-content:flex-start!important;overflow-x:auto!important;}
+    body.phone-device.phone-player-open .control-cluster.actions .control-track {display:flex!important;}
+    body.phone-device.phone-player-open #now-flow,
+    body.phone-device.phone-player-open #phone-nav,
+    body.phone-device.phone-player-open #phone-header,
+    body.phone-device.phone-player-open #lx-source-top-right {display:none!important;}
+    body.phone-device #phone-player-close {
+      display:none;position:fixed;z-index:1300;top:calc(env(safe-area-inset-top) + 12px);left:16px;
+      width:48px;height:48px;border:1px solid rgba(255,255,255,.2);border-radius:50%;
+      background:rgba(8,12,18,.54);color:#fff;font:700 28px/1 system-ui,sans-serif;
+    }
+    body.phone-device.phone-player-open #phone-player-close {display:grid;place-items:center;}
+    body.phone-device #mobile-diy-btn {display:none!important;}
+    body.phone-device.phone-player-open #mobile-diy-btn {display:flex!important;z-index:1300;top:calc(env(safe-area-inset-top) + 16px);}
+    body.phone-device.phone-search-open #search-area {
+      z-index:26!important;display:flex!important;flex-direction:column!important;
+      left:12px!important;right:12px!important;top:calc(env(safe-area-inset-top) + 64px)!important;
+      bottom:calc(78px + env(safe-area-inset-bottom))!important;width:auto!important;
+      height:auto!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important;
+      transform:none!important;box-sizing:border-box;padding:12px!important;
+      border:1px solid rgba(255,255,255,.12);border-radius:20px;background:#0b1018;
+    }
+    body.phone-device.phone-search-open #search-stack {
+      box-sizing:border-box;padding:0;border:0;background:none;
+    }
+    body.phone-device.phone-search-open #search-stack {width:100%!important;max-width:none!important;min-height:0;}
+    body.phone-device.phone-search-open #search-results {max-height:calc(100dvh - 255px - env(safe-area-inset-top) - env(safe-area-inset-bottom))!important;overflow-y:auto;}
+    body.phone-device.phone-search-open #empty-home {opacity:0!important;visibility:hidden!important;pointer-events:none!important;}
+    body.phone-device:not(.phone-search-open) #search-area {opacity:0!important;visibility:hidden!important;pointer-events:none!important;}
+    body.phone-device #playlist-panel,body.phone-device #fx-panel {
+      top:calc(env(safe-area-inset-top) + 64px)!important;
+      bottom:calc(76px + env(safe-area-inset-bottom))!important;
+    }
+    body.phone-device.phone-player-open #fx-panel.show {z-index:1400!important;bottom:calc(24px + env(safe-area-inset-bottom))!important;}
+    body.phone-device.phone-player-open #mobile-back-btn {z-index:1500;}
+    @media (orientation:landscape) and (max-height:550px) {
+      body.phone-device #phone-nav,body.phone-device #phone-header,
+      body.phone-device #now-flow,body.phone-device #empty-home,
+      body.phone-device #phone-home,
+      body.phone-device #app-secondary-view,body.phone-device #search-area,
+      body.phone-device #phone-player-close,body.phone-device #lx-source-top-right {display:none!important;}
+      body.phone-device #bottom-bar,body.phone-device.phone-player-open #bottom-bar {
+        display:flex!important;position:fixed!important;z-index:1200!important;
+        inset:auto 12px calc(10px + env(safe-area-inset-bottom)) 12px!important;
+        width:min(580px,calc(100vw - 24px))!important;height:72px!important;max-height:72px!important;
+        margin:auto!important;padding:7px 12px!important;opacity:.93!important;pointer-events:auto!important;
+        transform:none!important;border-radius:24px!important;
+        background:rgba(7,11,17,.35)!important;
+        backdrop-filter:blur(12px)!important;-webkit-backdrop-filter:blur(12px)!important;
+      }
+      body.phone-device.now-flow-only #bottom-bar,
+      body.phone-device.now-flow-only #bottom-bar.visible,
+      body.phone-device.now-flow-only #bottom-bar.soft-hidden {
+        opacity:.93!important;pointer-events:auto!important;transform:none!important;
+      }
+      body.phone-device #bottom-bar #controls {height:100%!important;display:flex!important;align-items:center!important;justify-content:center!important;}
+      body.phone-device #bottom-bar .control-cluster.actions,
+      body.phone-device #bottom-bar .control-cluster.modes,
+      body.phone-device #bottom-bar .control-track {display:none!important;}
+      body.phone-device #bottom-bar .control-cluster.transport {display:flex!important;order:1!important;justify-content:center!important;flex:0 0 auto!important;min-height:55px!important;}
+      body.phone-device #bottom-bar #progress-bar {top:0!important;bottom:auto!important;left:18px!important;right:18px!important;}
+      body.phone-device #mobile-diy-btn {display:flex!important;z-index:1300;top:calc(env(safe-area-inset-top) + 6px);}
+    }
+  `;
+  document.head.appendChild(phoneStyle);
+
   function bindGestures(canvas) {
     if (!canvas || canvas.__ipadGestures) return;
     canvas.__ipadGestures = true;
@@ -397,8 +615,123 @@
     shell.appendChild(right);
   }
 
+  function mountPhoneLayout() {
+    if (!/iPhone|iPod/i.test(navigator.userAgent || '') || !document.body) return;
+    var body = document.body;
+    body.classList.add('phone-device');
+    // A diagnostic overlay should not cover the phone header on first launch;
+    // an explicit user preference still wins, and DIY can show it again.
+    if (localStorage.getItem('mineradio-render-fps-hud-v1') == null &&
+        typeof window.toggleRenderFpsHud === 'function') window.toggleRenderFpsHud(false);
+    var header = document.createElement('div');
+    header.id = 'phone-header';
+    header.textContent = 'Mineradio';
+    body.appendChild(header);
+    var home = document.createElement('main');
+    home.id = 'phone-home';
+    home.setAttribute('aria-label', 'Mineradio 手机首页');
+    home.innerHTML = [
+      '<section class="phone-hero"><span class="phone-kicker">YOUR VISUAL RADIO</span>',
+      '<h1>让音乐成为画面</h1><p>同一首歌，同一份视觉氛围。横过手机，进入沉浸播放。</p>',
+      '<button type="button" data-phone-view="player">进入播放器 →</button></section>',
+      '<div class="phone-home-label">开始听歌</div><div class="phone-home-grid">',
+      '<button type="button" data-phone-view="search">搜索音乐<span>歌曲与公开歌单</span></button>',
+      '<button type="button" data-phone-view="library">我的音乐库<span>歌单与本地音乐</span></button>',
+      '<button type="button" data-phone-action="source">管理音源<span>导入和切换音源</span></button>',
+      '<button type="button" data-phone-action="diy">DIY 视觉<span>调整背景与效果</span></button></div>'
+    ].join('');
+    body.appendChild(home);
+    var nav = document.createElement('nav');
+    nav.id = 'phone-nav';
+    nav.setAttribute('aria-label', '手机底部导航');
+    nav.innerHTML = [
+      '<button type="button" data-phone-view="home" aria-label="首页"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10 12 3l9 7v11H3z"/><path d="M9 21v-7h6v7"/></svg><span>首页</span></button>',
+      '<button type="button" data-phone-view="search" aria-label="搜索歌曲和歌单"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="7"/><path d="m16 16 5 5"/></svg><span>搜索</span></button>',
+      '<button type="button" data-phone-view="library" aria-label="音乐库和歌单"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v16M9 4v16M14 5h6v14h-6z"/></svg><span>音乐库</span></button>',
+      '<button type="button" data-phone-view="player" aria-label="打开播放器"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><path d="M12 3v3"/></svg><span>播放</span></button>'
+    ].join('');
+    body.appendChild(nav);
+    var close = document.createElement('button');
+    close.id = 'phone-player-close';
+    close.type = 'button';
+    close.setAttribute('aria-label', '返回手机页面');
+    close.textContent = '⌄';
+    body.appendChild(close);
+    var currentView = 'home', returnView = 'home';
+    function show(view) {
+      if (!/^(home|search|library|player)$/.test(view)) return;
+      if (view === 'player' && currentView !== 'player') returnView = currentView;
+      currentView = view;
+      body.classList.toggle('phone-player-open', view === 'player');
+      body.classList.toggle('phone-search-open', view === 'search');
+      ['playlist-panel', 'fx-panel'].forEach(function (id) {
+        var panel = document.getElementById(id);
+        if (panel) panel.classList.remove('show', 'peek');
+      });
+      Array.prototype.forEach.call(nav.querySelectorAll('[data-phone-view]'), function (button) {
+        var active = button.getAttribute('data-phone-view') === view;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-current', active ? 'page' : 'false');
+      });
+      if (view === 'player') return;
+      if (view === 'library') {
+        if (typeof window.openPrimaryView === 'function') window.openPrimaryView('library');
+        return;
+      }
+      if (body.classList.contains('secondary-view-active') ||
+          (view === 'home' && !body.classList.contains('empty-home-active'))) {
+        if (typeof window.openPrimaryView === 'function') window.openPrimaryView('home');
+      }
+      var search = document.getElementById('search-area');
+      if (search) search.classList.toggle('peek', view === 'search');
+      if (view === 'search') {
+        var input = document.getElementById('search-input');
+        if (input) input.focus();
+      }
+    }
+    nav.addEventListener('click', function (event) {
+      var button = event.target.closest('[data-phone-view]');
+      if (button) show(button.getAttribute('data-phone-view'));
+    });
+    home.addEventListener('click', function (event) {
+      var button = event.target.closest('button');
+      if (!button) return;
+      var view = button.getAttribute('data-phone-view');
+      if (view) { show(view); return; }
+      var action = button.getAttribute('data-phone-action');
+      if (action === 'source' && typeof window.showCurrentLxSource === 'function') window.showCurrentLxSource();
+      if (action === 'diy') {
+        if (!body.classList.contains('diy-mode') && typeof window.toggleDiyMode === 'function') window.toggleDiyMode();
+        if (typeof window.toggleFxPanel === 'function') window.toggleFxPanel(true);
+      }
+    });
+    close.addEventListener('click', function () { show(returnView); });
+    var flow = document.getElementById('now-flow');
+    if (flow) {
+      // The existing cover click toggles a desktop visual. On phones it opens
+      // the full player instead, while the mini play button remains unchanged.
+      flow.addEventListener('click', function (event) {
+        if (!event.target.closest('#now-flow-cover,.now-flow-main')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        show('player');
+      }, true);
+      var main = flow.querySelector('.now-flow-main');
+      if (main) {
+        main.setAttribute('role', 'button');
+        main.setAttribute('tabindex', '0');
+        main.setAttribute('aria-label', '打开完整播放器');
+        main.addEventListener('keydown', function (event) {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); show('player'); }
+        });
+      }
+    }
+    show('home');
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     arrangeMobileHomeColumns();
+    mountPhoneLayout();
     window.addEventListener('resize', function () { arrangeMobileHomeColumns(); }, { passive: true });
     var hud = document.getElementById('render-fps-hud');
     if (hud) {
@@ -411,7 +744,8 @@
       button.onclick = function () { window.toggleRenderFpsHud(); }; panel.prepend(button);
     }
     // Touch has no hover: use the existing transparent mode by default once.
-    if (!localStorage.getItem('mineradio-ipad-glass-v4')) {
+    if ((!document.body || !document.body.classList.contains('phone-device')) &&
+        !localStorage.getItem('mineradio-ipad-glass-v4')) {
       window.toggleHomeTransparencyMode(true); localStorage.setItem('mineradio-ipad-glass-v4', '1');
     }
     bindGestures(window.renderer && window.renderer.domElement);
