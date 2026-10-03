@@ -13764,7 +13764,8 @@ function lyricCameraLockFit(layoutScale, layoutX, layoutY, distance) {
   var scaledH = Math.max(0.01, bounds.h * layoutScale);
   var viewportFit = Math.min(1, safeW / scaledW, safeH / scaledH);
   var lockScaleCap = Math.min(1, (skullSafe ? 0.94 : LYRIC_CAMERA_LOCK_MAX_SCALE) / layoutScale);
-  return clampRange(Math.min(viewportFit, lockScaleCap), skullSafe ? 0.36 : 0.42, 1);
+  var phonePortrait = !!(document.body && document.body.classList.contains('phone-device'));
+  return clampRange(Math.min(viewportFit, lockScaleCap), phonePortrait ? 0.18 : (skullSafe ? 0.36 : 0.42), 1);
 }
 // 兼容旧变量名以便其它代码不破坏
 var lyricsParticles = null;
@@ -16434,6 +16435,16 @@ function refreshStageLyricLayoutMode() {
 function updateStageLyrics3D(dt) {
   if (!stageLyrics.group) return;
   if (shouldSuppressStageParticleLyrics()) { syncStageParticleLyricsVisibility(); return; }
+  var phonePortraitLyrics = !!(document.body && document.body.classList.contains('phone-device'));
+  if (phonePortraitLyrics) {
+    var phonePlayerOpen = document.body.classList.contains('phone-player-open');
+    stageLyrics.group.visible = phonePlayerOpen;
+    if (stageLyrics.starRiver) stageLyrics.starRiver.visible = phonePlayerOpen;
+    if (!phonePlayerOpen) return;
+  } else if (document.body && document.body.classList.contains('phone-landscape')) {
+    stageLyrics.group.visible = true;
+    if (stageLyrics.starRiver) stageLyrics.starRiver.visible = true;
+  }
   if (!fx.particleLyrics && !stageLyrics.current && !stageLyrics.preview && !stageLyrics.previewFar && (!stageLyrics.previewExtras || !stageLyrics.previewExtras.length) && (!stageLyrics.outgoing || !stageLyrics.outgoing.length)) return;
   if (!isFinite(stageLyrics.highBloom)) stageLyrics.highBloom = 0;
   if (!isFinite(stageLyrics.beatGlow)) stageLyrics.beatGlow = 0;
@@ -16567,15 +16578,21 @@ function updateStageLyrics3D(dt) {
   // to a camera-facing column on its right, independent of the user's generic
   // lyric layout, so the record and words never overlap.
   var vinylSoundscapeLyrics = !!(fx && Number(fx.preset) === 10);
-  if (vinylSoundscapeLyrics) {
+  if (vinylSoundscapeLyrics && !phonePortraitLyrics) {
     layoutScale *= innerWidth < 760 ? 0.60 : 0.74;
     layoutX = innerWidth < 760 ? 0.58 : 1.28;
     layoutY = 0.02;
     layoutZ = 0.96;
   }
+  if (phonePortraitLyrics && !skullMouthLyrics) {
+    layoutScale = Math.min(layoutScale, 0.52);
+    layoutX = 0;
+    layoutY = -0.46;
+    layoutZ = 0.62;
+  }
   var lockBaseDistance = wallpaperShelfLyrics ? 5.58 : 4.85;
   var lockDistance = lockBaseDistance + layoutZ;
-  var cameraLockedLyrics = (fx.lyricCameraLock || wallpaperLyricLock || vinylSoundscapeLyrics) && camera;
+  var cameraLockedLyrics = (fx.lyricCameraLock || wallpaperLyricLock || vinylSoundscapeLyrics || phonePortraitLyrics) && camera;
   var skullLyricEdgeGuard = !!(fx && fx.preset === SKULL_PRESET_INDEX && (orbit.centerLocked || orbit.recentering));
   var lockFit = (cameraLockedLyrics || skullLyricEdgeGuard || skullMouthLyrics) ? lyricCameraLockFit(layoutScale, layoutX, layoutY, skullMouthLyrics ? Math.max(2.2, 4.4 + layoutZ) : lockDistance) : 1;
   if (skullMouthLyrics) lockFit = Math.min(lockFit, 1.12);
@@ -16639,7 +16656,7 @@ function updateStageLyrics3D(dt) {
     stageLyricTargetQuaternion(lyricCoverWorldQuat, layoutTiltX, layoutTiltY);
     stageLyrics.group.quaternion.copy(lyricTargetQuat);
   }
-  if (vinylSoundscapeLyrics && camera && stageLyrics.group) {
+  if (vinylSoundscapeLyrics && !phonePortraitLyrics && camera && stageLyrics.group) {
     // Final override after all generic/shelf layout branches: a stable
     // camera-facing lyric column in the right third of the screen.
     setStageLyricViewBasisFromCameraOrQuaternion(null);
@@ -17482,7 +17499,7 @@ function updateControlTrackInfo(song) {
   var artist = document.getElementById('control-artist');
   if (title) title.textContent = song.name || '';
   if (artist) artist.textContent = songDisplaySubtitle(song);
-  var controlCover = song.picUrl || song.cover || song.img || '';
+  var controlCover = songCoverSrc(song, 500) || song.picUrl || song.cover || song.img || '';
   if (!controlCover && (song.name || song.title) && typeof buildLxFallbackCover === 'function') {
     controlCover = buildLxFallbackCover(song);
   }
@@ -35788,7 +35805,8 @@ function updatePlayModeButton(animate) {
 }
 
 function cyclePlayMode() {
-  var modes = ['loop', 'shuffle', 'single', 'heart'];
+  var modes = document.body && (document.body.classList.contains('phone-device') || document.body.classList.contains('phone-landscape'))
+    ? ['loop', 'shuffle', 'single'] : ['loop', 'shuffle', 'single', 'heart'];
   var idx = modes.indexOf(playMode);
   playMode = modes[(idx + 1) % modes.length];
   updatePlayModeButton(true);

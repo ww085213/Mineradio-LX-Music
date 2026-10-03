@@ -315,6 +315,14 @@
   // player untouched; these rules only arrange the existing web controls.
   var phoneStyle = document.createElement('style');
   phoneStyle.textContent = `
+    body.phone-device #mineradio-network-button,
+    body.phone-device #mineradio-network-panel,
+    body.phone-landscape #mineradio-network-button,
+    body.phone-landscape #mineradio-network-panel {display:none!important;}
+    body.phone-landscape #phone-header,
+    body.phone-landscape #phone-nav,
+    body.phone-landscape #phone-home,
+    body.phone-landscape #phone-player-close {display:none!important;}
     body.phone-device #app-primary-nav,
     body.phone-device #app-nav-edge-handle,
     body.phone-device #top-right,
@@ -395,6 +403,16 @@
     }
     body.phone-device.secondary-view-active #lyric-viz-stage-host,
     body.phone-device.secondary-view-active #hand-canvas {display:none!important;}
+    body.phone-device:not(.phone-player-open) #lyric-viz-stage-host {display:none!important;}
+    body.phone-device.phone-player-open #lyric-viz-stage-host.active {
+      top:46%!important;bottom:25%!important;left:0!important;right:0!important;
+      width:100%!important;height:auto!important;overflow:hidden!important;
+    }
+    body.phone-device.phone-player-open #lyric-viz-stage-host.active .mineradio-lyric-viz-root {
+      position:relative!important;left:-26.9%!important;top:0!important;
+      width:153.8%!important;height:153.8%!important;min-height:0!important;
+      transform-origin:top center!important;scale:.65!important;
+    }
     body.phone-device.secondary-view-active #canvas-container,
     body.phone-device.phone-search-open #canvas-container {visibility:hidden!important;}
     body.phone-device .secondary-head {padding:13px 15px 10px;gap:7px;}
@@ -459,7 +477,7 @@
     body.phone-device.phone-player-open #progress-bar {
       display:flex!important;position:absolute!important;left:23px!important;right:23px!important;
       top:auto!important;bottom:calc(184px + env(safe-area-inset-bottom))!important;
-      width:auto!important;height:24px!important;
+      width:auto!important;height:32px!important;z-index:3!important;touch-action:none!important;
     }
     body.phone-device.phone-player-open .control-cluster.transport {order:1!important;flex:0 0 65px;width:100%!important;justify-content:space-evenly!important;}
     body.phone-device.phone-player-open .control-cluster.actions {order:2!important;flex:0 0 46px;width:100%!important;justify-content:center!important;}
@@ -497,35 +515,11 @@
       bottom:calc(76px + env(safe-area-inset-bottom))!important;
     }
     body.phone-device.phone-player-open #fx-panel.show {z-index:1400!important;bottom:calc(24px + env(safe-area-inset-bottom))!important;}
+    body.phone-device.phone-player-open #playlist-panel.show,
+    body.phone-device.phone-player-open #playlist-panel.peek {z-index:1400!important;}
     body.phone-device.phone-player-open #mobile-back-btn {z-index:1500;}
-    @media (orientation:landscape) and (max-height:550px) {
-      body.phone-device #phone-nav,body.phone-device #phone-header,
-      body.phone-device #now-flow,body.phone-device #empty-home,
-      body.phone-device #phone-home,
-      body.phone-device #app-secondary-view,body.phone-device #search-area,
-      body.phone-device #phone-player-close,body.phone-device #lx-source-top-right {display:none!important;}
-      body.phone-device #bottom-bar,body.phone-device.phone-player-open #bottom-bar {
-        display:flex!important;position:fixed!important;z-index:1200!important;
-        inset:auto 12px calc(10px + env(safe-area-inset-bottom)) 12px!important;
-        width:min(580px,calc(100vw - 24px))!important;height:72px!important;max-height:72px!important;
-        margin:auto!important;padding:7px 12px!important;opacity:.93!important;pointer-events:auto!important;
-        transform:none!important;border-radius:24px!important;
-        background:rgba(7,11,17,.35)!important;
-        backdrop-filter:blur(12px)!important;-webkit-backdrop-filter:blur(12px)!important;
-      }
-      body.phone-device.now-flow-only #bottom-bar,
-      body.phone-device.now-flow-only #bottom-bar.visible,
-      body.phone-device.now-flow-only #bottom-bar.soft-hidden {
-        opacity:.93!important;pointer-events:auto!important;transform:none!important;
-      }
-      body.phone-device #bottom-bar #controls {height:100%!important;display:flex!important;align-items:center!important;justify-content:center!important;}
-      body.phone-device #bottom-bar .control-cluster.actions,
-      body.phone-device #bottom-bar .control-cluster.modes,
-      body.phone-device #bottom-bar .control-track {display:none!important;}
-      body.phone-device #bottom-bar .control-cluster.transport {display:flex!important;order:1!important;justify-content:center!important;flex:0 0 auto!important;min-height:55px!important;}
-      body.phone-device #bottom-bar #progress-bar {top:0!important;bottom:auto!important;left:18px!important;right:18px!important;}
-      body.phone-device #mobile-diy-btn {display:flex!important;z-index:1300;top:calc(env(safe-area-inset-top) + 6px);}
-    }
+    body.phone-device #nf-mode-menu [data-mode="heart"],
+    body.phone-landscape #nf-mode-menu [data-mode="heart"] {display:none!important;}
   `;
   document.head.appendChild(phoneStyle);
 
@@ -618,7 +612,13 @@
   function mountPhoneLayout() {
     if (!/iPhone|iPod/i.test(navigator.userAgent || '') || !document.body) return;
     var body = document.body;
-    body.classList.add('phone-device');
+    function syncPhoneOrientation() {
+      var portrait = window.innerHeight >= window.innerWidth;
+      body.classList.toggle('phone-device', portrait);
+      body.classList.toggle('phone-landscape', !portrait);
+    }
+    syncPhoneOrientation();
+    window.addEventListener('resize', syncPhoneOrientation, { passive:true });
     // A diagnostic overlay should not cover the phone header on first launch;
     // an explicit user preference still wins, and DIY can show it again.
     if (localStorage.getItem('mineradio-render-fps-hud-v1') == null &&
@@ -634,11 +634,11 @@
       '<section class="phone-hero"><span class="phone-kicker">YOUR VISUAL RADIO</span>',
       '<h1>让音乐成为画面</h1><p>同一首歌，同一份视觉氛围。横过手机，进入沉浸播放。</p>',
       '<button type="button" data-phone-view="player">进入播放器 →</button></section>',
-      '<div class="phone-home-label">开始听歌</div><div class="phone-home-grid">',
-      '<button type="button" data-phone-view="search">搜索音乐<span>歌曲与公开歌单</span></button>',
-      '<button type="button" data-phone-view="library">我的音乐库<span>歌单与本地音乐</span></button>',
-      '<button type="button" data-phone-action="source">管理音源<span>导入和切换音源</span></button>',
-      '<button type="button" data-phone-action="diy">DIY 视觉<span>调整背景与效果</span></button></div>'
+      '<div class="phone-home-label">为你推荐</div><div class="phone-home-grid">',
+      '<button type="button" data-phone-action="radio">音乐电台<span>按心情和场景选歌</span></button>',
+      '<button type="button" data-phone-action="daily">每日推荐<span>看看今天的新歌</span></button>',
+      '<button type="button" data-phone-action="square">歌单广场<span>发现公开歌单</span></button>',
+      '<button type="button" data-phone-action="ranking">热门榜单<span>浏览平台排行榜</span></button></div>'
     ].join('');
     body.appendChild(home);
     var nav = document.createElement('nav');
@@ -657,10 +657,9 @@
     close.setAttribute('aria-label', '返回手机页面');
     close.textContent = '⌄';
     body.appendChild(close);
-    var currentView = 'home', returnView = 'home';
+    var currentView = 'home';
     function show(view) {
       if (!/^(home|search|library|player)$/.test(view)) return;
-      if (view === 'player' && currentView !== 'player') returnView = currentView;
       currentView = view;
       body.classList.toggle('phone-player-open', view === 'player');
       body.classList.toggle('phone-search-open', view === 'search');
@@ -699,13 +698,26 @@
       var view = button.getAttribute('data-phone-view');
       if (view) { show(view); return; }
       var action = button.getAttribute('data-phone-action');
-      if (action === 'source' && typeof window.showCurrentLxSource === 'function') window.showCurrentLxSource();
-      if (action === 'diy') {
-        if (!body.classList.contains('diy-mode') && typeof window.toggleDiyMode === 'function') window.toggleDiyMode();
-        if (typeof window.toggleFxPanel === 'function') window.toggleFxPanel(true);
-      }
+      if (action === 'radio' && typeof window.openRadioModes === 'function') window.openRadioModes('all');
+      if (action === 'daily' && typeof window.playHomeDailyRecommend === 'function') window.playHomeDailyRecommend();
+      if (action === 'square' && typeof window.openPlaylistSquare === 'function') { show('library'); window.openPlaylistSquare(); }
+      if (action === 'ranking' && typeof window.openPlatformRanking === 'function') { show('library'); window.openPlatformRanking('all'); }
     });
-    close.addEventListener('click', function () { show(returnView); });
+    close.addEventListener('click', function () { show('home'); });
+    var miniCover = document.getElementById('now-flow-cover');
+    var fullCover = document.getElementById('control-cover');
+    function syncPhonePlayerCover() {
+      if (!miniCover || !fullCover || miniCover.classList.contains('cover-empty')) return;
+      var image = miniCover.style.backgroundImage;
+      if (!image || image === 'none') return;
+      fullCover.style.backgroundImage = image;
+      fullCover.classList.remove('cover-empty');
+      if (typeof window.updateWallpaperCoverToggleUi === 'function') window.updateWallpaperCoverToggleUi();
+    }
+    if (miniCover && fullCover) {
+      new MutationObserver(syncPhonePlayerCover).observe(miniCover, { attributes:true, attributeFilter:['style','class'] });
+      syncPhonePlayerCover();
+    }
     var flow = document.getElementById('now-flow');
     if (flow) {
       // The existing cover click toggles a desktop visual. On phones it opens
@@ -744,7 +756,7 @@
       button.onclick = function () { window.toggleRenderFpsHud(); }; panel.prepend(button);
     }
     // Touch has no hover: use the existing transparent mode by default once.
-    if ((!document.body || !document.body.classList.contains('phone-device')) &&
+    if ((!document.body || (!document.body.classList.contains('phone-device') && !document.body.classList.contains('phone-landscape'))) &&
         !localStorage.getItem('mineradio-ipad-glass-v4')) {
       window.toggleHomeTransparencyMode(true); localStorage.setItem('mineradio-ipad-glass-v4', '1');
     }

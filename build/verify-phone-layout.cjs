@@ -61,7 +61,6 @@ async function main() {
         document.querySelectorAll('[id*="splash"]').forEach(el => { el.style.display = 'none'; });
         // The Node runtime is stubbed in this browser-only layout test.
         document.getElementById('mineradio-ios-startup')?.remove();
-        document.getElementById('mineradio-network-button')?.remove();
         document.body.classList.add('empty-home-active');
       });
       await page.waitForTimeout(350);
@@ -70,15 +69,37 @@ async function main() {
         const home = document.getElementById(nav ? 'phone-home' : 'empty-home');
         const rect = home.getBoundingClientRect();
         return { phone:document.body.classList.contains('phone-device'),
+          landscape:document.body.classList.contains('phone-landscape'),
           nav:nav && getComputedStyle(nav).display, homeLeft:rect.left, homeRight:rect.right,
           homeOverflow:home.scrollWidth - home.clientWidth, bodyOverflow:document.body.scrollWidth - innerWidth };
       });
-      assert.equal(base.phone, phone, name + ' device layout mismatch');
+      assert.equal(base.phone, phone && height > width, name + ' portrait layout mismatch');
+      assert.equal(base.landscape, phone && width > height, name + ' landscape layout mismatch');
       assert.ok(base.bodyOverflow <= 1, name + ' page horizontal overflow');
       if (phone && height > width) {
+        assert.equal(await page.locator('#mineradio-network-button').evaluate(el => getComputedStyle(el).display), 'none');
         assert.notEqual(base.nav, 'none');
         assert.ok(base.homeLeft >= 0 && base.homeRight <= width + 1, 'phone home outside viewport');
         assert.ok(base.homeOverflow <= 1, 'phone home horizontal overflow');
+        assert.deepEqual(await page.locator('#phone-home .phone-home-grid button').allTextContents(), [
+          '音乐电台按心情和场景选歌', '每日推荐看看今天的新歌',
+          '歌单广场发现公开歌单', '热门榜单浏览平台排行榜'
+        ]);
+        await page.locator('#phone-home [data-phone-action="radio"]').click();
+        await page.waitForFunction(() => document.body.classList.contains('secondary-view-active') &&
+          document.getElementById('secondary-title')?.textContent === '音乐电台');
+        await page.locator('#phone-nav [data-phone-view="home"]').click();
+        await page.waitForFunction(() => !document.body.classList.contains('secondary-view-active'));
+        await page.locator('#phone-home [data-phone-action="square"]').click();
+        await page.waitForFunction(() => document.body.classList.contains('secondary-view-active') &&
+          document.getElementById('secondary-title')?.textContent === '歌单广场');
+        await page.locator('#phone-nav [data-phone-view="home"]').click();
+        await page.waitForFunction(() => !document.body.classList.contains('secondary-view-active'));
+        await page.locator('#phone-home [data-phone-action="ranking"]').click();
+        await page.waitForFunction(() => document.body.classList.contains('secondary-view-active') &&
+          document.getElementById('secondary-title')?.textContent === '各平台排行榜');
+        await page.locator('#phone-nav [data-phone-view="home"]').click();
+        await page.waitForFunction(() => !document.body.classList.contains('secondary-view-active'));
         await page.screenshot({ path:path.join(output, 'iphone-home.png') });
         await page.locator('#phone-nav [data-phone-view="library"]').click();
         await page.waitForFunction(() => document.body.classList.contains('secondary-view-active'));
@@ -95,16 +116,27 @@ async function main() {
         assert.equal(await page.locator('#bottom-bar').evaluate(el => getComputedStyle(el).display), 'flex');
         assert.ok(Number(await page.locator('#bottom-bar').evaluate(el => getComputedStyle(el).opacity)) > .9);
         assert.equal(await page.locator('#control-cover').evaluate(el => getComputedStyle(el).display), 'block');
+        await page.evaluate(() => {
+          const mini = document.getElementById('now-flow-cover');
+          mini.style.backgroundImage = 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\'/%3E")';
+          mini.classList.remove('cover-empty');
+        });
+        await page.waitForFunction(() => document.getElementById('control-cover').style.backgroundImage.includes('data:image'));
+        assert.equal(await page.locator('#nf-mode-menu [data-mode="heart"]').evaluate(el => getComputedStyle(el).display), 'none');
+        const progressHit = await page.locator('#progress-bar').evaluate(el => {
+          const r = el.getBoundingClientRect();
+          return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest('#progress-bar') === el;
+        });
+        assert.equal(progressHit, true, 'progress bar must receive touch input');
         await page.screenshot({ path:path.join(output, 'iphone-player.png') });
         await page.locator('#phone-player-close').click();
-        assert.ok(await page.locator('body').evaluate(el => el.classList.contains('phone-search-open')));
-        await page.locator('#phone-nav [data-phone-view="home"]').click();
+        assert.ok(await page.locator('body').evaluate(el => !el.classList.contains('phone-search-open') && !el.classList.contains('secondary-view-active')));
         await page.screenshot({ path:path.join(output, name + '.png') });
       } else {
         if (phone) {
           assert.equal(base.nav, 'none', 'landscape should expose the full visual canvas');
-          assert.equal(await page.locator('#bottom-bar').evaluate(el => getComputedStyle(el).display), 'flex');
-          assert.ok(Number(await page.locator('#bottom-bar').evaluate(el => getComputedStyle(el).opacity)) > .9);
+          assert.notEqual(await page.locator('#empty-home').evaluate(el => getComputedStyle(el).display), 'none');
+          assert.equal(await page.locator('#nf-mode-menu [data-mode="heart"]').evaluate(el => getComputedStyle(el).display), 'none');
         } else {
           assert.equal(base.nav, null, 'iPad must keep its existing layout');
         }
@@ -114,7 +146,7 @@ async function main() {
       console.log(JSON.stringify({ name, base, errors }));
       await context.close();
     }
-    console.log('PASS: iPhone portrait navigation/player, landscape visual, and unchanged iPad mode');
+    console.log('PASS: iPhone portrait navigation/player, restored landscape visual, and unchanged iPad mode');
   } finally { await browser.close(); server.close(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
