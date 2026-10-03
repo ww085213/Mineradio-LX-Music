@@ -364,24 +364,7 @@
       color:#fff;scrollbar-width:none;
     }
     body.phone-device #phone-home::-webkit-scrollbar {display:none;}
-    body.phone-device #phone-home .phone-hero {
-      position:relative;overflow:hidden;min-height:174px;box-sizing:border-box;padding:23px 21px;
-      border:1px solid rgba(255,255,255,.15);border-radius:25px;
-      background:linear-gradient(130deg,rgba(20,55,67,.84),rgba(12,19,36,.92));
-    }
-    body.phone-device #phone-home .phone-hero::after {
-      content:'';position:absolute;right:-25px;top:-45px;width:190px;height:190px;border-radius:50%;
-      background:radial-gradient(circle,rgba(0,245,212,.22),transparent 67%);pointer-events:none;
-    }
-    body.phone-device #phone-home .phone-kicker {display:block;color:#9cf7e8;font:760 10px/1.2 system-ui,sans-serif;letter-spacing:.22em;}
-    body.phone-device #phone-home h1 {margin:12px 0 8px;font:780 clamp(27px,8vw,34px)/1.12 system-ui,sans-serif;letter-spacing:-.06em;}
-    body.phone-device #phone-home p {margin:0;color:rgba(255,255,255,.69);font:500 13px/1.5 system-ui,sans-serif;}
-    body.phone-device #phone-home .phone-hero button {
-      position:relative;z-index:1;margin-top:17px;min-height:43px;padding:0 18px;
-      border:1px solid rgba(156,247,232,.35);border-radius:999px;
-      background:rgba(0,245,212,.13);color:#eafffb;font:750 13px system-ui,sans-serif;
-    }
-    body.phone-device #phone-home .phone-home-label {margin:22px 4px 11px;color:rgba(255,255,255,.68);font:700 13px system-ui,sans-serif;}
+    body.phone-device #phone-home .phone-home-label {margin:6px 4px 11px;color:rgba(255,255,255,.68);font:700 13px system-ui,sans-serif;}
     body.phone-device #phone-home .phone-home-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
     body.phone-device #phone-home .phone-home-grid button {
       min-width:0;min-height:96px;text-align:left;padding:15px 14px;
@@ -389,6 +372,13 @@
       background:rgba(9,16,24,.86);color:#fff;font:750 16px system-ui,sans-serif;
     }
     body.phone-device #phone-home .phone-home-grid button span {display:block;margin-top:8px;color:rgba(255,255,255,.55);font:500 11px/1.4 system-ui,sans-serif;}
+    /* A square cover used as wallpaper must fit the tall phone viewport instead
+       of being enlarged to its height and losing both sides of the artwork. */
+    body.phone-device #custom-bg::before {background-size:contain!important;}
+    body.phone-device #custom-bg-video,
+    body.phone-device #wallpaper-engine-layer img,
+    body.phone-device #wallpaper-engine-layer video {object-fit:contain!important;}
+    body.phone-device.wallpaper-parallax-active #custom-bg {transform:none!important;}
     body.phone-device.phone-search-open #phone-home,
     body.phone-device.secondary-view-active #phone-home,
     body.phone-device.phone-player-open #phone-home {display:none!important;}
@@ -405,13 +395,13 @@
     body.phone-device.secondary-view-active #hand-canvas {display:none!important;}
     body.phone-device:not(.phone-player-open) #lyric-viz-stage-host {display:none!important;}
     body.phone-device.phone-player-open #lyric-viz-stage-host.active {
-      top:46%!important;bottom:25%!important;left:0!important;right:0!important;
+      top:18%!important;bottom:23%!important;left:0!important;right:0!important;
       width:100%!important;height:auto!important;overflow:hidden!important;
     }
     body.phone-device.phone-player-open #lyric-viz-stage-host.active .mineradio-lyric-viz-root {
-      position:relative!important;left:-26.9%!important;top:0!important;
-      width:153.8%!important;height:153.8%!important;min-height:0!important;
-      transform-origin:top center!important;scale:.65!important;
+      position:relative!important;left:-36.2%!important;top:0!important;
+      width:172.4%!important;height:172.4%!important;min-height:0!important;
+      transform-origin:top center!important;scale:.58!important;
     }
     body.phone-device.secondary-view-active #canvas-container,
     body.phone-device.phone-search-open #canvas-container {visibility:hidden!important;}
@@ -442,7 +432,7 @@
     body.phone-device.phone-player-open #bottom-bar {
       display:flex!important;position:fixed!important;z-index:1200!important;
       inset:0!important;width:100vw!important;height:100dvh!important;max-height:none!important;
-      margin:0!important;box-sizing:border-box;padding:calc(env(safe-area-inset-top) + 65px) 16px calc(env(safe-area-inset-bottom) + 22px)!important;
+      margin:0!important;box-sizing:border-box;padding:calc(env(safe-area-inset-top) + 65px) 16px env(safe-area-inset-bottom)!important;
       transform:none!important;opacity:1!important;pointer-events:auto!important;
       background:linear-gradient(180deg,rgba(5,8,13,.64),rgba(5,8,13,.12) 32%,rgba(5,8,13,.55) 70%,rgba(5,8,13,.90))!important;
       backdrop-filter:none!important;-webkit-backdrop-filter:none!important;box-shadow:none!important;border-radius:0!important;
@@ -463,9 +453,7 @@
       flex-direction:column!important;align-items:center!important;gap:16px!important;
     }
     body.phone-device.phone-player-open #control-cover {
-      display:block!important;visibility:visible!important;opacity:1!important;
-      width:min(66vw,34dvh,320px)!important;height:auto!important;aspect-ratio:1!important;
-      border-radius:25px!important;flex:none!important;
+      display:none!important;
     }
     body.phone-device.phone-player-open .control-meta {
       display:flex!important;max-width:100%!important;width:100%;align-items:center;text-align:center;
@@ -476,7 +464,7 @@
     body.phone-device.phone-player-open .control-lyric-box {display:none!important;}
     body.phone-device.phone-player-open #progress-bar {
       display:flex!important;position:absolute!important;left:23px!important;right:23px!important;
-      top:auto!important;bottom:calc(184px + env(safe-area-inset-bottom))!important;
+      top:auto!important;bottom:calc(162px + env(safe-area-inset-bottom))!important;
       width:auto!important;height:32px!important;z-index:3!important;touch-action:none!important;
     }
     body.phone-device.phone-player-open .control-cluster.transport {order:1!important;flex:0 0 65px;width:100%!important;justify-content:space-evenly!important;}
@@ -513,6 +501,35 @@
     body.phone-device #playlist-panel,body.phone-device #fx-panel {
       top:calc(env(safe-area-inset-top) + 64px)!important;
       bottom:calc(76px + env(safe-area-inset-bottom))!important;
+    }
+    body.phone-device #playlist-panel.show,
+    body.phone-device #playlist-panel.peek,
+    body.phone-device #fx-panel.show,
+    body.phone-device #fx-panel.peek {
+      left:16px!important;right:16px!important;width:auto!important;
+    }
+    body.phone-device.phone-player-open .quality-popover,
+    body.phone-device.phone-player-open .volume-popover,
+    body.phone-device.phone-player-open .playback-tuning-popover,
+    body.phone-device.phone-player-open .mini-queue-popover {
+      left:16px!important;right:16px!important;width:auto!important;
+      max-width:calc(100vw - 32px)!important;box-sizing:border-box;
+    }
+    body.phone-device.phone-player-open .quality-popover {
+      left:50%!important;right:auto!important;
+      width:min(280px,calc(100vw - 32px))!important;
+      transform:translateX(-50%) translateY(8px)!important;
+    }
+    body.phone-device.phone-player-open .quality-control.open .quality-popover,
+    body.phone-device.phone-player-open .quality-control:focus-within .quality-popover {
+      transform:translateX(-50%)!important;
+    }
+    body.phone-device.phone-player-open .volume-control.open .volume-popover,
+    body.phone-device.phone-player-open .playback-tuning-control.open .playback-tuning-popover {
+      transform:none!important;
+    }
+    body.phone-device.phone-player-open #music-agent-pet {
+      display:none!important;
     }
     body.phone-device.phone-player-open #fx-panel.show {z-index:1400!important;bottom:calc(24px + env(safe-area-inset-bottom))!important;}
     body.phone-device.phone-player-open #playlist-panel.show,
@@ -631,9 +648,6 @@
     home.id = 'phone-home';
     home.setAttribute('aria-label', 'Mineradio 手机首页');
     home.innerHTML = [
-      '<section class="phone-hero"><span class="phone-kicker">YOUR VISUAL RADIO</span>',
-      '<h1>让音乐成为画面</h1><p>同一首歌，同一份视觉氛围。横过手机，进入沉浸播放。</p>',
-      '<button type="button" data-phone-view="player">进入播放器 →</button></section>',
       '<div class="phone-home-label">为你推荐</div><div class="phone-home-grid">',
       '<button type="button" data-phone-action="radio">音乐电台<span>按心情和场景选歌</span></button>',
       '<button type="button" data-phone-action="daily">每日推荐<span>看看今天的新歌</span></button>',

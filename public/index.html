@@ -15550,7 +15550,8 @@ function lyricThreeColor(css, fallback, minLum) {
 var STAGE_LYRIC_MAX_LINES = 3;
 function stageLyricMaxLines() {
   if (fx && fx.lyricMultiSentence === false) return 1;
-  return normalizeStageLyricsRows(fx && fx.stageLyricsRows);
+  var rows = normalizeStageLyricsRows(fx && fx.stageLyricsRows);
+  return document.body && document.body.classList.contains('phone-device') && rows === 3 ? 4 : rows;
 }
 function stageLyricContentLineLimit(text) {
   var maxLines = stageLyricMaxLines();
@@ -16585,9 +16586,9 @@ function updateStageLyrics3D(dt) {
     layoutZ = 0.96;
   }
   if (phonePortraitLyrics && !skullMouthLyrics) {
-    layoutScale = Math.min(layoutScale, 0.52);
+    layoutScale = Math.min(layoutScale, 0.44);
     layoutX = 0;
-    layoutY = -0.46;
+    layoutY = 0;
     layoutZ = 0.62;
   }
   var lockBaseDistance = wallpaperShelfLyrics ? 5.58 : 4.85;
@@ -48887,6 +48888,9 @@ function armSecondaryPlaylistEdgeDwell() {
   }, SECONDARY_PLAYLIST_EDGE_DWELL_MS);
 }
 function isPlaylistEdgeTrigger(ex, ey, H) {
+  // A touch on the phone canvas can synthesize mousemove. The desktop edge
+  // shortcut must not open the old left playlist over the portrait player.
+  if (document.body.classList.contains('phone-device')) return false;
   var primaryNav = document.getElementById('app-primary-nav');
   if (primaryNav) {
     var navRect = primaryNav.getBoundingClientRect();

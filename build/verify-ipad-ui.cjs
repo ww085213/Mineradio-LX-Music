@@ -72,7 +72,7 @@ async function main() {
       assert.ok(metrics.dpr <= 1);
       assert.equal(metrics.lyricGlowStrength, 0, name + ' zero lyric glow was not restored');
       assert.equal(metrics.lyricGlow, false, name + ' lyric glow toggle was not restored');
-      assert.equal(metrics.backgroundPlaybackMode, 'system-media-session');
+      assert.equal(metrics.backgroundPlaybackMode, 'native-avplayer');
       assert.deepEqual(errors, [], name + ' uncaught JavaScript errors');
       await page.screenshot({ path: path.join(output, name + '.png') });
       console.log(JSON.stringify({ name, metrics, errors }));

@@ -81,6 +81,11 @@ async function main() {
         assert.notEqual(base.nav, 'none');
         assert.ok(base.homeLeft >= 0 && base.homeRight <= width + 1, 'phone home outside viewport');
         assert.ok(base.homeOverflow <= 1, 'phone home horizontal overflow');
+        assert.equal(await page.locator('#phone-home .phone-hero').count(), 0, 'duplicate hero must be removed');
+        assert.equal(await page.locator('#custom-bg').evaluate(el => getComputedStyle(el, '::before').backgroundSize),
+          'contain', 'portrait wallpaper artwork must not be cropped');
+        assert.equal(await page.locator('#custom-bg-video').evaluate(el => getComputedStyle(el).objectFit),
+          'contain', 'portrait video artwork must not be cropped');
         assert.deepEqual(await page.locator('#phone-home .phone-home-grid button').allTextContents(), [
           '音乐电台按心情和场景选歌', '每日推荐看看今天的新歌',
           '歌单广场发现公开歌单', '热门榜单浏览平台排行榜'
@@ -89,17 +94,20 @@ async function main() {
         await page.waitForFunction(() => document.body.classList.contains('secondary-view-active') &&
           document.getElementById('secondary-title')?.textContent === '音乐电台');
         await page.locator('#phone-nav [data-phone-view="home"]').click();
-        await page.waitForFunction(() => !document.body.classList.contains('secondary-view-active'));
+        await page.waitForFunction(() => !document.body.classList.contains('secondary-view-active') &&
+          getComputedStyle(document.getElementById('app-secondary-view')).visibility === 'hidden');
         await page.locator('#phone-home [data-phone-action="square"]').click();
         await page.waitForFunction(() => document.body.classList.contains('secondary-view-active') &&
           document.getElementById('secondary-title')?.textContent === '歌单广场');
         await page.locator('#phone-nav [data-phone-view="home"]').click();
-        await page.waitForFunction(() => !document.body.classList.contains('secondary-view-active'));
+        await page.waitForFunction(() => !document.body.classList.contains('secondary-view-active') &&
+          getComputedStyle(document.getElementById('app-secondary-view')).visibility === 'hidden');
         await page.locator('#phone-home [data-phone-action="ranking"]').click();
         await page.waitForFunction(() => document.body.classList.contains('secondary-view-active') &&
           document.getElementById('secondary-title')?.textContent === '各平台排行榜');
         await page.locator('#phone-nav [data-phone-view="home"]').click();
-        await page.waitForFunction(() => !document.body.classList.contains('secondary-view-active'));
+        await page.waitForFunction(() => !document.body.classList.contains('secondary-view-active') &&
+          getComputedStyle(document.getElementById('app-secondary-view')).visibility === 'hidden');
         await page.screenshot({ path:path.join(output, 'iphone-home.png') });
         await page.locator('#phone-nav [data-phone-view="library"]').click();
         await page.waitForFunction(() => document.body.classList.contains('secondary-view-active'));
@@ -113,9 +121,18 @@ async function main() {
         assert.equal(await page.locator('#search-area').evaluate(el => getComputedStyle(el).visibility), 'visible');
         await page.screenshot({ path:path.join(output, 'iphone-search.png') });
         await page.locator('#phone-nav [data-phone-view="player"]').click();
+        assert.equal(await page.evaluate(() => isPlaylistEdgeTrigger(40, innerHeight / 2, innerHeight)), false,
+          'portrait touch must not trigger the desktop left playlist');
+        await page.mouse.move(40, 400);
+        assert.equal(await page.locator('#playlist-panel').evaluate(el => el.classList.contains('peek')), false,
+          'moving at the left edge must not reveal the desktop playlist');
+        await page.locator('#mini-queue-btn').click();
+        assert.equal(await page.locator('#mini-queue-popover').evaluate(el => el.classList.contains('show')), true,
+          'the explicit queue button must still open the current queue');
+        await page.locator('#mini-queue-popover .mini-queue-head button').click();
         assert.equal(await page.locator('#bottom-bar').evaluate(el => getComputedStyle(el).display), 'flex');
         assert.ok(Number(await page.locator('#bottom-bar').evaluate(el => getComputedStyle(el).opacity)) > .9);
-        assert.equal(await page.locator('#control-cover').evaluate(el => getComputedStyle(el).display), 'block');
+        assert.equal(await page.locator('#control-cover').evaluate(el => getComputedStyle(el).display), 'none');
         await page.evaluate(() => {
           const mini = document.getElementById('now-flow-cover');
           mini.style.backgroundImage = 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\'/%3E")';
@@ -128,6 +145,27 @@ async function main() {
           return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest('#progress-bar') === el;
         });
         assert.equal(progressHit, true, 'progress bar must receive touch input');
+        const qualityBounds = await page.evaluate(() => {
+          const control = document.querySelector('.quality-control');
+          control.classList.add('open');
+          const rect = control.querySelector('.quality-popover').getBoundingClientRect();
+          control.classList.remove('open');
+          return { left:rect.left, right:rect.right };
+        });
+        assert.ok(qualityBounds.left >= 15 && qualityBounds.right <= width - 15,
+          'portrait quality panel must leave space at both edges');
+        assert.ok(Math.abs(qualityBounds.left - (width - qualityBounds.right)) <= 1,
+          'portrait quality panel must be horizontally centered');
+        const lyricZone = await page.evaluate(() => {
+          const host = document.getElementById('lyric-viz-stage-host');
+          host.classList.add('active');
+          const bounds = host.getBoundingClientRect();
+          host.classList.remove('active');
+          const progress = document.getElementById('progress-bar').getBoundingClientRect();
+          return { top:bounds.top, bottom:bounds.bottom, progressTop:progress.top };
+        });
+        assert.ok(lyricZone.top > 100 && lyricZone.bottom < lyricZone.progressTop,
+          'portrait lyrics must fit between track heading and progress bar');
         await page.screenshot({ path:path.join(output, 'iphone-player.png') });
         await page.locator('#phone-player-close').click();
         assert.ok(await page.locator('body').evaluate(el => !el.classList.contains('phone-search-open') && !el.classList.contains('secondary-view-active')));
