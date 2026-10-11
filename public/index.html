@@ -2461,7 +2461,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
 /* ============================================================ */
 #stage-lyrics{display:none}
 
-#lyric-viz-stage-host{position:fixed;inset:0;pointer-events:none;z-index:24;display:none;overflow:hidden;width:100%;height:100%}
+#lyric-viz-stage-host{position:fixed;inset:0;pointer-events:none;z-index:0;display:none;overflow:hidden;width:100%;height:100%}
 #lyric-viz-stage-host.active,#lyric-viz-stage-host.active *{pointer-events:none!important}
 #lyric-viz-stage-host.active{display:block}
 body.lyric-animation-stage-on #lyric-viz-stage-host.active .mineradio-lyric-viz-root{width:100%;height:100%;min-height:100%}
@@ -2484,12 +2484,16 @@ body.lyric-animation-stage-on.diy-mode #fx-fab,
 body.lyric-animation-stage-on.diy-mode #fx-fab-hide-btn{z-index:180!important}
 body.lyric-animation-stage-on #search-area.peek,
 body.lyric-animation-stage-on #search-area.has-results{z-index:60}
-body.empty-home-active.lyric-animation-stage-on #lyric-viz-stage-host.active{display:none}
 .lyric-anim-mode-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:8px}
 .lyric-anim-mode-grid button{border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.04);color:rgba(255,255,255,.78);border-radius:10px;padding:7px 4px;font-size:11px;font-weight:600;cursor:pointer}
 .lyric-anim-mode-grid button.active{border-color:rgba(0,245,212,.42);background:rgba(0,245,212,.12);color:#fff}
 .lyric-anim-tuning-panel{display:none;margin-top:8px}
 .lyric-anim-tuning-panel.show{display:block}
+.lyric-anim-settings-card{border:1px solid rgba(255,255,255,.10);border-radius:14px;background:rgba(255,255,255,.035);padding:10px;margin:8px 0}
+.lyric-anim-settings-card .fx-toggle{margin:5px 0}
+.lyric-anim-settings-card .fx-slider{margin:8px 0}
+.lyric-anim-settings-card select,.lyric-anim-settings-card input[type="url"]{width:100%;min-height:34px;color:#f5f5f5;background:#171b20;border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:6px 8px}
+.lyric-anim-settings-card .fx-slider output{float:right}
 .stage-lyric-line{position:absolute;font-family:var(--font-sans);font-weight:700;font-size:clamp(34px,5.6vw,76px);letter-spacing:2px;text-align:center;color:#fff;white-space:nowrap;max-width:92vw;padding:0 24px;text-shadow:0 0 14px rgba(168,246,255,.38),0 0 36px rgba(143,233,255,.30),0 0 80px rgba(115,167,255,.16);background:linear-gradient(180deg,rgba(246,253,255,1) 0%,rgba(168,246,255,1) 55%,rgba(126,205,255,1) 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;opacity:0;transform-style:preserve-3d;will-change:transform,opacity,filter;filter:drop-shadow(0 4px 22px rgba(143,233,255,.30))}
 .stage-lyric-line.in{animation:lyr-in 900ms cubic-bezier(.16,.84,.32,1.02) forwards,lyr-bob 5.6s ease-in-out 900ms infinite}
 .stage-lyric-line.out{animation:lyr-out 700ms cubic-bezier(.55,0,.85,.45) forwards}
@@ -3836,6 +3840,13 @@ html.control-glass-svg-ok #fx-panel{
   background:rgba(3,4,7,.38)!important;
   backdrop-filter:url(#mineradio-right-panel-glass-filter) saturate(1.04)!important;
   -webkit-backdrop-filter:url(#mineradio-right-panel-glass-filter) saturate(1.04)!important;
+}
+/* Keep side panels readable above animated lyrics, including SVG-glass mode. */
+body.lyric-animation-stage-on #playlist-panel,
+body.lyric-animation-stage-on #fx-panel{
+  background:rgba(8,10,16,.86)!important;
+  backdrop-filter:blur(28px) saturate(1.08)!important;
+  -webkit-backdrop-filter:blur(28px) saturate(1.08)!important;
 }
 html.control-glass-svg-ok #playlist-panel .fx-mini-btn,
 html.control-glass-svg-ok #playlist-panel .panel-tab,
@@ -6289,7 +6300,43 @@ body:not(.tv-mode) [tabindex]:not([tabindex="-1"]):focus-visible{
         <button type="button" data-lyric-anim-mode="cappella" onclick="LyricAnimation.setMode('cappella')">群唱</button>
         <button type="button" data-lyric-anim-mode="tilt" onclick="LyricAnimation.setMode('tilt')">倾诉</button>
         <button type="button" data-lyric-anim-mode="monet" onclick="LyricAnimation.setMode('monet')">莫奈</button>
+        <button type="button" data-lyric-anim-mode="claddagh" onclick="LyricAnimation.setMode('claddagh')">Claddagh</button>
+        <button type="button" data-lyric-anim-mode="diorama" onclick="LyricAnimation.setMode('diorama')">镜台</button>
+        <button type="button" data-lyric-anim-mode="lumiere" onclick="LyricAnimation.setMode('lumiere')">绘光</button>
+        <button type="button" data-lyric-anim-mode="pendolo" onclick="LyricAnimation.setMode('pendolo')">Pendolo</button>
+        <button type="button" data-lyric-anim-mode="sonnet" onclick="LyricAnimation.setMode('sonnet')">商籁</button>
+        <button type="button" data-lyric-anim-mode="still" onclick="LyricAnimation.setMode('still')">Still</button>
+        <button type="button" data-lyric-anim-mode="tempera" onclick="LyricAnimation.setMode('tempera')">凝彩</button>
       </div>
+      <div class="lyric-anim-settings-card" style="font-size:11px;line-height:1.6;color:rgba(255,255,255,.72)">
+        歌词动画基于 <a href="https://github.com/chthollyphile/folia-major" target="_blank" rel="noopener noreferrer" style="color:#8de8d9;text-decoration:underline">Folia</a> 改编；原作者 chthollyphile，原项目采用 GNU AGPL-3.0 许可。Mineradio 完成播放器接入与适配。
+      </div>
+      <div class="fx-section-label">Folia 主题配色</div>
+      <div class="fx-seg" id="lyric-anim-theme-preset-seg">
+        <button type="button" data-lyric-anim-theme-preset="folia-dark" onclick="LyricAnimation.setThemePreset('folia-dark')">原版深色</button>
+        <button type="button" data-lyric-anim-theme-preset="folia-light" onclick="LyricAnimation.setThemePreset('folia-light')">原版浅色</button>
+        <button type="button" data-lyric-anim-theme-preset="folia-custom" onclick="LyricAnimation.setThemePreset('folia-custom')">自选配色</button>
+        <button type="button" data-lyric-anim-theme-preset="mineradio" onclick="LyricAnimation.setThemePreset('mineradio')">当前配色</button>
+      </div>
+      <div class="lyric-anim-settings-card" id="lyric-anim-custom-colors" style="display:none">
+        <label>背景 <input type="color" data-lyric-anim-color="backgroundColor" onchange="LyricAnimation.setThemeColor('backgroundColor',this.value)"></label>
+        <label>主字 <input type="color" data-lyric-anim-color="primaryColor" onchange="LyricAnimation.setThemeColor('primaryColor',this.value)"></label>
+        <label>强调 <input type="color" data-lyric-anim-color="accentColor" onchange="LyricAnimation.setThemeColor('accentColor',this.value)"></label>
+        <label>次字 <input type="color" data-lyric-anim-color="secondaryColor" onchange="LyricAnimation.setThemeColor('secondaryColor',this.value)"></label>
+      </div>
+      <div class="fx-section-label">Folia 背景</div>
+      <div class="lyric-anim-mode-grid" id="lyric-anim-background-grid">
+        <button type="button" data-lyric-anim-bg="common" onclick="LyricAnimation.setBackgroundMode('common')">通用</button>
+        <button type="button" data-lyric-anim-bg="monet" onclick="LyricAnimation.setBackgroundMode('monet')">莫奈</button>
+        <button type="button" data-lyric-anim-bg="nomand" onclick="LyricAnimation.setBackgroundMode('nomand')">漫游</button>
+        <button type="button" data-lyric-anim-bg="latent" onclick="LyricAnimation.setBackgroundMode('latent')">隐现</button>
+        <button type="button" data-lyric-anim-bg="url" onclick="LyricAnimation.setBackgroundMode('url')">嵌入</button>
+        <button type="button" data-lyric-anim-bg="sora" onclick="LyricAnimation.setBackgroundMode('sora')">空</button>
+        <button type="button" data-lyric-anim-bg="transparent" onclick="LyricAnimation.setBackgroundMode('transparent')">透明</button>
+      </div>
+      <div class="lyric-anim-settings-card" id="lyric-anim-background-settings"></div>
+      <div class="fx-section-label">当前歌词动画细项</div>
+      <div class="lyric-anim-settings-card" id="lyric-anim-mode-settings"></div>
       <div class="fx-toggle-grid">
         <div class="fx-toggle hidden" id="t-lyricAnimationDesktop" aria-hidden="true" style="display:none"><span>桌面歌词动画</span><span class="dot"></span></div>
         <div class="fx-toggle hidden" id="t-lyricAnimationHideParticles" aria-hidden="true" style="display:none"><span>动画时隐藏原歌词</span><span class="dot"></span></div>
@@ -7007,7 +7054,7 @@ body:not(.tv-mode) [tabindex]:not([tabindex="-1"]):focus-visible{
         <div>
           <div class="update-kicker">MINERADIO 二创版</div>
           <div id="update-modal-title" class="update-title">New release</div>
-          <div id="update-modal-version" class="update-version">Mineradio v1.6.1</div>
+          <div id="update-modal-version" class="update-version">Mineradio v1.7.0</div>
         </div>
       </div>
       <div class="update-hero">
@@ -7441,7 +7488,7 @@ function mineradioFullBackupPayload(reason) {
   return {
     format:MINERADIO_FULL_BACKUP_FORMAT,
     version:MINERADIO_FULL_BACKUP_VERSION,
-    appVersion:'1.6.1',
+    appVersion:'1.7.0',
     exportedAt:new Date().toISOString(),
     reason:reason || 'manual',
     summary:{ storageKeys:Object.keys(storage).length, importedPlaylists:importedCount, customPlaylists:customCount, searchHistory:historyCount, favoriteStores:favoriteCount },
@@ -7671,8 +7718,8 @@ var updatePreviewState = {
   installerPath: '',
   installerOpened: false,
   cached: false,
-  currentVersion: '1.6.1',
-  version: '1.6.1',
+  currentVersion: '1.7.0',
+  version: '1.7.0',
   configured: false,
   preview: true,
   updateAvailable: false,
@@ -14066,6 +14113,9 @@ function readSavedLyricLayout() {
       lyricAnimationStage: !!savedLyricAnimation.lyricAnimationStage,
       lyricAnimationDesktop: false,
       lyricAnimationIntensity: savedLyricAnimation.lyricAnimationIntensity || 'normal',
+      lyricAnimationThemePreset: savedLyricAnimation.lyricAnimationThemePreset || 'folia-dark',
+      lyricAnimationThemeColors: savedLyricAnimation.lyricAnimationThemeColors || null,
+      lyricAnimationBackground: savedLyricAnimation.lyricAnimationBackground || null,
       lyricAnimationOpacity: savedLyricAnimation.lyricAnimationOpacity == null ? 1 : savedLyricAnimation.lyricAnimationOpacity,
       lyricAnimationHideParticles: savedLyricAnimation.lyricAnimationHideParticles !== false,
       lyricAnimationStatic: savedLyricAnimation.lyricAnimationStatic === true,
@@ -45840,13 +45890,25 @@ function updateLyricAnimationControls() {
   document.querySelectorAll('#lyric-anim-mode-grid [data-lyric-anim-mode]').forEach(function(btn){
     btn.classList.toggle('active', btn.getAttribute('data-lyric-anim-mode') === mode);
   });
+  var themePreset = fx.lyricAnimationThemePreset || 'folia-dark';
+  document.querySelectorAll('#lyric-anim-theme-preset-seg [data-lyric-anim-theme-preset]').forEach(function(btn){
+    btn.classList.toggle('active', btn.getAttribute('data-lyric-anim-theme-preset') === themePreset);
+  });
+  var customColors = document.getElementById('lyric-anim-custom-colors');
+  if (customColors) customColors.style.display = themePreset === 'folia-custom' ? '' : 'none';
+  var colorValues = typeof LyricAnimation !== 'undefined' ? LyricAnimation.themeColors(fx.lyricAnimationThemeColors) : {};
+  document.querySelectorAll('#lyric-anim-custom-colors [data-lyric-anim-color]').forEach(function(input){
+    var key = input.getAttribute('data-lyric-anim-color');
+    if (colorValues[key]) input.value = colorValues[key];
+  });
+  if (typeof LyricAnimation !== 'undefined' && LyricAnimation.renderSettingsControls) LyricAnimation.renderSettingsControls();
   var intensity = fx.lyricAnimationIntensity || 'normal';
   document.querySelectorAll('#lyric-anim-intensity-seg [data-lyric-anim-intensity]').forEach(function(btn){
     btn.classList.toggle('active', btn.getAttribute('data-lyric-anim-intensity') === intensity);
   });
   ['classic','fume','partita','tilt','cadenza','monet','cappella'].forEach(function(key){
     var panel = document.getElementById('lyric-anim-tuning-' + key);
-    if (panel) panel.classList.toggle('show', mode === key);
+    if (panel) panel.classList.remove('show');
   });
   var tuning = (typeof LyricAnimation !== 'undefined' ? LyricAnimation.normalizeFx(fx).lyricAnimationTuning : (fx.lyricAnimationTuning || {}));
   var classicRotate = document.getElementById('fx-lyricanim-classic-rotate');

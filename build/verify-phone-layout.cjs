@@ -16,7 +16,7 @@ async function main() {
     if (url.pathname.startsWith('/api/')) {
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ ok:true, service:'mineradio-local-engine', mobile:true,
-        version:'1.6.1', sources:{}, installed:[], songs:[], playlists:[], files:[], items:[],
+        version:'1.7.0', sources:{}, installed:[], songs:[], playlists:[], files:[], items:[],
         entries:[], commands:[], settings:{} }));
       return;
     }
@@ -55,7 +55,7 @@ async function main() {
       const errors = [];
       page.on('pageerror', error => errors.push(error.message));
       await page.goto('http://127.0.0.1:' + server.address().port, { waitUntil:'domcontentloaded' });
-      await page.waitForFunction(() => window.renderer && window.MineradioMobile?.build === '1.6.1-ipad-17');
+      await page.waitForFunction(() => window.renderer && window.MineradioMobile?.build === '1.7.0-ios-18');
       await page.evaluate(() => {
         document.body.classList.remove('splash-active', 'splash-revealing', 'immersive-mode');
         document.querySelectorAll('[id*="splash"]').forEach(el => { el.style.display = 'none'; });
@@ -167,6 +167,29 @@ async function main() {
         assert.ok(lyricZone.top > 100 && lyricZone.bottom < lyricZone.progressTop,
           'portrait lyrics must fit between track heading and progress bar');
         await page.screenshot({ path:path.join(output, 'iphone-player.png') });
+        assert.equal(await page.locator('[data-lyric-anim-mode]').count(), 15, 'all 14 Folia modes plus off');
+        await page.evaluate(() => {
+          window.lyricsLines = ['在你的身边', '每一束光都有回声', '我们继续向前'].map((text, i) => ({
+            t:i * 4, duration:4, text,
+            words:[...text].map((word, j) => ({text:word, t:i * 4 + j * 0.35, d:0.35}))
+          }));
+          window.audio = window.MineradioMobile.createAudio();
+          audio._position = 5.2; audio._duration = 12; audio._paused = false;
+          window.playing = true;
+        });
+        for (const mode of ['classic', 'sonnet', 'lumiere']) {
+          await page.evaluate(async mode => {
+            fx.lyricAnimationStage = true;
+            fx.lyricAnimationThemePreset = 'mineradio';
+            LyricAnimation.setMode(mode);
+            await LyricAnimation.syncStage(true);
+          }, mode);
+          await page.waitForFunction(() => LyricAnimation.isStageReady());
+          await page.waitForTimeout(1100);
+          assert.ok(await page.locator('#lyric-viz-stage-host .mineradio-lyric-viz-root').count(), mode + ' renderer mount');
+          await page.screenshot({ path:path.join(output, 'iphone-' + mode + '.png') });
+        }
+        await page.evaluate(() => { playing = false; audio._paused = true; LyricAnimation.setMode('off'); });
         await page.locator('#phone-player-close').click();
         assert.ok(await page.locator('body').evaluate(el => !el.classList.contains('phone-search-open') && !el.classList.contains('secondary-view-active')));
         await page.screenshot({ path:path.join(output, name + '.png') });

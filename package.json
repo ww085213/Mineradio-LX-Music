@@ -1,7 +1,7 @@
 {
   "name": "mineradio",
   "productName": "Mineradio",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "description": "Mineradio 桌面音乐播放器，支持本地播放、歌单导入同步、跨平台搜索、歌词与可视化效果。",
   "author": "Mineradio",
   "license": "GPL-3.0-only",
@@ -16,7 +16,7 @@
     "build:mac": "electron-builder --mac dmg zip --universal --publish never"
   },
   "build": {
-    "buildVersion": "1.6.1",
+    "buildVersion": "1.7.0",
     "appId": "com.mineradio.desktop",
     "productName": "Mineradio",
     "directories": {
@@ -113,10 +113,10 @@
           ]
         }
       ],
-      "artifactName": "Mineradio-1.6.1-mac-${arch}.${ext}"
+      "artifactName": "Mineradio-1.7.0-mac-${arch}.${ext}"
     },
     "dmg": {
-      "artifactName": "Mineradio-1.6.1-mac-${arch}.${ext}"
+      "artifactName": "Mineradio-1.7.0-mac-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -128,7 +128,7 @@
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "include": "build/installer.nsh",
-      "artifactName": "Mineradio.Setup.1.6.1.${ext}"
+      "artifactName": "Mineradio.Setup.1.7.0.${ext}"
     },
     "publish": [
       {
@@ -139,7 +139,7 @@
     ]
   },
   "mineradio": {
-    "releaseVersion": "1.6.1",
+    "releaseVersion": "1.7.0",
     "update": {
       "provider": "github",
       "owner": "ww085213",

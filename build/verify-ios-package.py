@@ -23,8 +23,8 @@ def verify(target, repo):
             exists = lambda name: (target / name).exists()
 
         info = plistlib.loads(read('Info.plist'))
-        assert info['CFBundleShortVersionString'] == '1.6.1'
-        assert info['CFBundleVersion'] == '17', 'Wrong iOS build number'
+        assert info['CFBundleShortVersionString'] == '1.7.0'
+        assert info['CFBundleVersion'] == '18', 'Wrong iOS build number'
         scene_manifest = info.get('UIApplicationSceneManifest', {})
         scene_configs = scene_manifest.get('UISceneConfigurations', {}).get('UIWindowSceneSessionRoleApplication', [])
         assert any(config.get('UISceneDelegateClassName') == 'App.MineradioSceneDelegate'
@@ -62,20 +62,27 @@ def verify(target, repo):
             'public/nodejs/multimodal-recommender.js': 'multimodal-recommender.js',
             'public/nodejs/agent-api.js': 'agent-api.js',
             'public/nodejs/mobile-media-cache.js': 'mobile-media-cache.js',
+            'public/lyric-animation.js': 'public/lyric-animation.js',
+            'public/vendor/lyric-viz/lyric-viz-bridge.js': 'public/vendor/lyric-viz/lyric-viz-bridge.js',
+            'public/vendor/lyric-viz/lyric-viz-bridge.css': 'public/vendor/lyric-viz/lyric-viz-bridge.css',
+            'public/nodejs/public/lyric-animation.js': 'public/lyric-animation.js',
+            'public/nodejs/public/vendor/lyric-viz/lyric-viz-bridge.js': 'public/vendor/lyric-viz/lyric-viz-bridge.js',
+            'public/licenses/Folia-AGPL-3.0.txt': 'licenses/Folia-AGPL-3.0.txt',
+            'public/licenses/THIRD_PARTY_PORTS.md': 'docs/THIRD_PARTY_PORTS.md',
         }
         for packed, source in mapping.items():
             actual = read(packed).replace(b'\r\n', b'\n')
             expected = (repo / source).read_bytes().replace(b'\r\n', b'\n')
             assert actual == expected, 'Stale/missing packaged source: ' + packed
         bridge = read('public/mobile-bridge.js')
-        assert b'1.6.1-ipad-17' in bridge and b'CapacitorHttp' in bridge
+        assert b'1.7.0-ios-18' in bridge and b'CapacitorHttp' in bridge
         assert all(symbol in executable for symbol in (b'playAudio', b'syncNowPlaying', b'MPRemoteCommandCenter')), 'Missing native music playback and controls'
         assert read('public/mobile-app-icon.png') == (repo / 'build/icon.png').read_bytes()
         assert b'mineradio-local-engine' in read('public/nodejs/server.js')
-        assert json.loads(read('public/nodejs/package.json'))['version'] == '1.6.1'
+        assert json.loads(read('public/nodejs/package.json'))['version'] == '1.7.0'
         assert read('public/nodejs/node_modules/qrcode/package.json')
         assert not exists('public/nodejs/builtin-source.json'), 'iOS package must not contain a built-in audio source'
-        print('PASS: build 17; scene lifecycle; native AVPlayer, track and seek commands; artwork; resilient proxy; no built-in source; exact UI/source match')
+        print('PASS: build 18; scene lifecycle; native AVPlayer, track and seek commands; artwork; resilient proxy; no built-in source; exact UI/source match')
         if archive:
             print('SHA256: ' + hashlib.sha256(target.read_bytes()).hexdigest())
     finally:

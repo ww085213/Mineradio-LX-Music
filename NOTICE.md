@@ -13,6 +13,8 @@ Mineradio 使用了以下第三方项目或服务。各项目版权归其原作�
 
 ## Community Contributions
 
+- Lyric visualizer: adapted from [chthollyphile/folia-major](https://github.com/chthollyphile/folia-major), copyright its contributors, under GNU AGPL-3.0. The Windows/iOS bridge includes all 14 lyric modes and Folia backgrounds. Source and provenance are provided in `lyric-viz-bridge/`, `docs/THIRD_PARTY_PORTS.md`, and `licenses/Folia-AGPL-3.0.txt`.
+
 - Cuefield AutoMix planner/runtime: adapted for experimental local testing from [SLYysl/cuefield-mineradio](https://github.com/SLYysl/cuefield-mineradio) (GPL-3.0). The optional remote-feedback component from that repository is not included; Mineradio stores Cuefield ratings locally in the current user's data directory.
 - Wallpaper Engine local-library detection and import UX: independently adapted from the approach used by [ww085213/Mineradio-LX-Music](https://github.com/ww085213/Mineradio-LX-Music) at commit `a5ef80a219709080700be5b1d00f1ea71a5a2576` (GPL-3.0). Mineradio only indexes local `project.json` metadata; it does not execute imported Web/Application projects or replace the user's existing background-media settings.
 - Full-desktop main-window mode and home-dashboard information hierarchy: initially adapted from [ww085213/Mineradio-LX-Music](https://github.com/ww085213/Mineradio-LX-Music) at commit `82826df814c32853d99697c0ee60f749a2fcad79`, with the homepage refreshed against `812e2dc2e18bbc263e61dbd0206cb765e003d6e9` (GPL-3.0). Mineradio keeps its own provider, queue, playlist, listening-history, WorkerW validation, DPI, lifecycle, and cleanup implementations; see `docs/THIRD_PARTY_PORTS.md` in the corresponding source distribution.

@@ -12,7 +12,7 @@ async function main() {
     const url = new URL(req.url, 'http://localhost');
     if (url.pathname.startsWith('/api/')) {
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ ok: true, service: 'mineradio-local-engine', mobile: true, version: '1.6.1', sources: {}, installed: [], songs: [], playlists: [], files: [], items: [], entries: [], commands: [], settings: {} })); return;
+      res.end(JSON.stringify({ ok: true, service: 'mineradio-local-engine', mobile: true, version: '1.7.0', sources: {}, installed: [], songs: [], playlists: [], files: [], items: [], entries: [], commands: [], settings: {} })); return;
     }
     let file = path.join(root, 'public', decodeURIComponent(url.pathname === '/' ? 'index.html' : url.pathname));
     if (url.pathname === '/mobile-ipad.js' || url.pathname === '/mobile-bridge.js') file = path.join(root, 'ios-support', path.basename(url.pathname));
@@ -42,7 +42,7 @@ async function main() {
       const errors = [];
       page.on('pageerror', error => errors.push(error.message));
       await page.goto('http://127.0.0.1:' + server.address().port, { waitUntil: 'domcontentloaded' });
-      await page.waitForFunction(() => window.renderer && window.toggleRenderFpsHud && window.MineradioMobile?.build === '1.6.1-ipad-17');
+      await page.waitForFunction(() => window.renderer && window.toggleRenderFpsHud && window.MineradioMobile?.build === '1.7.0-ios-18');
       await page.evaluate(() => {
         document.body.classList.remove('splash-active', 'splash-revealing', 'immersive-mode');
         document.body.classList.add('empty-home-active');

@@ -43,6 +43,11 @@ jobs:
           cp ios-support/mobile-bridge.js ios-build/www/mobile-bridge.js
           cp ios-support/mobile-ipad.js ios-build/www/mobile-ipad.js
           cp build/icon.png ios-build/www/mobile-app-icon.png
+          mkdir -p ios-build/www/licenses
+          cp LICENSE ios-build/www/licenses/Mineradio-GPL-3.0.txt
+          cp licenses/Folia-AGPL-3.0.txt ios-build/www/licenses/Folia-AGPL-3.0.txt
+          cp NOTICE.md ios-build/www/licenses/NOTICE.md
+          cp docs/THIRD_PARTY_PORTS.md ios-build/www/licenses/THIRD_PARTY_PORTS.md
 
           # Bundle the desktop Node backend and its static assets inside the app.
           find . -maxdepth 1 -type f -name '*.js' -exec cp {} ios-build/www/nodejs/ \;
@@ -72,11 +77,11 @@ jobs:
           {
             "name": "mineradio-ios-node",
             "productName": "Mineradio",
-            "version": "1.6.1",
+            "version": "1.7.0",
             "private": true,
             "main": "mobile-node-main.js",
             "mineradio": {
-              "releaseVersion": "1.6.1",
+              "releaseVersion": "1.7.0",
               "update": {
                 "provider": "github",
                 "owner": "ww085213",
@@ -95,7 +100,7 @@ jobs:
           cat > package.json <<'JSON'
           {
             "name": "mineradio-ios-build",
-            "version": "1.6.1",
+            "version": "1.7.0",
             "private": true,
             "dependencies": {
               "@capacitor/cli": "8.4.0",
@@ -156,8 +161,8 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Mineradio" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.6.1" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 17" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.7.0" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 18" "$PLIST"
           python3 - "$PLIST" <<'PY'
           import plistlib
           import sys
@@ -250,16 +255,16 @@ jobs:
           mkdir -p "$RUNNER_TEMP/ipa/Payload"
           cp -R "$APP_PATH" "$RUNNER_TEMP/ipa/Payload/Mineradio.app"
           cd "$RUNNER_TEMP/ipa"
-          zip -qry Mineradio-1.6.1-ipad-17.ipa Payload
-          python3 "$GITHUB_WORKSPACE/build/verify-ios-package.py" Mineradio-1.6.1-ipad-17.ipa --repo "$GITHUB_WORKSPACE"
-          shasum -a 256 Mineradio-1.6.1-ipad-17.ipa > Mineradio-1.6.1-ipad-17.SHA256.txt
+          zip -qry Mineradio-1.7.0-ios-18.ipa Payload
+          python3 "$GITHUB_WORKSPACE/build/verify-ios-package.py" Mineradio-1.7.0-ios-18.ipa --repo "$GITHUB_WORKSPACE"
+          shasum -a 256 Mineradio-1.7.0-ios-18.ipa > Mineradio-1.7.0-ios-18.SHA256.txt
 
       - name: Upload standalone unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Mineradio-iOS-ipad-17
+          name: Mineradio-iOS-1.7.0-18
           if-no-files-found: error
           retention-days: 30
           path: |
-            ${{ runner.temp }}/ipa/Mineradio-1.6.1-ipad-17.ipa
-            ${{ runner.temp }}/ipa/Mineradio-1.6.1-ipad-17.SHA256.txt
+            ${{ runner.temp }}/ipa/Mineradio-1.7.0-ios-18.ipa
+            ${{ runner.temp }}/ipa/Mineradio-1.7.0-ios-18.SHA256.txt

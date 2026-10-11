@@ -1,0 +1,31 @@
+{
+  "name": "mineradio-lyric-viz-bridge",
+  "private": true,
+  "version": "0.0.0-local",
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@chenglou/pretext": "^0.0.9",
+    "@paper-design/shaders-react": "^0.0.80",
+    "@react-three/fiber": "^9.8.1",
+    "framer-motion": "^13.4.3",
+    "i18next": "^26.4.2",
+    "lucide-react": "^0.562.0",
+    "pixi.js": "^8.21.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-i18next": "^17.0.15",
+    "three": "^0.185.1",
+    "twgl.js": "^7.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@vitejs/plugin-react": "^6.1.1",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~7.0.2",
+    "vite": "^8.3.1"
+  }
+}
