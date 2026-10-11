@@ -1,7 +1,8 @@
 (function(global) {
   'use strict';
 
-  var LYRIC_ANIM_MODES = ['off', 'classic', 'cadenza', 'partita', 'fume', 'cappella', 'tilt', 'monet'];
+  var LYRIC_ANIM_MODES = ['off', 'classic', 'cadenza', 'partita', 'fume', 'cappella', 'tilt', 'monet', 'claddagh', 'diorama', 'lumiere', 'pendolo', 'sonnet', 'still', 'tempera'];
+  var LYRIC_ANIM_BACKGROUND_MODES = ['common', 'monet', 'nomand', 'latent', 'url', 'sora', 'transparent'];
   var LYRIC_ANIM_MODE_LABELS = {
     off: '关闭',
     classic: '流光',
@@ -10,7 +11,14 @@
     fume: '浮名',
     cappella: '群唱',
     tilt: '倾诉',
-    monet: '莫奈'
+    monet: '莫奈',
+    claddagh: 'Claddagh',
+    diorama: '镜台',
+    lumiere: '绘光',
+    pendolo: 'Pendolo',
+    sonnet: '商籁',
+    still: 'Still',
+    tempera: '凝彩'
   };
 
   var DEFAULT_TUNING = {
@@ -30,12 +38,15 @@
     cappella: { showEmoMessages: true, emojiPackSource: 'builtin', avatarSource: 'cover' },
     tilt: { splitProbability: 0.75, tiltStyleProbability: 0.35, colorScheme: 'default' },
     monet: {
-      lyricsFocusScale: 1,
-      portraitScale: 1,
-      portraitOffsetX: 0,
-      portraitOffsetY: 0,
+      keywordColoringEnabled: true,
+      showDescription: true,
+      showAudioVisualization: true,
       audioStyle: 'bar',
-      audioOpacity: 0.72
+      fontScale: 1,
+      portraitSource: 'cover',
+      portraitOffsetX: 0,
+      portraitStyle: 'square',
+      showPortraitDragHanger: false
     }
   };
 
@@ -75,6 +86,46 @@
   function normalizeMode(mode) {
     var key = String(mode || 'off');
     return LYRIC_ANIM_MODES.indexOf(key) >= 0 ? key : 'off';
+  }
+
+  function normalizeThemePreset(value) {
+    return value === 'folia-light' || value === 'folia-custom' || value === 'mineradio' ? value : 'folia-dark';
+  }
+
+  function normalizeThemeColors(raw) {
+    raw = raw && typeof raw === 'object' ? raw : {};
+    var defaults = { backgroundColor: '#09090b', primaryColor: '#f4f4f5', accentColor: '#eeb9ef', secondaryColor: '#927c9d' };
+    var colors = {};
+    Object.keys(defaults).forEach(function(key) {
+      colors[key] = /^#[0-9a-f]{6}$/i.test(String(raw[key] || '')) ? String(raw[key]) : defaults[key];
+    });
+    return colors;
+  }
+
+  function normalizeBackground(raw) {
+    raw = raw && typeof raw === 'object' ? raw : {};
+    var mode = LYRIC_ANIM_BACKGROUND_MODES.indexOf(raw.mode) >= 0 ? raw.mode : null;
+    return {
+      mode: mode === 'transparent' ? 'common' : mode || undefined,
+      transparent: raw.transparent === true || mode === 'transparent',
+      useCoverColorBg: raw.useCoverColorBg === true,
+      opacity: clampRangeLocal(raw.opacity == null ? 0.75 : Number(raw.opacity), 0, 1),
+      disableGeometricBackground: raw.disableGeometricBackground === true,
+      disableVignette: raw.disableVignette === true,
+      monetTuning: raw.monetTuning && typeof raw.monetTuning === 'object' ? raw.monetTuning : {},
+      nomandTuning: raw.nomandTuning && typeof raw.nomandTuning === 'object' ? raw.nomandTuning : {},
+      latentTuning: raw.latentTuning && typeof raw.latentTuning === 'object' ? raw.latentTuning : {},
+      soraTuning: raw.soraTuning && typeof raw.soraTuning === 'object' ? raw.soraTuning : {},
+      urlItems: Array.isArray(raw.urlItems) ? raw.urlItems.slice(0, 12).filter(function(item) { return item && typeof item.url === 'string'; }) : [],
+      urlSelectedId: typeof raw.urlSelectedId === 'string' ? raw.urlSelectedId : null
+    };
+  }
+
+  function selectedBackgroundMode(fxRef) {
+    var raw = fxRef && fxRef.lyricAnimationBackground;
+    if (raw && raw.transparent) return 'transparent';
+    return raw && LYRIC_ANIM_BACKGROUND_MODES.indexOf(raw.mode) >= 0
+      ? raw.mode : (fxRef && fxRef.lyricAnimationMode === 'monet' ? 'monet' : 'common');
   }
 
   function getFx() {
@@ -119,9 +170,8 @@
       delete copy.translation;
       delete copy.translationSource;
     }
-    // 外语歌词固定成一个带时间轴的整行。不能只删除 words：动画库会再次
-    // 自动拆词并生成时间轴，导致英文单词在舞台上散开乱飞。
-    if (isForeignLineText(copy.text)) {
+    // 仅旧版 Mineradio 配色保留外语整行行为；Folia 配色沿用逐词时间轴。
+    if (normalizeThemePreset(fxRef && fxRef.lyricAnimationThemePreset) === 'mineradio' && isForeignLineText(copy.text)) {
       var originalWords = Array.isArray(copy.words) ? copy.words : [];
       var start = isFinite(Number(copy.t)) ? Number(copy.t) : 0;
       if (originalWords.length && isFinite(Number(originalWords[0].t))) start = Number(originalWords[0].t);
@@ -193,12 +243,12 @@
       if (!document.querySelector('link[data-lyric-viz-css]')) {
         var css = document.createElement('link');
         css.rel = 'stylesheet';
-        css.href = 'vendor/lyric-viz/lyric-viz-bridge.css';
+        css.href = 'vendor/lyric-viz/lyric-viz-bridge.css?v=20261010-pixi-no-eval';
         css.setAttribute('data-lyric-viz-css', '1');
         document.head.appendChild(css);
       }
       var script = document.createElement('script');
-      script.src = 'vendor/lyric-viz/lyric-viz-bridge.js';
+      script.src = 'vendor/lyric-viz/lyric-viz-bridge.js?v=20261010-pixi-no-eval';
       script.async = true;
       script.onload = function() {
         var api = resolveLyricVizApi();
@@ -226,6 +276,35 @@
 
   function lyricAnimationThemeFromFx(fxRef, palette) {
     palette = palette || {};
+    var preset = normalizeThemePreset(fxRef.lyricAnimationThemePreset);
+    if (preset !== 'mineradio') {
+      if (preset === 'folia-custom') {
+        var custom = normalizeThemeColors(fxRef.lyricAnimationThemeColors);
+        return {
+          name: 'Folia Custom',
+          backgroundColor: custom.backgroundColor,
+          primaryColor: custom.primaryColor,
+          accentColor: custom.accentColor,
+          secondaryColor: custom.secondaryColor,
+          fontStyle: 'sans',
+          animationIntensity: fxRef.lyricAnimationIntensity || 'normal',
+          wordColors: [],
+          lyricsIcons: []
+        };
+      }
+      var daylight = preset === 'folia-light';
+      return {
+        name: daylight ? 'Daylight Default' : 'Midnight Default',
+        backgroundColor: daylight ? '#f5f5f4' : '#09090b',
+        primaryColor: daylight ? '#1c1917' : '#f4f4f5',
+        accentColor: daylight ? '#ea580c' : '#f4f4f5',
+        secondaryColor: daylight ? '#44403c' : '#71717a',
+        fontStyle: 'sans',
+        animationIntensity: fxRef.lyricAnimationIntensity || 'normal',
+        wordColors: [],
+        lyricsIcons: []
+      };
+    }
     var mode = normalizeMode(fxRef.lyricAnimationMode);
     var primary = fxRef.lyricColorMode === 'custom'
       ? (fxRef.lyricColor || palette.primary || '#f6fdff')
@@ -241,7 +320,9 @@
       secondary: palette.secondary || fxRef.visualTintColor || glow || '#9cffdf',
       highlight: highlight,
       glow: glow,
-      fontFamily: typeof global.lyricFontStackForKey === 'function' ? global.lyricFontStackForKey(fxRef.lyricFont) : '',
+      // “当前配色”只继承颜色。旧播放器返回的是整段 CSS 字体栈，
+      // Folia 接口却把 fontFamily 当作单个字体名；嵌套引号使测量和绘制不一致，
+      // 商籁等逐字动画因而把字排到画布外。沿用歌词引擎自己的字体栈。
       animationIntensity: fxRef.lyricAnimationIntensity || 'normal'
     };
     if (mode === 'fume' || mode === 'monet') {
@@ -261,7 +342,10 @@
       tilt: Object.assign({}, DEFAULT_TUNING.tilt, raw.tilt || {}),
       monet: Object.assign({}, DEFAULT_TUNING.monet, raw.monet || {})
     };
-    if (isForeignDominantLyrics()) {
+    ['claddagh', 'diorama', 'lumiere', 'pendolo', 'sonnet', 'tempera'].forEach(function(mode) {
+      tuning[mode] = raw[mode] && typeof raw[mode] === 'object' ? Object.assign({}, raw[mode]) : {};
+    });
+    if (normalizeThemePreset(fxRef.lyricAnimationThemePreset) === 'mineradio' && isForeignDominantLyrics()) {
       tuning.classic.enableWordRotation = false;
       tuning.classic.wordSpacing = Math.min(Number(tuning.classic.wordSpacing) || 0.7, 0.35);
       tuning.cadenza.fontScale = Math.min(Number(tuning.cadenza.fontScale) || 1, 0.9);
@@ -318,13 +402,9 @@
     return !global.audio || !!global.audio.paused;
   }
 
-  function isHomePageVisible() {
-    return !!(document.body && document.body.classList.contains('empty-home-active'));
-  }
-
   function isStageLyricLayerAllowed(fxRef) {
     fxRef = fxRef || getFx();
-    return isStageAnimationActive(fxRef) && !isHomePageVisible();
+    return isStageAnimationActive(fxRef);
   }
 
   function restorePlaybackControlsAfterAnimationChange() {
@@ -334,7 +414,7 @@
 
   function applyStageHostClasses(fxRef, active) {
     var host = getHost();
-    var layerAllowed = !!active && !isHomePageVisible();
+    var layerAllowed = !!active;
     if (host) {
       host.classList.toggle('active', layerAllowed);
     }
@@ -360,6 +440,7 @@
     api.setMode(host, normalizeMode(fxRef.lyricAnimationMode));
     api.setTheme(host, lyricAnimationThemeFromFx(fxRef, pal));
     api.setTuning(host, lyricAnimationTuningFromFx(fxRef));
+    if (typeof api.setBackground === 'function') api.setBackground(host, normalizeBackground(fxRef.lyricAnimationBackground));
     api.setMeta(host, lyricAnimationMetaFromContext(fxRef));
     api.setLines(host, lines);
     api.setPaused(host, isPlaybackPaused());
@@ -497,6 +578,381 @@
     }
   }
 
+  function setLyricAnimationThemePreset(preset) {
+    var fxRef = getFx();
+    if (!fxRef) return;
+    fxRef.lyricAnimationThemePreset = normalizeThemePreset(preset);
+    syncStageLyricAnimation(true);
+    if (typeof global.saveLyricLayout === 'function') global.saveLyricLayout();
+    if (typeof global.updateLyricAnimationControls === 'function') global.updateLyricAnimationControls();
+  }
+
+  function setLyricAnimationThemeColor(key, value) {
+    var fxRef = getFx();
+    if (!fxRef || ['backgroundColor', 'primaryColor', 'accentColor', 'secondaryColor'].indexOf(key) < 0) return;
+    if (!/^#[0-9a-f]{6}$/i.test(String(value))) return;
+    fxRef.lyricAnimationThemeColors = normalizeThemeColors(Object.assign({}, fxRef.lyricAnimationThemeColors || {}, { [key]: value }));
+    fxRef.lyricAnimationThemePreset = 'folia-custom';
+    refreshLyricAnimationAppearance();
+    if (typeof global.saveLyricLayout === 'function') global.saveLyricLayout();
+    if (typeof global.updateLyricAnimationControls === 'function') global.updateLyricAnimationControls();
+  }
+
+  function setLyricAnimationBackgroundMode(mode) {
+    var fxRef = getFx();
+    if (!fxRef || LYRIC_ANIM_BACKGROUND_MODES.indexOf(mode) < 0) return;
+    var background = normalizeBackground(fxRef.lyricAnimationBackground);
+    background.transparent = mode === 'transparent';
+    background.mode = mode === 'transparent' ? 'common' : mode;
+    fxRef.lyricAnimationBackground = background;
+    applyLiveLyricAnimationSettings(fxRef, 'background');
+    if (typeof global.saveLyricLayout === 'function') global.saveLyricLayout();
+    if (typeof global.updateLyricAnimationControls === 'function') global.updateLyricAnimationControls();
+  }
+
+  function patchLyricAnimationBackground(patch) {
+    var fxRef = getFx();
+    if (!fxRef || !patch || typeof patch !== 'object') return;
+    fxRef.lyricAnimationBackground = normalizeBackground(Object.assign({}, fxRef.lyricAnimationBackground || {}, patch));
+    applyLiveLyricAnimationSettings(fxRef, 'background');
+    if (typeof global.saveLyricLayout === 'function') global.saveLyricLayout();
+  }
+
+  function patchLyricAnimationBackgroundTuning(mode, patch) {
+    var fxRef = getFx();
+    var key = { monet: 'monetTuning', nomand: 'nomandTuning', latent: 'latentTuning', sora: 'soraTuning' }[mode];
+    if (!fxRef || !key || !patch || typeof patch !== 'object') return;
+    var background = normalizeBackground(fxRef.lyricAnimationBackground);
+    background[key] = Object.assign({}, background[key], patch);
+    fxRef.lyricAnimationBackground = background;
+    applyLiveLyricAnimationSettings(fxRef, 'background');
+    if (typeof global.saveLyricLayout === 'function') global.saveLyricLayout();
+  }
+
+  function resetLyricAnimationBackground() {
+    var fxRef = getFx();
+    if (!fxRef) return;
+    var mode = selectedBackgroundMode(fxRef);
+    var background = normalizeBackground(fxRef.lyricAnimationBackground);
+    if (mode === 'common') {
+      background.useCoverColorBg = false;
+      background.opacity = 0.75;
+      background.disableGeometricBackground = false;
+      background.disableVignette = false;
+    } else if (mode === 'url') {
+      background.urlItems = [];
+      background.urlSelectedId = null;
+    } else if (mode === 'transparent') {
+      background.transparent = false;
+      background.mode = 'common';
+    } else {
+      background[mode + 'Tuning'] = {};
+    }
+    fxRef.lyricAnimationBackground = background;
+    applyLiveLyricAnimationSettings(fxRef, 'background');
+    if (typeof global.saveLyricLayout === 'function') global.saveLyricLayout();
+    renderLyricAnimationSettingsControls();
+  }
+
+  function resetLyricAnimationModeTuning() {
+    var fxRef = getFx();
+    if (!fxRef) return;
+    var mode = normalizeMode(fxRef.lyricAnimationMode);
+    if (!fxRef.lyricAnimationTuning) fxRef.lyricAnimationTuning = {};
+    fxRef.lyricAnimationTuning[mode] = {};
+    applyLiveLyricAnimationSettings(fxRef, 'tuning');
+    if (typeof global.saveLyricLayout === 'function') global.saveLyricLayout();
+    renderLyricAnimationSettingsControls();
+  }
+
+  var BACKGROUND_FIELDS = {
+    common: [
+      ['useCoverColorBg', '叠加封面色彩', 'toggle', false],
+      ['opacity', '背景层透明度', 'range', 0.75, 0, 1, 0.01],
+      ['disableGeometricBackground', '隐藏通用几何背景', 'toggle', false],
+      ['disableVignette', '禁用暗角', 'toggle', false]
+    ],
+    monet: [
+      ['backgroundLayout', '封面布局', 'select', 'full-overlay', [['full-overlay', '全屏'], ['half-pane-gradient', '半屏渐变']]],
+      ['backgroundBlurPx', '模糊半径', 'range', 6, 0, 40, 1],
+      ['backgroundOverlayOpacity', '遮罩透明度', 'range', 0.74, 0, 1, 0.01],
+      ['backgroundGrayscale', '黑白程度', 'range', 0, 0, 1, 0.01],
+      ['backgroundSaturation', '饱和度', 'range', 1.05, 0, 2, 0.05],
+      ['backgroundWash', '色彩晕染', 'range', 0.34, 0, 1, 0.01],
+      ['backgroundDriftEnabled', '缓慢漂移', 'toggle', true],
+      ['backgroundDriftStrength', '漂移幅度', 'range', 0.5, 0, 1, 0.05],
+      ['backgroundStreaksEnabled', '细线纹理', 'toggle', true]
+    ],
+    nomand: [
+      ['effect', '封面效果', 'select', 'dithering', [['dithering', '抖动像素'], ['fluted-glass', '棱纹玻璃'], ['paper-texture', '纸张纹理'], ['halftone-dots', '半调圆点'], ['lens-distortion', '镜头畸变']]],
+      ['ditheringType', '像素矩阵', 'select', '8x8', [['2x2', '2×2'], ['4x4', '4×4'], ['8x8', '8×8']]],
+      ['size', '颗粒大小', 'range', 3, 1, 8, 0.1],
+      ['colorSteps', '色阶', 'range', 4, 2, 12, 1],
+      ['originalColors', '保留封面颜色', 'toggle', false],
+      ['inverted', '反相', 'toggle', false],
+      ['flutedGlassSize', '玻璃纹宽度', 'range', 0.5, 0, 1, 0.01],
+      ['flutedGlassDistortion', '玻璃扭曲', 'range', 0.5, 0, 1, 0.01],
+      ['paperTextureContrast', '纸张对比度', 'range', 0.32, 0, 1, 0.01],
+      ['paperTextureRoughness', '纸张粗糙度', 'range', 0.42, 0, 1, 0.01],
+      ['halftoneDotsSize', '圆点大小', 'range', 0.5, 0, 1, 0.01],
+      ['halftoneDotsContrast', '圆点对比度', 'range', 0.4, 0, 1, 0.01],
+      ['lensDistortionSpread', '镜头扩散', 'range', 0.45, 0, 1, 0.01],
+      ['lensDistortionBulge', '镜头鼓起', 'range', 0.3, 0, 1, 0.01],
+      ['overlayEnabled', '背景遮罩', 'toggle', true],
+      ['overlayOpacity', '遮罩透明度', 'range', 0.35, 0, 1, 0.01]
+    ],
+    latent: [
+      ['displayMode', '动画层', 'select', 'both', [['both', '双层'], ['dithering', '抖动'], ['mesh', '渐变']]],
+      ['colorSource', '取色来源', 'select', 'cover-theme', [['cover-theme', '封面＋主题'], ['cover-only', '仅封面']]],
+      ['enhancedBeatResponse', '增强节奏响应', 'toggle', true],
+      ['ditheringSpeed', '像素速度', 'range', 0.1, 0, 2, 0.05],
+      ['ditheringSize', '像素大小', 'range', 2.5, 0.5, 8, 0.1],
+      ['ditheringOpacity', '像素透明度', 'range', 0.55, 0, 1, 0.01],
+      ['meshSpeed', '渐变速度', 'range', 0.3, 0, 2, 0.05],
+      ['meshDistortion', '渐变扭曲', 'range', 0.8, 0, 2, 0.05],
+      ['overlayEnabled', '背景遮罩', 'toggle', true],
+      ['overlayOpacity', '遮罩透明度', 'range', 0.35, 0, 1, 0.01]
+    ],
+    sora: [['blank', '纯色空白背景', 'toggle', false]]
+  };
+
+  var MODE_FIELDS = {
+    classic: [
+      ['enableWordRotation', '逐词旋转', 'toggle', true],
+      ['breathingFloatMultiplier', '呼吸漂浮', 'range', 1, 0, 2, 0.05],
+      ['useLegacyLayout', '传统排版', 'toggle', false],
+      ['wordSpacing', '词间距', 'range', 0.7, 0, 2, 0.05]
+    ],
+    cadenza: [
+      ['fontScale', '字号比例', 'range', 1.12, 0.6, 1.8, 0.02],
+      ['widthRatio', '排版宽度', 'range', 0.72, 0.4, 1, 0.02],
+      ['motionAmount', '运动幅度', 'range', 1, 0, 2, 0.05],
+      ['glowIntensity', '辉光强度', 'range', 1, 0, 2, 0.05],
+      ['beamIntensity', '光束强度', 'range', 0, 0, 2, 0.05]
+    ],
+    partita: [
+      ['showGuideLines', '显示引导线', 'toggle', true],
+      ['useSemanticLayout', '语义排版', 'toggle', true],
+      ['staggerMin', '错落最小', 'range', 20, 0, 180, 1],
+      ['staggerMax', '错落最大', 'range', 100, 0, 180, 1]
+    ],
+    fume: [
+      ['hidePrintSymbols', '隐藏印刷符号', 'toggle', false],
+      ['disableGeometricBackground', '隐藏几何背景', 'toggle', true],
+      ['backgroundObjectOpacity', '背景物件透明度', 'range', 0.5, 0, 1, 0.01],
+      ['textHoldRatio', '文字停留', 'range', 1, 0, 2, 0.05],
+      ['cameraTrackingMode', '镜头跟踪', 'select', 'smooth', [['smooth', '平滑'], ['stepped', '分段']]],
+      ['cameraSpeed', '镜头速度', 'range', 1, 0.2, 2, 0.05],
+      ['glowIntensity', '辉光强度', 'range', 1, 0, 2, 0.05],
+      ['heroScale', '主标题比例', 'range', 1, 0.5, 1.8, 0.05]
+    ],
+    cappella: [
+      ['showEmoMessages', '显示表情消息', 'toggle', true],
+      ['emojiPackSource', '表情来源', 'select', 'builtin', [['builtin', '内置'], ['custom', '自定义']]],
+      ['avatarSource', '头像来源', 'select', 'cover', [['cover', '封面'], ['builtin', '内置'], ['color', '纯色'], ['custom', '自定义']]]
+    ],
+    tilt: [
+      ['splitProbability', '拆分概率', 'range', 0.75, 0, 1, 0.05],
+      ['tiltStyleProbability', '倾斜概率', 'range', 0.35, 0, 1, 0.05],
+      ['colorScheme', '配色', 'select', 'default', [['default', '默认'], ['swap', '对调'], ['accentAll', '全部强调色'], ['primaryAll', '全部主色']]]
+    ],
+    monet: [
+      ['keywordColoringEnabled', '关键词着色', 'toggle', true],
+      ['showDescription', '显示歌曲描述', 'toggle', true],
+      ['showAudioVisualization', '显示音频图形', 'toggle', true],
+      ['audioStyle', '音频图形样式', 'select', 'bar', [['bar', '柱形'], ['line', '线条']]],
+      ['fontScale', '字号比例', 'range', 1, 0.5, 2, 0.05],
+      ['portraitSource', '肖像来源', 'select', 'cover', [['cover', '封面'], ['custom', '自定义']]],
+      ['portraitOffsetX', '肖像横移', 'range', 0, -1, 1, 0.05],
+      ['portraitStyle', '肖像形状', 'select', 'square', [['square', '方形'], ['rectangular', '长方形']]]
+    ],
+    claddagh: [
+      ['focusScaleRatio', '焦点比例', 'range', 0.65, 0, 1.5, 0.05],
+      ['radiusScale', '圆弧半径', 'range', 1, 0.5, 1.5, 0.05],
+      ['ellipseTiltDeg', '椭圆角度', 'range', 45, 0, 60, 1],
+      ['showAxisLine', '显示轴线', 'toggle', true],
+      ['letterSpacingOffset', '字间距偏移', 'range', 0, -0.5, 0.5, 0.01]
+    ],
+    diorama: [
+      ['cameraSpeed', '镜头速度', 'range', 1, 0.1, 2, 0.05],
+      ['motionAmount', '运动幅度', 'range', 1, 0, 2, 0.05],
+      ['audioReactivity', '音频响应', 'range', 1, 0, 2, 0.05],
+      ['particleDensity', '点云密度', 'range', 576, 96, 1536, 24],
+      ['particleScale', '点云大小', 'range', 1, 0.65, 1.6, 0.05],
+      ['showParticles', '背景粒子', 'toggle', true],
+      ['particleGlowEnabled', '点云辉光', 'toggle', true],
+      ['particleGlowIntensity', '点云辉光强度', 'range', 0.65, 0.1, 1.5, 0.05],
+      ['glowEnabled', '普通跟唱辉光', 'toggle', true],
+      ['soulEnabled', '灵魂出窍跟唱', 'toggle', true],
+      ['gradientEnabled', '渐变跟唱', 'toggle', false],
+      ['geometryVisibility.enabled', '显示点云结构', 'toggle', true],
+      ['geometryVisibility.mode', '点云形态', 'select', 'clouds', [['clouds', '云团'], ['corridor', '通道']]]
+    ],
+    lumiere: [
+      ['lightIntensity', '光强', 'range', 1, 0.3, 2, 0.05],
+      ['audioResponse', '音频响应', 'range', 1, 0, 2, 0.05],
+      ['fogDensity', '烟雾浓度', 'range', 1, 0, 2, 0.05],
+      ['darkField', '暗场强度', 'range', 0.75, 0, 1, 0.01],
+      ['bloom', '图形辉光', 'range', 1, 0, 2, 0.05],
+      ['textBloom', '文字辉光', 'range', 1, 0, 2, 0.05],
+      ['echo', '背景歌词亮度', 'range', 1, 0, 2, 0.05],
+      ['lineArt', '线稿', 'toggle', true],
+      ['trails', '轨迹线', 'toggle', true],
+      ['overlayFrame', '画框', 'toggle', true],
+      ['textOnly', '仅显示歌词', 'toggle', false],
+      ['renderQuality', '画质', 'select', 'full', [['full', '完整'], ['balanced', '均衡'], ['low', '省电']]]
+    ],
+    pendolo: [
+      ['arcRadius', '文字弧半径', 'range', 0.42, 0.2, 0.8, 0.01],
+      ['arcAngleDeg', '弧度角', 'range', 100, 30, 180, 1],
+      ['tickSnappiness', '钟摆响应', 'range', 2, 0.2, 4, 0.05],
+      ['activeScale', '当前歌词比例', 'range', 1.25, 0.8, 2, 0.05],
+      ['showGearDecor', '齿轮装饰', 'select', 'subtle', [['none', '关闭'], ['subtle', '轻微'], ['full', '完整']]],
+      ['showCenterGradient', '中心渐变', 'toggle', true],
+      ['showCoverOnWatchFace', '表盘封面', 'toggle', false],
+      ['enableLineGlow', '逐行辉光', 'toggle', false]
+    ],
+    sonnet: [
+      ['cameraIntensity', '镜头强度', 'range', 1, 0, 2, 0.05],
+      ['typographyMotion', '排版运动', 'range', 1, 0, 2, 0.05],
+      ['mgDensity', '动态图形密度', 'range', 1, 0, 2, 0.05],
+      ['showOnlyText', '仅文字', 'toggle', false],
+      ['showGuide', '辅助线', 'toggle', true],
+      ['showBackgroundMg', '背景动态图形', 'toggle', true],
+      ['showGiantDecorativeText', '巨型装饰字', 'toggle', true],
+      ['enableTransitions', '转场', 'toggle', true],
+      ['outerFrameMode', '外框', 'select', 'full', [['none', '关闭'], ['frame', '边框'], ['full', '完整']]],
+      ['postProcessEnabled', '后期处理', 'toggle', false],
+      ['postProcessGrain', '胶片颗粒', 'range', 0.2, 0, 1, 0.05]
+    ],
+    tempera: [
+      ['cameraIntensity', '镜头强度', 'range', 1, 0, 2, 0.05],
+      ['glyphMotion', '逐字运动', 'range', 1, 0, 2, 0.05],
+      ['wholeLineLyrics', '整行歌词镜头', 'toggle', false],
+      ['glyphSettleStretch', '逐字入场跨度', 'range', 0.5, 0, 1, 0.01],
+      ['colorMode', '色彩方式', 'select', 'duo', [['duo', '双色'], ['mono', '单色'], ['gradient', '渐变']]],
+      ['showBlocks', '色块', 'toggle', true],
+      ['showDecor', '装饰', 'toggle', true],
+      ['textInversion', '文字动态反色', 'toggle', true],
+      ['enableTransitions', '转场', 'toggle', true],
+      ['postProcessEnabled', '后期处理', 'toggle', true],
+      ['postProcessGrain', '胶片颗粒', 'range', 0.2, 0, 1, 0.05]
+    ]
+  };
+
+  function renderSettingField(container, field, values, apply) {
+    var path = field[0], label = field[1], kind = field[2], fallback = field[3];
+    var parts = path.split('.');
+    var value = parts.length === 2 ? ((values[parts[0]] || {})[parts[1]]) : values[path];
+    if (value == null) value = fallback;
+    var row = document.createElement('div');
+    row.className = kind === 'toggle' ? 'fx-toggle' : 'fx-slider';
+    var title = document.createElement(kind === 'toggle' ? 'span' : 'label');
+    title.textContent = label;
+    row.appendChild(title);
+    function submit(next) {
+      var patch = {};
+      if (parts.length === 2) { patch[parts[0]] = {}; patch[parts[0]][parts[1]] = next; }
+      else patch[path] = next;
+      apply(patch);
+    }
+    if (kind === 'toggle') {
+      var dot = document.createElement('span');
+      dot.className = 'dot';
+      row.classList.toggle('on', !!value);
+      row.appendChild(dot);
+      row.addEventListener('click', function() {
+        value = !value;
+        row.classList.toggle('on', !!value);
+        submit(value);
+      });
+    } else if (kind === 'select') {
+      var select = document.createElement('select');
+      field[4].forEach(function(option) {
+        var element = document.createElement('option');
+        element.value = option[0]; element.textContent = option[1];
+        select.appendChild(element);
+      });
+      select.value = String(value);
+      select.addEventListener('change', function() { submit(select.value); });
+      row.appendChild(select);
+    } else {
+      var output = document.createElement('output');
+      output.textContent = String(value);
+      title.appendChild(output);
+      var slider = document.createElement('input');
+      slider.type = 'range'; slider.min = String(field[4]); slider.max = String(field[5]);
+      slider.step = String(field[6]); slider.value = String(value);
+      slider.addEventListener('input', function() {
+        output.textContent = slider.value;
+        submit(Number(slider.value));
+      });
+      row.appendChild(slider);
+    }
+    container.appendChild(row);
+  }
+
+  function renderLyricAnimationSettingsControls() {
+    var fxRef = getFx();
+    var bgHost = document.getElementById('lyric-anim-background-settings');
+    var modeHost = document.getElementById('lyric-anim-mode-settings');
+    if (!fxRef || !bgHost || !modeHost) return;
+    var bgMode = selectedBackgroundMode(fxRef);
+    document.querySelectorAll('#lyric-anim-background-grid [data-lyric-anim-bg]').forEach(function(button) {
+      button.classList.toggle('active', button.getAttribute('data-lyric-anim-bg') === bgMode);
+    });
+    var background = normalizeBackground(fxRef.lyricAnimationBackground);
+    bgHost.replaceChildren();
+    var bgReset = document.createElement('button');
+    bgReset.type = 'button'; bgReset.className = 'fx-mini-btn'; bgReset.textContent = '背景恢复默认';
+    bgReset.addEventListener('click', resetLyricAnimationBackground);
+    bgHost.appendChild(bgReset);
+    if (bgMode === 'url') {
+      var url = document.createElement('input');
+      url.type = 'url'; url.placeholder = '输入网页背景的 HTTPS 地址';
+      url.value = background.urlItems[0] ? background.urlItems[0].url : '';
+      var save = document.createElement('button');
+      save.type = 'button'; save.textContent = '使用此背景';
+      save.addEventListener('click', function() {
+        var value = url.value.trim();
+        if (value && !/^https:\/\//i.test(value)) {
+          if (typeof global.showToast === 'function') global.showToast('请使用 HTTPS 背景地址');
+          return;
+        }
+        patchLyricAnimationBackground({ urlItems: value ? [{ id: 'custom', url: value, note: '自定义背景' }] : [], urlSelectedId: value ? 'custom' : null });
+      });
+      bgHost.appendChild(url); bgHost.appendChild(save);
+    } else if (bgMode === 'transparent') {
+      var hint = document.createElement('span');
+      hint.textContent = '透明背景会显示 Mineradio 原有的舞台背景。';
+      bgHost.appendChild(hint);
+    } else {
+      var key = bgMode === 'common' ? null : bgMode + 'Tuning';
+      var values = key ? background[key] || {} : background;
+      (BACKGROUND_FIELDS[bgMode] || []).forEach(function(field) {
+        renderSettingField(bgHost, field, values, function(patch) {
+          if (key) patchLyricAnimationBackgroundTuning(bgMode, patch);
+          else patchLyricAnimationBackground(patch);
+        });
+      });
+    }
+    modeHost.replaceChildren();
+    var mode = normalizeMode(fxRef.lyricAnimationMode);
+    var fields = MODE_FIELDS[mode];
+    if (!fields || !fields.length) {
+      modeHost.textContent = mode === 'still' ? 'Still 模式无需额外参数。' : '选择一个歌词动画查看参数。';
+      return;
+    }
+    var modeReset = document.createElement('button');
+    modeReset.type = 'button'; modeReset.className = 'fx-mini-btn'; modeReset.textContent = '歌词效果恢复默认';
+    modeReset.addEventListener('click', resetLyricAnimationModeTuning);
+    modeHost.appendChild(modeReset);
+    var tuning = fxRef.lyricAnimationTuning && fxRef.lyricAnimationTuning[mode] || {};
+    fields.forEach(function(field) {
+      renderSettingField(modeHost, field, tuning, function(patch) { patchLyricAnimationTuning(mode, patch); });
+    });
+  }
+
   function toggleLyricAnimationTarget(key) {
     var fxRef = getFx();
     if (!fxRef) return;
@@ -519,10 +975,28 @@
     if (!fxRef) return;
     if (!fxRef.lyricAnimationTuning || typeof fxRef.lyricAnimationTuning !== 'object') fxRef.lyricAnimationTuning = {};
     if (!fxRef.lyricAnimationTuning[mode] || typeof fxRef.lyricAnimationTuning[mode] !== 'object') fxRef.lyricAnimationTuning[mode] = {};
-    Object.assign(fxRef.lyricAnimationTuning[mode], patch || {});
-    syncStageLyricAnimation(true);
+    Object.keys(patch || {}).forEach(function(key) {
+      var value = patch[key];
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        fxRef.lyricAnimationTuning[mode][key] = Object.assign({}, fxRef.lyricAnimationTuning[mode][key] || {}, value);
+      } else {
+        fxRef.lyricAnimationTuning[mode][key] = value;
+      }
+    });
+    applyLiveLyricAnimationSettings(fxRef, 'tuning');
     if (typeof global.saveLyricLayout === 'function') global.saveLyricLayout();
     if (typeof global.pushDesktopLyricsState === 'function') global.pushDesktopLyricsState(true);
+  }
+
+  function applyLiveLyricAnimationSettings(fxRef, target) {
+    var api = resolveLyricVizApi();
+    var host = getHost();
+    if (isStageReady() && api && host) {
+      if (target !== 'background') api.setTuning(host, lyricAnimationTuningFromFx(fxRef));
+      if (target !== 'tuning' && typeof api.setBackground === 'function') api.setBackground(host, normalizeBackground(fxRef.lyricAnimationBackground));
+    } else if (isStageLyricLayerAllowed(fxRef)) {
+      syncStageLyricAnimation(true);
+    }
   }
 
   function desktopLyricAnimationPayload() {
@@ -536,6 +1010,7 @@
       lyricAnimationMode: normalizeMode(fxRef.lyricAnimationMode),
       lyricAnimationTheme: lyricAnimationThemeFromFx(fxRef, pal),
       lyricAnimationTuning: lyricAnimationTuningFromFx(fxRef),
+      lyricAnimationBackground: normalizeBackground(fxRef.lyricAnimationBackground),
       lyricAnimationMeta: lyricAnimationMetaFromContext(fxRef),
       lyricAnimationLines: getLyricsLinesForAnimation(fxRef),
       lyricAnimationOpacity: clampRangeLocal(Number(fxRef.lyricAnimationOpacity) == null ? 1 : Number(fxRef.lyricAnimationOpacity), 0.2, 1),
@@ -553,6 +1028,9 @@
       lyricAnimationStage: mode !== 'off',
       lyricAnimationDesktop: false,
       lyricAnimationIntensity: /^(calm|normal|chaotic)$/.test(String(raw.lyricAnimationIntensity || '')) ? raw.lyricAnimationIntensity : 'normal',
+      lyricAnimationThemePreset: normalizeThemePreset(raw.lyricAnimationThemePreset),
+      lyricAnimationThemeColors: normalizeThemeColors(raw.lyricAnimationThemeColors),
+      lyricAnimationBackground: normalizeBackground(raw.lyricAnimationBackground),
       lyricAnimationOpacity: clampRangeLocal(raw.lyricAnimationOpacity == null ? 1 : Number(raw.lyricAnimationOpacity), 0.2, 1),
       lyricAnimationHideParticles: true,
       lyricAnimationStatic: raw.lyricAnimationStatic === true,
@@ -563,7 +1041,13 @@
         fume: Object.assign({}, DEFAULT_TUNING.fume, tuning.fume || {}),
         cappella: Object.assign({}, DEFAULT_TUNING.cappella, tuning.cappella || {}),
         tilt: Object.assign({}, DEFAULT_TUNING.tilt, tuning.tilt || {}),
-        monet: Object.assign({}, DEFAULT_TUNING.monet, tuning.monet || {})
+        monet: Object.assign({}, DEFAULT_TUNING.monet, tuning.monet || {}),
+        claddagh: tuning.claddagh || {},
+        diorama: tuning.diorama || {},
+        lumiere: tuning.lumiere || {},
+        pendolo: tuning.pendolo || {},
+        sonnet: tuning.sonnet || {},
+        tempera: tuning.tempera || {}
       }
     };
   }
@@ -574,6 +1058,9 @@
       lyricAnimationStage: !!fxRef.lyricAnimationStage,
       lyricAnimationDesktop: false,
       lyricAnimationIntensity: fxRef.lyricAnimationIntensity || 'normal',
+      lyricAnimationThemePreset: normalizeThemePreset(fxRef.lyricAnimationThemePreset),
+      lyricAnimationThemeColors: normalizeThemeColors(fxRef.lyricAnimationThemeColors),
+      lyricAnimationBackground: normalizeBackground(fxRef.lyricAnimationBackground),
       lyricAnimationOpacity: clampRangeLocal(fxRef.lyricAnimationOpacity == null ? 1 : Number(fxRef.lyricAnimationOpacity), 0.2, 1),
       lyricAnimationHideParticles: true,
       lyricAnimationStatic: fxRef.lyricAnimationStatic === true,
@@ -590,6 +1077,7 @@
     try {
       var pal = global.stageLyrics && global.stageLyrics.palette ? global.stageLyrics.palette : {};
       api.setTheme(host, lyricAnimationThemeFromFx(fxRef, pal));
+      if (typeof api.setBackground === 'function') api.setBackground(host, normalizeBackground(fxRef.lyricAnimationBackground));
       api.setMeta(host, lyricAnimationMetaFromContext(fxRef));
     } catch (err) {
       console.warn('lyric animation appearance refresh failed:', err);
@@ -621,6 +1109,15 @@
     refreshAppearance: refreshLyricAnimationAppearance,
     onLyricsChanged: onLyricsChangedForAnimation,
     setMode: setLyricAnimationMode,
+    setThemePreset: setLyricAnimationThemePreset,
+    setThemeColor: setLyricAnimationThemeColor,
+    themeColors: normalizeThemeColors,
+    BACKGROUND_MODES: LYRIC_ANIM_BACKGROUND_MODES,
+    selectedBackgroundMode: selectedBackgroundMode,
+    setBackgroundMode: setLyricAnimationBackgroundMode,
+    patchBackground: patchLyricAnimationBackground,
+    patchBackgroundTuning: patchLyricAnimationBackgroundTuning,
+    renderSettingsControls: renderLyricAnimationSettingsControls,
     toggleTarget: toggleLyricAnimationTarget,
     patchTuning: patchLyricAnimationTuning,
     desktopPayload: desktopLyricAnimationPayload,

@@ -1,5 +1,36 @@
 # Third-party ports
 
+## Folia lyric visualizer
+
+- Upstream: [chthollyphile/folia-major](https://github.com/chthollyphile/folia-major)
+- Upstream license: GNU AGPL v3; preserve the original copyright notices.
+- Windows release modes: `classic`, `cadenza`, `partita`, `fume`, `cappella`,
+  `tilt`, `monet`, `claddagh`, `diorama`, `lumiere`, `pendolo`, `sonnet`, `still`,
+  `tempera`.
+- Mineradio-specific changes: `lyric-viz-bridge/src/adapter.ts`, `bridge.tsx`,
+  `LyricVizRoot.tsx`, and `theme-mapper.ts` translate Mineradio playback state,
+  synchronized lyrics, palette, and audio bands into Folia renderer inputs.
+
+The original bridge sources were recovered from the committed
+`public/vendor/lyric-viz/lyric-viz-bridge.js.map` by running
+`node build/extract-lyric-viz-source.js`. The additional mode sources and
+shared dependencies come from pinned Folia v0.7.16 revision
+`c69afdcba85fe6ca1f5c9f5cb83be3e83adfcd67`. The local build procedure is
+documented in `lyric-viz-bridge/README.md`. The complete bridge sources,
+build configuration, dependency lockfile, and referenced image assets are
+distributed in the `v1.7.0` source tag. The source map was checked against
+the 252 authored text sources used by the release bundle. This integration
+does not include the original Folia settings-panel component or persistent
+asset store. Mineradio exposes its own local controls for the ported mode
+parameters, theme colors, and the original Folia background renderer modules
+(`common`, `monet`, `nomand`, `latent`, `url`, and `sora`). The URL mode accepts
+an HTTPS page, not a local image upload. Settings are saved through Mineradio's
+lyric-layout persistence. Visual parity with every Folia preset is not claimed.
+
+GNU GPL v3 and AGPL v3 explicitly allow combining covered code; Folia's AGPL
+requirements still apply to the combined work. See the included Folia license
+copy at `licenses/Folia-AGPL-3.0.txt` and the upstream source repository.
+
 ## Mineradio-LX-Music desktop/home reference
 
 - Upstream: `ww085213/Mineradio-LX-Music`
