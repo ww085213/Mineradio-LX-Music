@@ -16,9 +16,11 @@ Windows 10/11 x64。安装包不内置音乐音源；音源由用户自行导入
 
 ## 下载与源码
 
+- 安装器恢复标准 NSIS 安装向导，移除误判旧安装目录的自定义目录保护脚本。覆盖升级前请先关闭 Mineradio，并选择原安装目录；版本号仍为 1.7.0。
+
 - [Windows 安装包](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.7.0/Mineradio.Setup.1.7.0.exe)
 - [GitHub Release](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.7.0)
-- 对应源码位于 `v1.7.0` 标签，歌词引擎构建方法见 `lyric-viz-bridge/README.md`。
+- 首次发布源码位于 `v1.7.0` 标签，安装器修正版源码位于 [`release/1.7.0` 分支](https://github.com/ww085213/Mineradio-LX-Music/tree/release/1.7.0)，歌词引擎构建方法见 `lyric-viz-bridge/README.md`。
 - Folia 代码版权归原作者及贡献者所有，遵循 AGPL-3.0。保留的许可证及来源说明位于 `licenses/Folia-AGPL-3.0.txt` 和 `docs/THIRD_PARTY_PORTS.md`。
 
 安装包和脚本校验已通过，具体歌词效果与设备运行表现仍需用户实际使用验证。

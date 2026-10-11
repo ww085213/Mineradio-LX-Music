@@ -30,6 +30,9 @@ if (!/^\d+\.\d+\.\d+$/.test(releaseVersion || '')) fail(`发布版本无效: ${r
 if (packageJson.version !== releaseVersion) fail(`package version 与 releaseVersion 不一致: ${packageJson.version} / ${releaseVersion}`);
 if (packageJson.build.buildVersion !== releaseVersion) fail(`buildVersion 与 releaseVersion 不一致: ${packageJson.build.buildVersion} / ${releaseVersion}`);
 if (packageJson.build.nsis.artifactName !== `Mineradio.Setup.${releaseVersion}.\${ext}`) fail('Windows 安装包文件名版本不正确');
+if (packageJson.build.nsis.oneClick !== false || packageJson.build.nsis.allowToChangeInstallationDirectory !== true) fail('Windows 安装器必须保留标准分步向导及目录选择');
+// Omitting include auto-loads build/installer.nsh; null explicitly disables it.
+if (packageJson.build.nsis.include !== null) fail('Windows 安装器必须显式禁用误判旧目录的自定义安装脚本');
 
 for (const entry of [
   'desktop/**/*', 'public/**/*', 'bin/**/*', 'agent-api.js', 'multimodal-recommender.js',
@@ -51,7 +54,6 @@ const toolsSource = read('public/js/agent-music-tools.js');
 const indexSource = read('public/index.html');
 const mainSource = read('desktop/main.js');
 const preloadSource = read('desktop/preload.js');
-const installerSource = read('build/installer.nsh');
 
 requireText('server.js', serverSource, "require('./agent-api')");
 requireText('server.js', serverSource, "pn === '/api/agent/chat'");
@@ -92,9 +94,6 @@ requireText('multimodal-recommender/model_service.py', read('multimodal-recommen
 requireText('desktop/main.js', mainSource, 'handleGlobalHotkeyAction');
 requireText('public/index.html', indexSource, "key:'toggleMusicAgent'");
 requireText('desktop/preload.js', preloadSource, 'requestDesktopKeyboardFocus');
-requireText('build/installer.nsh', installerSource, '!macro customCheckAppRunning');
-requireText('build/installer.nsh', installerSource, 'nsProcess::CloseProcess');
-requireText('build/installer.nsh', installerSource, 'nsProcess::KillProcess');
 
 for (const relativePath of [
   'desktop/main.js', 'desktop/preload.js', 'desktop/local-music-library.js',

@@ -4,7 +4,7 @@
 
 [下载 Windows 安装包](https://github.com/ww085213/Mineradio-LX-Music/releases/download/v1.7.0/Mineradio.Setup.1.7.0.exe) / [查看 v1.7.0 Release](https://github.com/ww085213/Mineradio-LX-Music/releases/tag/v1.7.0)
 
-支持 Windows 10/11 x64。安装向导可选择安装目录和是否创建桌面快捷方式；原版、旧版及其他二创版本可直接覆盖升级。1.7.0 安装器会在覆盖文件前自动关闭正在运行的 Mineradio，并保留 `%APPDATA%\Mineradio` 中的歌单、设置和用户数据。安装包不内置音乐音源。
+支持 Windows 10/11 x64。使用标准安装向导，可选择安装目录和是否创建桌面快捷方式；覆盖升级前请先关闭正在运行的 Mineradio，选择原安装目录即可。升级保留 `%APPDATA%\Mineradio` 中的歌单、设置和用户数据。安装包不内置音乐音源。
 
 1.7.0 主要更新：
 

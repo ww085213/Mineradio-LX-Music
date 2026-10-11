@@ -129,7 +129,7 @@
       "shortcutName": "Mineradio",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
-      "include": "build/installer.nsh",
+      "include": null,
       "artifactName": "Mineradio.Setup.1.7.0.${ext}"
     },
     "publish": [
